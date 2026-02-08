@@ -395,6 +395,83 @@ function fmtCost(usd) {
 let _expandedTasks = new Set();
 let _taskStatsCache = {};
 
+function _taskRowHtml(t) {
+  const expanded = _expandedTasks.has(t.id);
+  const s = _taskStatsCache[t.id];
+  const tid = 'T' + String(t.id).padStart(4,'0');
+  const fmtDate = d => d ? new Date(d).toLocaleString() : '\u2014';
+  return `<div class="task-row${expanded ? ' expanded' : ''}" data-id="${t.id}" onclick="toggleTask(${t.id})">
+    <div class="task-summary">
+      <span class="task-id">${tid}</span>
+      <span class="task-title">${esc(t.title)}</span>
+      <span><span class="badge badge-${t.status}">${fmtStatus(t.status)}</span></span>
+      <span class="task-assignee">${t.assignee ? cap(t.assignee) : '\u2014'}</span>
+      <span class="task-priority">${cap(t.priority)}</span>
+    </div>
+    <div class="task-detail" onclick="event.stopPropagation()">
+      <div class="task-detail-grid">
+        <div class="task-detail-item"><div class="task-detail-label">Project</div><div class="task-detail-value">${t.project || '\u2014'}</div></div>
+        <div class="task-detail-item"><div class="task-detail-label">Reviewer</div><div class="task-detail-value">${t.reviewer ? cap(t.reviewer) : '\u2014'}</div></div>
+        <div class="task-detail-item"><div class="task-detail-label">Time</div><div class="task-detail-value">${s ? fmtElapsed(s.elapsed_seconds) : '\u2014'}</div></div>
+        <div class="task-detail-item"><div class="task-detail-label">Tokens (in/out)</div><div class="task-detail-value">${s ? fmtTokens(s.total_tokens_in, s.total_tokens_out) : '\u2014'}</div></div>
+        <div class="task-detail-item"><div class="task-detail-label">Cost</div><div class="task-detail-value">${s ? fmtCost(s.total_cost_usd) : '\u2014'}</div></div>
+        <div class="task-detail-item"><div class="task-detail-label">Status</div><div class="task-detail-value">${fmtStatus(t.status)}</div></div>
+        <div class="task-detail-item"><div class="task-detail-label">Assignee</div><div class="task-detail-value">${t.assignee ? cap(t.assignee) : '\u2014'}</div></div>
+        <div class="task-detail-item"><div class="task-detail-label">Priority</div><div class="task-detail-value">${cap(t.priority)}</div></div>
+      </div>
+      ${t.description ? '<div class="task-desc">' + esc(t.description) + '</div>' : ''}
+      <div class="task-dates">
+        <span>Created: ${fmtDate(t.created_at)}</span>
+        <span>Completed: ${fmtDate(t.completed_at)}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function _updateTaskRowInPlace(row, t) {
+  const s = _taskStatsCache[t.id];
+  const fmtDate = d => d ? new Date(d).toLocaleString() : '\u2014';
+  // Update summary fields
+  const summary = row.querySelector('.task-summary');
+  summary.querySelector('.task-title').textContent = t.title;
+  const badgeSpan = summary.querySelector('.badge');
+  badgeSpan.className = 'badge badge-' + t.status;
+  badgeSpan.textContent = fmtStatus(t.status);
+  summary.querySelector('.task-assignee').textContent = t.assignee ? cap(t.assignee) : '\u2014';
+  summary.querySelector('.task-priority').textContent = cap(t.priority);
+  // Update detail grid values
+  const vals = row.querySelectorAll('.task-detail-value');
+  if (vals.length >= 8) {
+    vals[0].textContent = t.project || '\u2014';
+    vals[1].textContent = t.reviewer ? cap(t.reviewer) : '\u2014';
+    vals[2].textContent = s ? fmtElapsed(s.elapsed_seconds) : '\u2014';
+    vals[3].textContent = s ? fmtTokens(s.total_tokens_in, s.total_tokens_out) : '\u2014';
+    vals[4].textContent = s ? fmtCost(s.total_cost_usd) : '\u2014';
+    vals[5].textContent = fmtStatus(t.status);
+    vals[6].textContent = t.assignee ? cap(t.assignee) : '\u2014';
+    vals[7].textContent = cap(t.priority);
+  }
+  // Update description
+  const descEl = row.querySelector('.task-desc');
+  if (t.description && descEl) {
+    descEl.textContent = t.description;
+  } else if (t.description && !descEl) {
+    const detail = row.querySelector('.task-detail-grid');
+    const div = document.createElement('div');
+    div.className = 'task-desc';
+    div.textContent = t.description;
+    detail.after(div);
+  } else if (!t.description && descEl) {
+    descEl.remove();
+  }
+  // Update dates
+  const dateSpans = row.querySelectorAll('.task-dates span');
+  if (dateSpans.length >= 2) {
+    dateSpans[0].textContent = 'Created: ' + fmtDate(t.created_at);
+    dateSpans[1].textContent = 'Completed: ' + fmtDate(t.completed_at);
+  }
+}
+
 async function loadTasks() {
   const res = await fetch('/tasks');
   const allTasks = await res.json();
@@ -419,6 +496,9 @@ async function loadTasks() {
   if (filterPriority) tasks = tasks.filter(t => t.priority === filterPriority);
   if (filterAssignee) tasks = tasks.filter(t => t.assignee === filterAssignee);
 
+  // Reverse chronological order (newest first)
+  tasks.sort((a, b) => b.id - a.id);
+
   if (!tasks.length) { el.innerHTML = '<p style="color:#888">No tasks match filters.</p>'; return; }
 
   // Fetch stats for expanded tasks
@@ -429,38 +509,23 @@ async function loadTasks() {
     } catch(e) {}
   }));
 
-  el.innerHTML = '<div class="task-list">' + tasks.map(t => {
-    const expanded = _expandedTasks.has(t.id);
-    const s = _taskStatsCache[t.id];
-    const tid = 'T' + String(t.id).padStart(4,'0');
-    const fmtDate = d => d ? new Date(d).toLocaleString() : '\u2014';
-    return `<div class="task-row${expanded ? ' expanded' : ''}" data-id="${t.id}" onclick="toggleTask(${t.id})">
-      <div class="task-summary">
-        <span class="task-id">${tid}</span>
-        <span class="task-title">${esc(t.title)}</span>
-        <span><span class="badge badge-${t.status}">${fmtStatus(t.status)}</span></span>
-        <span class="task-assignee">${t.assignee ? cap(t.assignee) : '\u2014'}</span>
-        <span class="task-priority">${cap(t.priority)}</span>
-      </div>
-      <div class="task-detail" onclick="event.stopPropagation()">
-        <div class="task-detail-grid">
-          <div class="task-detail-item"><div class="task-detail-label">Project</div><div class="task-detail-value">${t.project || '\u2014'}</div></div>
-          <div class="task-detail-item"><div class="task-detail-label">Reviewer</div><div class="task-detail-value">${t.reviewer ? cap(t.reviewer) : '\u2014'}</div></div>
-          <div class="task-detail-item"><div class="task-detail-label">Time</div><div class="task-detail-value">${s ? fmtElapsed(s.elapsed_seconds) : '\u2014'}</div></div>
-          <div class="task-detail-item"><div class="task-detail-label">Tokens (in/out)</div><div class="task-detail-value">${s ? fmtTokens(s.total_tokens_in, s.total_tokens_out) : '\u2014'}</div></div>
-          <div class="task-detail-item"><div class="task-detail-label">Cost</div><div class="task-detail-value">${s ? fmtCost(s.total_cost_usd) : '\u2014'}</div></div>
-          <div class="task-detail-item"><div class="task-detail-label">Status</div><div class="task-detail-value">${fmtStatus(t.status)}</div></div>
-          <div class="task-detail-item"><div class="task-detail-label">Assignee</div><div class="task-detail-value">${t.assignee ? cap(t.assignee) : '\u2014'}</div></div>
-          <div class="task-detail-item"><div class="task-detail-label">Priority</div><div class="task-detail-value">${cap(t.priority)}</div></div>
-        </div>
-        ${t.description ? '<div class="task-desc">' + esc(t.description) + '</div>' : ''}
-        <div class="task-dates">
-          <span>Created: ${fmtDate(t.created_at)}</span>
-          <span>Completed: ${fmtDate(t.completed_at)}</span>
-        </div>
-      </div>
-    </div>`;
-  }).join('') + '</div>';
+  // Check if we can update in-place (same task IDs in same order)
+  const listEl = el.querySelector('.task-list');
+  const existingIds = [];
+  if (listEl) listEl.querySelectorAll('.task-row').forEach(r => existingIds.push(Number(r.dataset.id)));
+  const newIds = tasks.map(t => t.id);
+  const sameList = listEl && existingIds.length === newIds.length && existingIds.every((id, i) => id === newIds[i]);
+
+  if (sameList) {
+    // In-place update — no DOM rebuild, no transition restart
+    for (const t of tasks) {
+      const row = listEl.querySelector('.task-row[data-id="' + t.id + '"]');
+      if (row) _updateTaskRowInPlace(row, t);
+    }
+  } else {
+    // Full rebuild — first load or tasks changed
+    el.innerHTML = '<div class="task-list">' + tasks.map(t => _taskRowHtml(t)).join('') + '</div>';
+  }
 }
 function toggleTask(id) {
   if (_expandedTasks.has(id)) {
