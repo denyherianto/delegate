@@ -27,7 +27,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from scripts.task import list_tasks as _list_tasks, get_task as _get_task, VALID_STATUSES
+from scripts.task import list_tasks as _list_tasks, get_task as _get_task, get_task_diff as _get_task_diff, VALID_STATUSES
 from scripts.chat import get_messages as _get_messages, get_task_stats as _get_task_stats, get_agent_stats as _get_agent_stats
 from scripts.mailbox import send as _send
 from scripts.bootstrap import get_member_by_role
@@ -135,7 +135,24 @@ def create_app(root: Path | None = None) -> FastAPI:
         return {
             "task_id": task_id,
             "elapsed_seconds": elapsed_seconds,
+            "branch": task.get("branch", ""),
+            "commits": task.get("commits", []),
             **stats,
+        }
+
+    @app.get("/tasks/{task_id}/diff")
+    def get_task_diff(task_id: int):
+        from fastapi import HTTPException
+        try:
+            task = _get_task(root, task_id)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        diff_text = _get_task_diff(root, task_id)
+        return {
+            "task_id": task_id,
+            "branch": task.get("branch", ""),
+            "commits": task.get("commits", []),
+            "diff": diff_text,
         }
 
     @app.get("/messages")
@@ -208,13 +225,43 @@ HTML_PAGE = """\
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
-  body { font-family: 'Geist Sans', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0b; color: #ededed; font-size: 14px; line-height: 1.5; letter-spacing: -0.01em; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+  body { font-family: 'Geist Sans', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0b; color: #ededed; font-size: 14px; line-height: 1.5; letter-spacing: -0.01em; display: flex; flex-direction: row; -webkit-font-smoothing: antialiased; }
+  .main { flex: 1; display: flex; flex-direction: column; min-height: 0; height: 100vh; }
   .header { background: #111113; padding: 14px 24px; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+
+  /* Sidebar */
+  .sidebar { width: 280px; min-width: 280px; height: 100vh; position: sticky; top: 0; background: #0d0d0f; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; overflow: hidden; }
+  .sidebar-widget { padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .sidebar-widget:last-child { border-bottom: none; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .sidebar-widget-header { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #555; margin-bottom: 8px; }
+  .sidebar-stat-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #a1a1a1; margin-bottom: 4px; }
+  .sidebar-stat-row .stat-value { color: #ededed; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .sidebar-agent-list { display: flex; flex-direction: column; gap: 0; max-height: calc(28px * 6); overflow-y: auto; }
+  .sidebar-agent-row { display: flex; align-items: center; gap: 8px; height: 28px; min-height: 28px; font-size: 12px; padding: 0 2px; }
+  .sidebar-agent-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .sidebar-agent-dot.dot-working { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4); }
+  .sidebar-agent-dot.dot-queued { background: #60a5fa; }
+  .sidebar-agent-dot.dot-offline { background: #333; }
+  .sidebar-agent-name { color: #ededed; font-weight: 500; white-space: nowrap; }
+  .sidebar-agent-activity { color: #555; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sidebar-agent-cost { color: #444; font-size: 11px; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .sidebar-task-list { display: flex; flex-direction: column; gap: 0; flex: 1; min-height: 0; overflow-y: auto; }
+  .sidebar-task-row { display: flex; align-items: center; gap: 8px; height: 28px; min-height: 28px; font-size: 12px; padding: 0 2px; }
+  .sidebar-task-id { color: #555; font-variant-numeric: tabular-nums; flex-shrink: 0; min-width: 42px; }
+  .sidebar-task-title { color: #a1a1a1; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sidebar-task-badge { flex-shrink: 0; }
+  .sidebar-task-badge .badge { font-size: 10px; padding: 2px 6px; }
+  .sidebar-task-assignee { color: #444; font-size: 11px; flex-shrink: 0; }
+  .sidebar-see-all { color: #60a5fa; font-size: 11px; cursor: pointer; text-decoration: none; margin-top: 6px; display: inline-block; }
+  .sidebar-see-all:hover { text-decoration: underline; }
+  @media (max-width: 900px) { .sidebar { display: none; } }
   .header h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; color: #fafafa; }
   .tabs { display: flex; gap: 2px; margin-left: 32px; }
   .tab { padding: 7px 14px; cursor: pointer; border-radius: 6px; background: transparent; border: none; color: #666; font-family: inherit; font-size: 13px; font-weight: 500; transition: color 0.15s, background 0.15s; }
   .tab:hover { color: #999; background: rgba(255,255,255,0.04); }
   .tab.active { background: rgba(255,255,255,0.08); color: #fafafa; }
+  .mute-toggle { background: transparent; border: none; color: #555; cursor: pointer; font-size: 14px; padding: 4px 8px; transition: color 0.15s; margin-left: auto; }
+  .mute-toggle:hover { color: #999; }
   .content { max-width: 1000px; width: 100%; margin: 0 auto; padding: 24px; flex: 1; display: flex; flex-direction: column; min-height: 0; }
   .panel { display: none; }
   .panel.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -302,13 +349,31 @@ HTML_PAGE = """\
 </style>
 </head>
 <body>
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-widget" id="sidebarStatus">
+    <div class="sidebar-widget-header">Team Status</div>
+    <div id="sidebarStatusContent"><span style="color:#444;font-size:12px">Loading...</span></div>
+  </div>
+  <div class="sidebar-widget" id="sidebarAgents">
+    <div class="sidebar-widget-header">Agents</div>
+    <div class="sidebar-agent-list" id="sidebarAgentList"></div>
+    <a class="sidebar-see-all" onclick="switchTab('agents')">See All &rarr;</a>
+  </div>
+  <div class="sidebar-widget" id="sidebarTasks">
+    <div class="sidebar-widget-header">Recent Tasks</div>
+    <div class="sidebar-task-list" id="sidebarTaskList"></div>
+    <a class="sidebar-see-all" onclick="switchTab('tasks')">See All &rarr;</a>
+  </div>
+</div>
+<div class="main">
 <div class="header">
   <h1>Standup</h1>
   <div class="tabs">
-    <button class="tab active" data-tab="chat" onclick="switchTab('chat')">Chat</button>
+    <button class="tab active" data-tab="chat" onclick="switchTab('chat')">Mission Control</button>
     <button class="tab" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
     <button class="tab" data-tab="agents" onclick="switchTab('agents')">Agents</button>
   </div>
+  <button class="mute-toggle" id="muteToggle" onclick="toggleMute()" title="Toggle notification sounds"></button>
 </div>
 <div class="content">
   <div id="chat" class="panel active">
@@ -358,10 +423,21 @@ HTML_PAGE = """\
   </div>
   <div id="agents" class="panel"></div>
 </div>
+</div>
 <script>
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
 function fmtStatus(s){return s.split('_').map(w=>cap(w)).join(' ');}
 function fmtTime(iso){const d=new Date(iso);return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});}
+function fmtTimestamp(iso){
+  if(!iso) return '\u2014';
+  const d=new Date(iso), now=new Date(), diff=now-d, sec=Math.floor(diff/1000), min=Math.floor(sec/60), hr=Math.floor(min/60);
+  if(sec<60) return 'just now';
+  if(min<60) return min+' min ago';
+  const time=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false});
+  if(hr<24) return time;
+  const mon=d.toLocaleDateString([],{month:'short',day:'numeric'});
+  return mon+', '+time;
+}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 const _avatarColors=['#e11d48','#7c3aed','#2563eb','#0891b2','#059669','#d97706','#dc2626','#4f46e5'];
 function avatarColor(name){let h=0;for(let i=0;i<name.length;i++)h=name.charCodeAt(i)+((h<<5)-h);return _avatarColors[Math.abs(h)%_avatarColors.length];}
@@ -399,7 +475,6 @@ function _taskRowHtml(t) {
   const expanded = _expandedTasks.has(t.id);
   const s = _taskStatsCache[t.id];
   const tid = 'T' + String(t.id).padStart(4,'0');
-  const fmtDate = d => d ? new Date(d).toLocaleString() : '\u2014';
   return `<div class="task-row${expanded ? ' expanded' : ''}" data-id="${t.id}" onclick="toggleTask(${t.id})">
     <div class="task-summary">
       <span class="task-id">${tid}</span>
@@ -421,8 +496,8 @@ function _taskRowHtml(t) {
       </div>
       ${t.description ? '<div class="task-desc">' + esc(t.description) + '</div>' : ''}
       <div class="task-dates">
-        <span>Created: ${fmtDate(t.created_at)}</span>
-        <span>Completed: ${fmtDate(t.completed_at)}</span>
+        <span>Created: <span class="ts" data-ts="${t.created_at || ''}">${fmtTimestamp(t.created_at)}</span></span>
+        <span>Completed: <span class="ts" data-ts="${t.completed_at || ''}">${fmtTimestamp(t.completed_at)}</span></span>
       </div>
     </div>
   </div>`;
@@ -432,7 +507,6 @@ function _updateTaskRowInPlace(row, t) {
   // Sync expanded class so CSS max-height transition fires
   row.classList.toggle('expanded', _expandedTasks.has(t.id));
   const s = _taskStatsCache[t.id];
-  const fmtDate = d => d ? new Date(d).toLocaleString() : '\u2014';
   // Update summary fields
   const summary = row.querySelector('.task-summary');
   summary.querySelector('.task-title').textContent = t.title;
@@ -466,11 +540,13 @@ function _updateTaskRowInPlace(row, t) {
   } else if (!t.description && descEl) {
     descEl.remove();
   }
-  // Update dates
-  const dateSpans = row.querySelectorAll('.task-dates span');
-  if (dateSpans.length >= 2) {
-    dateSpans[0].textContent = 'Created: ' + fmtDate(t.created_at);
-    dateSpans[1].textContent = 'Completed: ' + fmtDate(t.completed_at);
+  // Update dates (with data-ts for live refresh)
+  const tsSpans = row.querySelectorAll('.task-dates .ts');
+  if (tsSpans.length >= 2) {
+    tsSpans[0].dataset.ts = t.created_at || '';
+    tsSpans[0].textContent = fmtTimestamp(t.created_at);
+    tsSpans[1].dataset.ts = t.completed_at || '';
+    tsSpans[1].textContent = fmtTimestamp(t.completed_at);
   }
 }
 
@@ -588,9 +664,9 @@ async function loadChat() {
   const log = document.getElementById('chatLog');
   const wasNearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
   log.innerHTML = msgs.map(m => {
-    if (m.type === 'event') return `<div class="msg-event"><span class="msg-event-line"></span><span class="msg-event-text">${fmtTime(m.timestamp)} \u2002${esc(m.content)}</span><span class="msg-event-line"></span></div>`;
+    if (m.type === 'event') return `<div class="msg-event"><span class="msg-event-line"></span><span class="msg-event-text"><span class="ts" data-ts="${m.timestamp}">${fmtTimestamp(m.timestamp)}</span> \u2002${esc(m.content)}</span><span class="msg-event-line"></span></div>`;
     const c = avatarColor(m.sender);
-    return `<div class="msg"><div class="msg-avatar" style="background:${c}">${avatarInitial(m.sender)}</div><div class="msg-body"><div class="msg-header"><span class="msg-sender">${cap(m.sender)}</span><span class="msg-recipient">\u2192 ${cap(m.recipient)}</span><span class="msg-time">${fmtTime(m.timestamp)}</span></div><div class="msg-content">${esc(m.content)}</div></div></div>`;
+    return `<div class="msg"><div class="msg-avatar" style="background:${c}">${avatarInitial(m.sender)}</div><div class="msg-body"><div class="msg-header"><span class="msg-sender">${cap(m.sender)}</span><span class="msg-recipient">\u2192 ${cap(m.recipient)}</span><span class="msg-time ts" data-ts="${m.timestamp}">${fmtTimestamp(m.timestamp)}</span></div><div class="msg-content">${esc(m.content)}</div></div></div>`;
   }).join('');
   if (wasNearBottom) log.scrollTop = log.scrollHeight;
 
@@ -685,6 +761,76 @@ async function fetchAgentStats(name) {
   } catch(e) { el.innerHTML = '<p style="color:#555;font-size:12px">Stats unavailable</p>'; }
 }
 
+// --- Sidebar ---
+async function loadSidebar() {
+  try {
+    const [tasksRes, agentsRes] = await Promise.all([fetch('/tasks'), fetch('/agents')]);
+    const tasks = await tasksRes.json();
+    const agents = await agentsRes.json();
+
+    // Fetch stats for all agents in parallel
+    const statsMap = {};
+    await Promise.all(agents.map(async a => {
+      try {
+        const r = await fetch('/agents/' + a.name + '/stats');
+        if (r.ok) statsMap[a.name] = await r.json();
+      } catch(e) {}
+    }));
+
+    // 1. Team Status Widget
+    const now = new Date();
+    const oneDayAgo = new Date(now - 24*60*60*1000);
+    const doneToday = tasks.filter(t => t.completed_at && new Date(t.completed_at) > oneDayAgo && (t.status === 'done')).length;
+    const openCount = tasks.filter(t => t.status === 'open' || t.status === 'in_progress' || t.status === 'review').length;
+    let totalCost = 0;
+    for (const name in statsMap) { totalCost += (statsMap[name].total_cost_usd || 0); }
+    document.getElementById('sidebarStatusContent').innerHTML =
+      '<div class="sidebar-stat-row"><span class="stat-value">' + doneToday + ' done</span> &middot; <span class="stat-value">' + openCount + ' open</span></div>' +
+      '<div class="sidebar-stat-row">$' + totalCost.toFixed(2) + ' total spent</div>';
+
+    // 2. Agent Roster Widget
+    const inProgressTasks = tasks.filter(t => t.status === 'in_progress');
+    let agentHtml = '';
+    for (const a of agents) {
+      let dotClass = 'dot-offline';
+      let activity = 'Idle';
+      if (a.pid) {
+        dotClass = 'dot-working';
+        const agentTask = inProgressTasks.find(t => t.assignee === a.name);
+        activity = agentTask ? ('T' + String(agentTask.id).padStart(4,'0') + ' ' + agentTask.title) : 'Working...';
+      } else if (a.unread_inbox > 0) {
+        dotClass = 'dot-queued';
+      }
+      const cost = statsMap[a.name] ? '$' + Number(statsMap[a.name].total_cost_usd || 0).toFixed(2) : '';
+      agentHtml += '<div class="sidebar-agent-row">' +
+        '<span class="sidebar-agent-dot ' + dotClass + '"></span>' +
+        '<span class="sidebar-agent-name">' + cap(a.name) + '</span>' +
+        '<span class="sidebar-agent-activity">' + esc(activity) + '</span>' +
+        '<span class="sidebar-agent-cost">' + cost + '</span>' +
+        '</div>';
+    }
+    document.getElementById('sidebarAgentList').innerHTML = agentHtml;
+
+    // 3. Recent Tasks Widget
+    const sorted = [...tasks].sort((a, b) => {
+      const da = a.updated_at || a.created_at || '';
+      const db = b.updated_at || b.created_at || '';
+      return db.localeCompare(da);
+    }).slice(0, 7);
+    let taskHtml = '';
+    for (const t of sorted) {
+      const tid = 'T' + String(t.id).padStart(4,'0');
+      taskHtml += '<div class="sidebar-task-row">' +
+        '<span class="sidebar-task-id">' + tid + '</span>' +
+        '<span class="sidebar-task-title">' + esc(t.title) + '</span>' +
+        '<span class="sidebar-task-badge"><span class="badge badge-' + t.status + '">' + fmtStatus(t.status) + '</span></span>' +
+        '<span class="sidebar-task-assignee">' + (t.assignee ? cap(t.assignee) : '') + '</span>' +
+        '</div>';
+    }
+    document.getElementById('sidebarTaskList').innerHTML = taskHtml;
+  } catch(e) { console.error('Sidebar load error:', e); }
+}
+
 async function sendMsg() {
   const input = document.getElementById('msgInput');
   const recipient = document.getElementById('recipient').value;
@@ -697,8 +843,18 @@ async function sendMsg() {
   input.value = '';
 }
 
-// Auto-refresh: poll chat + tasks every 2 seconds
+// Lightweight refresh of relative timestamps (no data fetch)
+function refreshTimestamps() {
+  document.querySelectorAll('.ts[data-ts]').forEach(el => {
+    const iso = el.dataset.ts;
+    el.textContent = fmtTimestamp(iso);
+  });
+}
+setInterval(refreshTimestamps, 30000);
+
+// Auto-refresh: poll chat + tasks every 2 seconds, sidebar always
 setInterval(() => {
+  loadSidebar();
   const active = document.querySelector('.panel.active');
   if (active && active.id === 'chat') loadChat();
   if (active && active.id === 'tasks') loadTasks();
@@ -717,6 +873,7 @@ window.addEventListener('hashchange', () => {
   if (valid.includes(hash)) switchTab(hash, false);
 });
 initFromHash();
+loadSidebar();
 </script>
 </body>
 </html>
