@@ -256,6 +256,17 @@ HTML_PAGE = """\
   .dot-active { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4); }
   .dot-idle { background: #333; }
 
+  /* Chat filters */
+  .chat-filters { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-shrink: 0; }
+  .chat-filters select { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); background: #111113; color: #ededed; font-family: inherit; font-size: 12px; outline: none; cursor: pointer; transition: border-color 0.15s; }
+  .chat-filters select:focus { border-color: rgba(255,255,255,0.25); }
+  .chat-filters label { display: flex; align-items: center; gap: 6px; color: #666; font-size: 12px; cursor: pointer; user-select: none; transition: color 0.15s; }
+  .chat-filters label:hover { color: #999; }
+  .chat-filters input[type="checkbox"] { appearance: none; width: 14px; height: 14px; border: 1px solid rgba(255,255,255,0.15); border-radius: 3px; background: transparent; cursor: pointer; position: relative; transition: background 0.15s, border-color 0.15s; }
+  .chat-filters input[type="checkbox"]:checked { background: #fafafa; border-color: #fafafa; }
+  .chat-filters input[type="checkbox"]:checked::after { content: ''; position: absolute; top: 1px; left: 4px; width: 4px; height: 8px; border: solid #0a0a0b; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+  .filter-label { color: #444; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -274,6 +285,17 @@ HTML_PAGE = """\
 </div>
 <div class="content">
   <div id="chat" class="panel active">
+    <div class="chat-filters">
+      <span class="filter-label">From</span>
+      <select id="chatFilterFrom" onchange="loadChat()">
+        <option value="">Anyone</option>
+      </select>
+      <span class="filter-label">To</span>
+      <select id="chatFilterTo" onchange="loadChat()">
+        <option value="">Anyone</option>
+      </select>
+      <label><input type="checkbox" id="chatShowEvents" checked onchange="loadChat()"> System events</label>
+    </div>
     <div class="chat-log" id="chatLog"></div>
     <div class="chat-input">
       <select id="recipient"></select>
@@ -351,17 +373,57 @@ async function loadTasks() {
 }
 
 async function loadChat() {
-  const res = await fetch('/messages');
-  const msgs = await res.json();
+  // Build URL with query params based on filter state
+  const showEvents = document.getElementById('chatShowEvents').checked;
+  const filterFrom = document.getElementById('chatFilterFrom').value;
+  const filterTo = document.getElementById('chatFilterTo').value;
+  const params = new URLSearchParams();
+  if (!showEvents) params.set('type', 'chat');
+  const res = await fetch('/messages' + (params.toString() ? '?' + params : ''));
+  let msgs = await res.json();
+
+  // Populate filter dropdowns from unique senders/recipients in message data
+  // (includes director and all participants, unlike /agents which skips director)
+  const senders = new Set();
+  const recipients = new Set();
+  for (const m of msgs) {
+    if (m.type === 'chat') { senders.add(m.sender); recipients.add(m.recipient); }
+  }
+  const fromSel = document.getElementById('chatFilterFrom');
+  const toSel = document.getElementById('chatFilterTo');
+  const prevFrom = fromSel.value;
+  const prevTo = toSel.value;
+  if (fromSel.options.length <= 1 || toSel.options.length <= 1) {
+    const sortedSenders = [...senders].sort();
+    const sortedRecipients = [...recipients].sort();
+    fromSel.innerHTML = '<option value="">Anyone</option>'
+      + sortedSenders.map(n => `<option value="${n}">${cap(n)}</option>`).join('');
+    toSel.innerHTML = '<option value="">Anyone</option>'
+      + sortedRecipients.map(n => `<option value="${n}">${cap(n)}</option>`).join('');
+  }
+  fromSel.value = prevFrom;
+  toSel.value = prevTo;
+
+  // Client-side filter: match sender and/or recipient
+  if (filterFrom || filterTo) {
+    msgs = msgs.filter(m => {
+      if (m.type === 'event') return true;
+      if (filterFrom && m.sender !== filterFrom) return false;
+      if (filterTo && m.recipient !== filterTo) return false;
+      return true;
+    });
+  }
+
   const log = document.getElementById('chatLog');
+  const wasNearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
   log.innerHTML = msgs.map(m => {
     if (m.type === 'event') return `<div class="msg-event"><span class="msg-event-line"></span><span class="msg-event-text">${fmtTime(m.timestamp)} \u2002${esc(m.content)}</span><span class="msg-event-line"></span></div>`;
     const c = avatarColor(m.sender);
     return `<div class="msg"><div class="msg-avatar" style="background:${c}">${avatarInitial(m.sender)}</div><div class="msg-body"><div class="msg-header"><span class="msg-sender">${cap(m.sender)}</span><span class="msg-recipient">\u2192 ${cap(m.recipient)}</span><span class="msg-time">${fmtTime(m.timestamp)}</span></div><div class="msg-content">${esc(m.content)}</div></div></div>`;
   }).join('');
-  log.scrollTop = log.scrollHeight;
+  if (wasNearBottom) log.scrollTop = log.scrollHeight;
 
-  // Populate recipient dropdown (default to the manager)
+  // Populate recipient dropdown for sending (from /agents)
   const agentsRes = await fetch('/agents');
   const agents = await agentsRes.json();
   const sel = document.getElementById('recipient');
@@ -370,7 +432,6 @@ async function loadChat() {
     const label = a.role === 'manager' ? `${cap(a.name)} (manager)` : cap(a.name);
     return `<option value="${a.name}">${label}</option>`;
   }).join('');
-  // Restore previous selection or default to manager
   const mgr = agents.find(a => a.role === 'manager');
   sel.value = prev || (mgr ? mgr.name : agents[0]?.name || '');
 }

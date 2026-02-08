@@ -241,14 +241,21 @@ async def wait_for_inbox(
 
 def _collect_tokens_from_message(msg: Any) -> tuple[int, int, float]:
     """Extract (tokens_in, tokens_out, cost_usd) from a ResultMessage."""
+    msg_type = type(msg).__name__
     if hasattr(msg, "total_cost_usd"):
         cost = msg.total_cost_usd or 0.0
         tin = 0
         tout = 0
-        if msg.usage and isinstance(msg.usage, dict):
-            tin = msg.usage.get("input_tokens", 0)
-            tout = msg.usage.get("output_tokens", 0)
+        usage = getattr(msg, "usage", None)
+        if usage and isinstance(usage, dict):
+            tin = usage.get("input_tokens", 0)
+            tout = usage.get("output_tokens", 0)
+        logger.debug(
+            "Token extract from %s: usage=%r cost_usd=%r -> tin=%d tout=%d cost=%.4f",
+            msg_type, usage, msg.total_cost_usd, tin, tout, cost,
+        )
         return tin, tout, cost
+    logger.debug("Skipping %s (no total_cost_usd attr)", msg_type)
     return 0, 0, 0.0
 
 
