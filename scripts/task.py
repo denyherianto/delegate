@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import json
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -81,6 +82,8 @@ def create_task(
         "updated_at": now,
         "completed_at": "",
         "depends_on": depends_on or [],
+        "branch": "",
+        "commits": [],
     }
 
     path = _task_path(tasks_dir, task_id)
@@ -100,6 +103,8 @@ def get_task(root: Path, task_id: int) -> dict:
         raise FileNotFoundError(f"Task {task_id} not found at {path}")
     task = yaml.safe_load(path.read_text())
     task.setdefault("reviewer", "")
+    task.setdefault("branch", "")
+    task.setdefault("commits", [])
     return task
 
 
@@ -152,6 +157,95 @@ def change_status(root: Path, task_id: int, status: str) -> dict:
     log_event(root, f"Task T{task_id:04d} status → {status.replace('_', ' ').title()}")
 
     return task
+
+
+def set_task_branch(root: Path, task_id: int, branch_name: str) -> dict:
+    """Set the branch name on a task."""
+    task = get_task(root, task_id)
+    task["branch"] = branch_name
+    task["updated_at"] = _now()
+    tasks_dir = _tasks_dir(root)
+    path = _task_path(tasks_dir, task_id)
+    path.write_text(yaml.dump(task, default_flow_style=False, sort_keys=False))
+    return task
+
+
+def add_task_commit(root: Path, task_id: int, commit_sha: str) -> dict:
+    """Append a commit SHA to the task's commits list."""
+    task = get_task(root, task_id)
+    if commit_sha not in task["commits"]:
+        task["commits"].append(commit_sha)
+    task["updated_at"] = _now()
+    tasks_dir = _tasks_dir(root)
+    path = _task_path(tasks_dir, task_id)
+    path.write_text(yaml.dump(task, default_flow_style=False, sort_keys=False))
+    return task
+
+
+def get_task_diff(root: Path, task_id: int) -> str:
+    """Return the git diff for the task's branch.
+
+    Uses three-dot diff against main. Falls back to git log + git show
+    if main doesn't exist.
+    """
+    task = get_task(root, task_id)
+    branch = task.get("branch", "")
+    if not branch:
+        return "(no branch set)"
+
+    # Try three-dot diff against main
+    try:
+        result = subprocess.run(
+            ["git", "diff", f"main...{branch}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(root),
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    # Fallback: use git log to find commits, then git show
+    try:
+        log_result = subprocess.run(
+            ["git", "log", "--oneline", branch],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(root),
+        )
+        if log_result.returncode == 0 and log_result.stdout.strip():
+            lines = log_result.stdout.strip().splitlines()
+            if len(lines) >= 2:
+                last_commit = lines[0].split()[0]
+                first_commit = lines[-1].split()[0]
+                show_result = subprocess.run(
+                    ["git", "show", f"{first_commit}..{last_commit}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd=str(root),
+                )
+                if show_result.returncode == 0:
+                    return show_result.stdout
+            elif len(lines) == 1:
+                # Single commit — just show it
+                sha = lines[0].split()[0]
+                show_result = subprocess.run(
+                    ["git", "show", sha],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd=str(root),
+                )
+                if show_result.returncode == 0:
+                    return show_result.stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    return "(no diff available)"
 
 
 def list_tasks(

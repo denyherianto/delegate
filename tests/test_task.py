@@ -1,5 +1,8 @@
 """Tests for scripts/task.py."""
 
+from unittest.mock import patch, MagicMock
+import subprocess
+
 import pytest
 
 from scripts.task import (
@@ -9,6 +12,9 @@ from scripts.task import (
     assign_task,
     change_status,
     list_tasks,
+    set_task_branch,
+    add_task_commit,
+    get_task_diff,
     VALID_STATUSES,
 )
 
@@ -209,3 +215,112 @@ class TestEventLogging:
         change_status(tmp_team, t["id"], "in_progress")
         events = get_messages(tmp_team, msg_type="event")
         assert any("status" in e["content"] and "In Progress" in e["content"] for e in events)
+
+
+class TestBranchAndCommits:
+    """Tests for branch/commits fields and helper functions."""
+
+    def test_create_task_has_branch_and_commits(self, tmp_team):
+        task = create_task(tmp_team, title="Feature X")
+        assert task["branch"] == ""
+        assert task["commits"] == []
+
+    def test_set_task_branch(self, tmp_team):
+        task = create_task(tmp_team, title="Feature X")
+        updated = set_task_branch(tmp_team, task["id"], "alice/backend/0001-feature-x")
+        assert updated["branch"] == "alice/backend/0001-feature-x"
+        # Verify persisted
+        loaded = get_task(tmp_team, task["id"])
+        assert loaded["branch"] == "alice/backend/0001-feature-x"
+
+    def test_add_task_commit(self, tmp_team):
+        task = create_task(tmp_team, title="Feature X")
+        updated = add_task_commit(tmp_team, task["id"], "abc123")
+        assert updated["commits"] == ["abc123"]
+        # Add another
+        updated = add_task_commit(tmp_team, task["id"], "def456")
+        assert updated["commits"] == ["abc123", "def456"]
+        # Verify persisted
+        loaded = get_task(tmp_team, task["id"])
+        assert loaded["commits"] == ["abc123", "def456"]
+
+    def test_add_task_commit_no_duplicates(self, tmp_team):
+        task = create_task(tmp_team, title="Feature X")
+        add_task_commit(tmp_team, task["id"], "abc123")
+        updated = add_task_commit(tmp_team, task["id"], "abc123")
+        assert updated["commits"] == ["abc123"]
+
+    def test_branch_survives_status_update(self, tmp_team):
+        task = create_task(tmp_team, title="Feature X")
+        set_task_branch(tmp_team, task["id"], "alice/backend/0001-feature-x")
+        add_task_commit(tmp_team, task["id"], "abc123")
+        # Change status
+        updated = change_status(tmp_team, task["id"], "in_progress")
+        assert updated["branch"] == "alice/backend/0001-feature-x"
+        assert updated["commits"] == ["abc123"]
+
+    def test_get_task_diff_no_branch(self, tmp_team):
+        task = create_task(tmp_team, title="Feature X")
+        result = get_task_diff(tmp_team, task["id"])
+        assert result == "(no branch set)"
+
+    @patch("scripts.task.subprocess.run")
+    def test_get_task_diff_with_branch(self, mock_run, tmp_team):
+        task = create_task(tmp_team, title="Feature X")
+        set_task_branch(tmp_team, task["id"], "alice/backend/0001-feature-x")
+
+        # Mock the three-dot diff succeeding
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "diff --git a/file.py b/file.py\n+new line\n"
+        mock_run.return_value = mock_result
+
+        diff = get_task_diff(tmp_team, task["id"])
+        assert "diff --git" in diff
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args
+        assert call_args[0][0] == ["git", "diff", "main...alice/backend/0001-feature-x"]
+
+    @patch("scripts.task.subprocess.run")
+    def test_get_task_diff_fallback(self, mock_run, tmp_team):
+        task = create_task(tmp_team, title="Feature X")
+        set_task_branch(tmp_team, task["id"], "alice/backend/0001-feature-x")
+
+        # First call (three-dot diff) fails, second call (git log) succeeds, third (git show) succeeds
+        fail_result = MagicMock()
+        fail_result.returncode = 1
+        fail_result.stdout = ""
+
+        log_result = MagicMock()
+        log_result.returncode = 0
+        log_result.stdout = "def456 Second commit\nabc123 First commit\n"
+
+        show_result = MagicMock()
+        show_result.returncode = 0
+        show_result.stdout = "commit abc123\nfallback diff content\n"
+
+        mock_run.side_effect = [fail_result, log_result, show_result]
+
+        diff = get_task_diff(tmp_team, task["id"])
+        assert "fallback diff content" in diff
+
+    @patch("scripts.task.subprocess.run")
+    def test_get_task_diff_no_diff_available(self, mock_run, tmp_team):
+        task = create_task(tmp_team, title="Feature X")
+        set_task_branch(tmp_team, task["id"], "alice/backend/0001-feature-x")
+
+        # All calls fail
+        fail_result = MagicMock()
+        fail_result.returncode = 1
+        fail_result.stdout = ""
+        mock_run.return_value = fail_result
+
+        diff = get_task_diff(tmp_team, task["id"])
+        assert diff == "(no diff available)"
+
+    def test_new_fields_in_create_task_output(self, tmp_team):
+        task = create_task(tmp_team, title="Test Fields")
+        assert "branch" in task
+        assert "commits" in task
+        assert isinstance(task["branch"], str)
+        assert isinstance(task["commits"], list)
