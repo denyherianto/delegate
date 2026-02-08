@@ -270,15 +270,15 @@ HTML_PAGE = """\
   .agent-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #555; margin-bottom: 4px; }
   .agent-stat-value { font-size: 14px; font-weight: 600; color: #ededed; font-variant-numeric: tabular-nums; }
 
-  /* Chat filters */
-  .chat-filters { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-shrink: 0; }
-  .chat-filters select { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); background: #111113; color: #ededed; font-family: inherit; font-size: 12px; outline: none; cursor: pointer; transition: border-color 0.15s; }
-  .chat-filters select:focus { border-color: rgba(255,255,255,0.25); }
-  .chat-filters label { display: flex; align-items: center; gap: 6px; color: #666; font-size: 12px; cursor: pointer; user-select: none; transition: color 0.15s; }
-  .chat-filters label:hover { color: #999; }
-  .chat-filters input[type="checkbox"] { appearance: none; width: 14px; height: 14px; border: 1px solid rgba(255,255,255,0.15); border-radius: 3px; background: transparent; cursor: pointer; position: relative; transition: background 0.15s, border-color 0.15s; }
-  .chat-filters input[type="checkbox"]:checked { background: #fafafa; border-color: #fafafa; }
-  .chat-filters input[type="checkbox"]:checked::after { content: ''; position: absolute; top: 1px; left: 4px; width: 4px; height: 8px; border: solid #0a0a0b; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+  /* Filters (shared) */
+  .chat-filters, .task-filters { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-shrink: 0; }
+  .chat-filters select, .task-filters select { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); background: #111113; color: #ededed; font-family: inherit; font-size: 12px; outline: none; cursor: pointer; transition: border-color 0.15s; }
+  .chat-filters select:focus, .task-filters select:focus { border-color: rgba(255,255,255,0.25); }
+  .chat-filters label, .task-filters label { display: flex; align-items: center; gap: 6px; color: #666; font-size: 12px; cursor: pointer; user-select: none; transition: color 0.15s; }
+  .chat-filters label:hover, .task-filters label:hover { color: #999; }
+  .chat-filters input[type="checkbox"], .task-filters input[type="checkbox"] { appearance: none; width: 14px; height: 14px; border: 1px solid rgba(255,255,255,0.15); border-radius: 3px; background: transparent; cursor: pointer; position: relative; transition: background 0.15s, border-color 0.15s; }
+  .chat-filters input[type="checkbox"]:checked, .task-filters input[type="checkbox"]:checked { background: #fafafa; border-color: #fafafa; }
+  .chat-filters input[type="checkbox"]:checked::after, .task-filters input[type="checkbox"]:checked::after { content: ''; position: absolute; top: 1px; left: 4px; width: 4px; height: 8px; border: solid #0a0a0b; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
   .filter-label { color: #444; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
 
   /* Scrollbar */
@@ -318,7 +318,31 @@ HTML_PAGE = """\
       <button onclick="sendMsg()">Send</button>
     </div>
   </div>
-  <div id="tasks" class="panel"></div>
+  <div id="tasks" class="panel">
+    <div class="task-filters">
+      <span class="filter-label">Status</span>
+      <select id="taskFilterStatus" onchange="loadTasks()">
+        <option value="">All</option>
+        <option value="open">Open</option>
+        <option value="in_progress">In Progress</option>
+        <option value="review">Review</option>
+        <option value="done">Done</option>
+      </select>
+      <span class="filter-label">Priority</span>
+      <select id="taskFilterPriority" onchange="loadTasks()">
+        <option value="">All</option>
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+        <option value="critical">Critical</option>
+      </select>
+      <span class="filter-label">Assignee</span>
+      <select id="taskFilterAssignee" onchange="loadTasks()">
+        <option value="">All</option>
+      </select>
+    </div>
+    <div id="taskTable"></div>
+  </div>
   <div id="agents" class="panel"></div>
 </div>
 <script>
@@ -356,9 +380,31 @@ function fmtCost(usd) {
 
 async function loadTasks() {
   const res = await fetch('/tasks');
-  const tasks = await res.json();
-  const el = document.getElementById('tasks');
-  if (!tasks.length) { el.innerHTML = '<p style="color:#888">No tasks yet.</p>'; return; }
+  const allTasks = await res.json();
+  const el = document.getElementById('taskTable');
+  if (!allTasks.length) { el.innerHTML = '<p style="color:#888">No tasks yet.</p>'; return; }
+
+  // Populate assignee dropdown from task data (preserve selection)
+  const assignees = new Set();
+  for (const t of allTasks) { if (t.assignee) assignees.add(t.assignee); }
+  const assigneeSel = document.getElementById('taskFilterAssignee');
+  const prevAssignee = assigneeSel.value;
+  if (assigneeSel.options.length <= 1) {
+    assigneeSel.innerHTML = '<option value="">All</option>'
+      + [...assignees].sort().map(n => `<option value="${n}">${cap(n)}</option>`).join('');
+  }
+  assigneeSel.value = prevAssignee;
+
+  // Client-side filtering
+  const filterStatus = document.getElementById('taskFilterStatus').value;
+  const filterPriority = document.getElementById('taskFilterPriority').value;
+  const filterAssignee = document.getElementById('taskFilterAssignee').value;
+  let tasks = allTasks;
+  if (filterStatus) tasks = tasks.filter(t => t.status === filterStatus);
+  if (filterPriority) tasks = tasks.filter(t => t.priority === filterPriority);
+  if (filterAssignee) tasks = tasks.filter(t => t.assignee === filterAssignee);
+
+  if (!tasks.length) { el.innerHTML = '<p style="color:#888">No tasks match filters.</p>'; return; }
 
   // Fetch stats for in_progress and done tasks only (per director request)
   const showStats = new Set(['in_progress', 'done']);
