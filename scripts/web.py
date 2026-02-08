@@ -705,8 +705,18 @@ setInterval(() => {
   if (active && active.id === 'agents') loadAgents();
 }, 2000);
 
-// Initial load
-loadChat();
+// Read URL hash on page load to activate the correct tab
+function initFromHash() {
+  const hash = window.location.hash.replace('#', '');
+  const valid = ['chat', 'tasks', 'agents'];
+  switchTab(valid.includes(hash) ? hash : 'chat', false);
+}
+window.addEventListener('hashchange', () => {
+  const hash = window.location.hash.replace('#', '');
+  const valid = ['chat', 'tasks', 'agents'];
+  if (valid.includes(hash)) switchTab(hash, false);
+});
+initFromHash();
 </script>
 </body>
 </html>
