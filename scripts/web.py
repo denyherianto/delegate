@@ -467,7 +467,7 @@ async function loadAgents() {
     <span class="dot ${a.pid ? 'dot-active' : 'dot-idle'}"></span>
     <span class="agent-name">${cap(a.name)}</span>
     <span class="agent-status">${a.pid ? 'Running (PID ' + a.pid + ')' : 'Idle'} \u00b7 ${a.unread_inbox} unread</span>
-    <div class="agent-stats" id="agent-stats-${a.name}"></div>
+    <div class="agent-stats" id="agent-stats-${a.name}" onclick="event.stopPropagation()"></div>
   </div>`).join('');
   // Re-fetch stats for expanded cards
   for (const name of expanded) fetchAgentStats(name);
