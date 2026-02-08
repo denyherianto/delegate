@@ -532,11 +532,10 @@ async function loadAgents() {
       <span class="agent-status">${a.pid ? 'Running (PID ' + a.pid + ')' : 'Idle'} \u00b7 ${a.unread_inbox} unread</span>
       <div class="agent-stats" id="agent-stats-${a.name}" onclick="event.stopPropagation()"></div>
     </div>`).join('');
-    // Restore stats from cache and re-fetch for expanded cards
+    // Restore stats from cache immediately (fetch happens in common block below)
     for (const name of _expandedAgents) {
-      if (agentNames.has(name)) {
-        if (_agentStatsCache[name]) renderAgentStats(name, _agentStatsCache[name]);
-        fetchAgentStats(name);
+      if (agentNames.has(name) && _agentStatsCache[name]) {
+        renderAgentStats(name, _agentStatsCache[name]);
       }
     }
   }
