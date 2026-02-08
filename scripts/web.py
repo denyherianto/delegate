@@ -7,6 +7,7 @@ Provides:
     GET  /messages    — get chat/event log (JSON)
     POST /messages    — director sends a message to an agent
     GET  /agents      — list agents and their states (JSON)
+    GET  /agents/{name}/stats — agent stats (tasks, tokens, cost)
 
 When started via `scripts.run`, the daemon loop (message routing +
 agent orchestration) runs as an asyncio background task inside the
@@ -27,7 +28,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from scripts.task import list_tasks as _list_tasks, get_task as _get_task, VALID_STATUSES
-from scripts.chat import get_messages as _get_messages, get_task_stats as _get_task_stats
+from scripts.chat import get_messages as _get_messages, get_task_stats as _get_task_stats, get_agent_stats as _get_agent_stats
 from scripts.mailbox import send as _send
 from scripts.bootstrap import get_member_by_role
 
@@ -180,6 +181,11 @@ def create_app(root: Path | None = None) -> FastAPI:
                 })
         return agents
 
+    @app.get("/agents/{name}/stats")
+    def get_agent_stats(name: str):
+        """Get aggregated stats for a specific agent."""
+        return _get_agent_stats(root, name)
+
     @app.get("/", response_class=HTMLResponse)
     def index():
         return HTML_PAGE
@@ -253,8 +259,16 @@ HTML_PAGE = """\
   .agent-name { font-weight: 600; min-width: 120px; color: #ededed; font-size: 13px; }
   .agent-status { font-size: 12px; color: #555; }
   .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+  .agent-card { cursor: pointer; }
   .dot-active { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4); }
   .dot-idle { background: #333; }
+  .agent-stats { display: none; width: 100%; padding: 14px 0 2px; }
+  .agent-card.expanded .agent-stats { display: block; }
+  .agent-card.expanded { flex-wrap: wrap; }
+  .agent-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .agent-stat { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 10px 14px; }
+  .agent-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #555; margin-bottom: 4px; }
+  .agent-stat-value { font-size: 14px; font-weight: 600; color: #ededed; font-variant-numeric: tabular-nums; }
 
   /* Chat filters */
   .chat-filters { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-shrink: 0; }
@@ -446,11 +460,39 @@ async function loadAgents() {
   const res = await fetch('/agents');
   const agents = await res.json();
   const el = document.getElementById('agents');
-  el.innerHTML = agents.map(a => `<div class="agent-card">
+  // Preserve which cards are expanded
+  const expanded = new Set();
+  el.querySelectorAll('.agent-card.expanded').forEach(c => expanded.add(c.dataset.name));
+  el.innerHTML = agents.map(a => `<div class="agent-card${expanded.has(a.name) ? ' expanded' : ''}" data-name="${a.name}" onclick="toggleAgent(this, '${a.name}')">
     <span class="dot ${a.pid ? 'dot-active' : 'dot-idle'}"></span>
     <span class="agent-name">${cap(a.name)}</span>
     <span class="agent-status">${a.pid ? 'Running (PID ' + a.pid + ')' : 'Idle'} \u00b7 ${a.unread_inbox} unread</span>
+    <div class="agent-stats" id="agent-stats-${a.name}"></div>
   </div>`).join('');
+  // Re-fetch stats for expanded cards
+  for (const name of expanded) fetchAgentStats(name);
+}
+async function toggleAgent(card, name) {
+  card.classList.toggle('expanded');
+  if (card.classList.contains('expanded')) fetchAgentStats(name);
+}
+async function fetchAgentStats(name) {
+  const el = document.getElementById('agent-stats-' + name);
+  if (!el) return;
+  try {
+    const r = await fetch('/agents/' + name + '/stats');
+    const s = await r.json();
+    el.innerHTML = `<div class="agent-stats-grid">
+      <div class="agent-stat"><div class="agent-stat-label">Tasks done</div><div class="agent-stat-value">${s.tasks_done}</div></div>
+      <div class="agent-stat"><div class="agent-stat-label">In review</div><div class="agent-stat-value">${s.tasks_in_review}</div></div>
+      <div class="agent-stat"><div class="agent-stat-label">Total tasks</div><div class="agent-stat-value">${s.tasks_total}</div></div>
+      <div class="agent-stat"><div class="agent-stat-label">Sessions</div><div class="agent-stat-value">${s.session_count}</div></div>
+      <div class="agent-stat"><div class="agent-stat-label">Tokens (in/out)</div><div class="agent-stat-value">${fmtTokens(s.total_tokens_in, s.total_tokens_out)}</div></div>
+      <div class="agent-stat"><div class="agent-stat-label">Total cost</div><div class="agent-stat-value">${fmtCost(s.total_cost_usd)}</div></div>
+      <div class="agent-stat"><div class="agent-stat-label">Agent time</div><div class="agent-stat-value">${fmtElapsed(s.agent_time_seconds)}</div></div>
+      <div class="agent-stat"><div class="agent-stat-label">Avg task time</div><div class="agent-stat-value">${fmtElapsed(s.avg_task_seconds)}</div></div>
+    </div>`;
+  } catch(e) { el.innerHTML = '<p style="color:#555;font-size:12px">Stats unavailable</p>'; }
 }
 
 async function sendMsg() {
