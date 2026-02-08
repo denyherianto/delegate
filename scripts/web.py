@@ -469,6 +469,16 @@ HTML_PAGE = """\
   .diff-empty { color: #555; font-size: 13px; padding: 24px; text-align: center; }
   @media (max-width: 900px) { .diff-panel { width: 100vw; } }
 
+  /* Mute toggle */
+  .mute-toggle { background: transparent; border: none; color: #555; cursor: pointer; font-size: 14px; padding: 4px 8px; transition: color 0.15s; margin-left: auto; display: flex; align-items: center; justify-content: center; line-height: 1; }
+  .mute-toggle:hover { color: #999; }
+
+  /* Mic button */
+  .chat-input .mic-btn { padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: #111113; color: #888; font-size: 16px; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; display: flex; align-items: center; justify-content: center; line-height: 1; }
+  .chat-input .mic-btn:hover { border-color: rgba(255,255,255,0.25); color: #ccc; }
+  .chat-input .mic-btn.recording { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.4); color: #ef4444; animation: mic-pulse 1.5s ease-in-out infinite; }
+  @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.3); } 50% { box-shadow: 0 0 0 6px rgba(239,68,68,0); } }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -501,6 +511,7 @@ HTML_PAGE = """\
     <button class="tab" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
     <button class="tab" data-tab="agents" onclick="switchTab('agents')">Agents</button>
   </div>
+  <button class="mute-toggle" id="muteToggle" onclick="toggleMute()" title="Toggle notification sounds"></button>
 </div>
 <div class="content">
   <div id="chat" class="panel active">
@@ -520,6 +531,7 @@ HTML_PAGE = """\
     <div class="chat-input">
       <select id="recipient"></select>
       <input type="text" id="msgInput" placeholder="Send a message..." onkeydown="if(event.key==='Enter')sendMsg()">
+      <button class="mic-btn" id="micBtn" onclick="toggleMic()" title="Voice input" aria-label="Voice input" style="display:none"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="1" width="5" height="9" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0"/><line x1="8" y1="12.5" x2="8" y2="15"/><line x1="5.5" y1="15" x2="10.5" y2="15"/></svg></button>
       <button onclick="sendMsg()">Send</button>
     </div>
   </div>
@@ -566,6 +578,25 @@ HTML_PAGE = """\
 </div>
 <div id="diffBackdrop" class="diff-backdrop" onclick="closeDiffPanel()"></div>
 <script>
+// --- Mute toggle ---
+let _isMuted = localStorage.getItem('standup-muted') === 'true';
+function toggleMute() {
+  _isMuted = !_isMuted;
+  localStorage.setItem('standup-muted', _isMuted ? 'true' : 'false');
+  _updateMuteBtn();
+}
+function _updateMuteBtn() {
+  const btn = document.getElementById('muteToggle');
+  if (!btn) return;
+  if (_isMuted) {
+    btn.innerHTML = "<svg width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><polygon points='2,6 2,10 5,10 9,13 9,3 5,6'/><line x1='12' y1='5' x2='15' y2='11'/><line x1='15' y1='5' x2='12' y2='11'/></svg>";
+    btn.title = 'Unmute notifications';
+  } else {
+    btn.innerHTML = "<svg width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><polygon points='2,6 2,10 5,10 9,13 9,3 5,6'/><path d='M11.5 5.5a3.5 3.5 0 0 1 0 5'/></svg>";
+    btn.title = 'Mute notifications';
+  }
+}
+
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
 function fmtStatus(s){return s.split('_').map(w=>cap(w)).join(' ');}
 function fmtTime(iso){const d=new Date(iso);return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});}
@@ -1095,6 +1126,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 async function sendMsg() {
+  if (_micActive && _recognition) { _recognition.stop(); _micActive = false; const mb = document.getElementById('micBtn'); if (mb) { mb.classList.remove('recording'); mb.title = 'Voice input'; } }
   const input = document.getElementById('msgInput');
   const recipient = document.getElementById('recipient').value;
   if (!input.value.trim()) return;
@@ -1135,6 +1167,61 @@ window.addEventListener('hashchange', () => {
   const valid = ['chat', 'tasks', 'agents'];
   if (valid.includes(hash)) switchTab(hash, false);
 });
+// --- Voice-to-text mic ---
+let _recognition = null;
+let _micActive = false;
+let _micStopping = false;
+let _micBaseText = '';
+let _micFinalText = '';
+
+(function initMic() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return;
+  const micBtn = document.getElementById('micBtn');
+  micBtn.style.display = 'flex';
+  _recognition = new SpeechRecognition();
+  _recognition.continuous = true;
+  _recognition.interimResults = true;
+  _recognition.lang = navigator.language || 'en-US';
+  _recognition.onresult = function(e) {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) {
+        _micFinalText += e.results[i][0].transcript;
+      } else {
+        interim += e.results[i][0].transcript;
+      }
+    }
+    document.getElementById('msgInput').value = _micBaseText + _micFinalText + interim;
+  };
+  _recognition.onend = function() {
+    _micActive = false; _micStopping = false;
+    micBtn.classList.remove('recording'); micBtn.title = 'Voice input';
+  };
+  _recognition.onerror = function(e) {
+    if (e.error !== 'aborted' && e.error !== 'no-speech') console.warn('Speech recognition error:', e.error);
+    _micActive = false; _micStopping = false;
+    micBtn.classList.remove('recording'); micBtn.title = 'Voice input';
+  };
+})();
+
+function toggleMic() {
+  if (!_recognition || _micStopping) return;
+  const micBtn = document.getElementById('micBtn');
+  if (_micActive) {
+    _micStopping = true; _recognition.stop();
+    micBtn.classList.remove('recording'); micBtn.title = 'Voice input';
+  } else {
+    const input = document.getElementById('msgInput');
+    _micBaseText = input.value ? input.value + ' ' : '';
+    _micFinalText = '';
+    try { _recognition.start(); } catch(e) { return; }
+    _micActive = true;
+    micBtn.classList.add('recording'); micBtn.title = 'Stop recording';
+  }
+}
+
+_updateMuteBtn();
 initFromHash();
 loadSidebar();
 </script>
