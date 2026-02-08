@@ -384,15 +384,13 @@ async function loadTasks() {
   const el = document.getElementById('taskTable');
   if (!allTasks.length) { el.innerHTML = '<p style="color:#888">No tasks yet.</p>'; return; }
 
-  // Populate assignee dropdown from task data (preserve selection)
+  // Populate assignee dropdown from task data (always rebuild, preserve selection)
   const assignees = new Set();
   for (const t of allTasks) { if (t.assignee) assignees.add(t.assignee); }
   const assigneeSel = document.getElementById('taskFilterAssignee');
   const prevAssignee = assigneeSel.value;
-  if (assigneeSel.options.length <= 1) {
-    assigneeSel.innerHTML = '<option value="">All</option>'
-      + [...assignees].sort().map(n => `<option value="${n}">${cap(n)}</option>`).join('');
-  }
+  assigneeSel.innerHTML = '<option value="">All</option>'
+    + [...assignees].sort().map(n => `<option value="${n}">${cap(n)}</option>`).join('');
   assigneeSel.value = prevAssignee;
 
   // Client-side filtering
