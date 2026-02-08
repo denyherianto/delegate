@@ -8,6 +8,9 @@ Provides:
     POST /messages    — director sends a message to an agent
     GET  /agents      — list agents and their states (JSON)
     GET  /agents/{name}/stats — agent stats (tasks, tokens, cost)
+    GET  /agents/{name}/inbox — agent inbox messages (read/unread)
+    GET  /agents/{name}/outbox — agent outbox messages (routed/pending)
+    GET  /agents/{name}/logs — agent worklog sessions
 
 When started via `scripts.run`, the daemon loop (message routing +
 agent orchestration) runs as an asyncio background task inside the
@@ -29,7 +32,7 @@ from pydantic import BaseModel
 
 from scripts.task import list_tasks as _list_tasks, get_task as _get_task, get_task_diff as _get_task_diff, VALID_STATUSES
 from scripts.chat import get_messages as _get_messages, get_task_stats as _get_task_stats, get_agent_stats as _get_agent_stats
-from scripts.mailbox import send as _send
+from scripts.mailbox import send as _send, read_inbox as _read_inbox, read_outbox as _read_outbox
 from scripts.bootstrap import get_member_by_role
 
 logger = logging.getLogger(__name__)
@@ -202,6 +205,91 @@ def create_app(root: Path | None = None) -> FastAPI:
     def get_agent_stats(name: str):
         """Get aggregated stats for a specific agent."""
         return _get_agent_stats(root, name)
+
+    @app.get("/agents/{name}/inbox")
+    def get_agent_inbox(name: str):
+        """Return all messages in the agent's inbox with read/unread status."""
+        from fastapi import HTTPException
+        agent_dir = root / ".standup" / "team" / name
+        if not agent_dir.is_dir():
+            raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+
+        # Get unread filenames for comparison
+        unread_msgs = _read_inbox(root, name, unread_only=True)
+        unread_filenames = {m.filename for m in unread_msgs}
+
+        # Get all messages (read + unread)
+        all_msgs = _read_inbox(root, name, unread_only=False)
+
+        result = [
+            {
+                "sender": m.sender,
+                "time": m.time,
+                "body": m.body,
+                "read": m.filename not in unread_filenames,
+            }
+            for m in all_msgs
+        ]
+        # Sort newest first, limit to 100
+        result.sort(key=lambda x: x["time"], reverse=True)
+        return result[:100]
+
+    @app.get("/agents/{name}/outbox")
+    def get_agent_outbox(name: str):
+        """Return all messages in the agent's outbox with routed/pending status."""
+        from fastapi import HTTPException
+        agent_dir = root / ".standup" / "team" / name
+        if not agent_dir.is_dir():
+            raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+
+        # Get pending filenames for comparison
+        pending_msgs = _read_outbox(root, name, pending_only=True)
+        pending_filenames = {m.filename for m in pending_msgs}
+
+        # Get all messages (routed + pending)
+        all_msgs = _read_outbox(root, name, pending_only=False)
+
+        result = [
+            {
+                "recipient": m.recipient,
+                "time": m.time,
+                "body": m.body,
+                "routed": m.filename not in pending_filenames,
+            }
+            for m in all_msgs
+        ]
+        # Sort newest first, limit to 100
+        result.sort(key=lambda x: x["time"], reverse=True)
+        return result[:100]
+
+    @app.get("/agents/{name}/logs")
+    def get_agent_logs(name: str):
+        """Return the agent's worklog entries."""
+        from fastapi import HTTPException
+        agent_dir = root / ".standup" / "team" / name
+        if not agent_dir.is_dir():
+            raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+
+        logs_dir = agent_dir / "logs"
+        sessions = []
+        if logs_dir.is_dir():
+            # Collect worklog files and sort numerically
+            worklog_files = [f for f in logs_dir.iterdir() if f.name.endswith(".worklog.md")]
+            worklog_files.sort(key=lambda f: int(f.name.split(".")[0]) if f.name.split(".")[0].isdigit() else 0)
+
+            for f in worklog_files:
+                content = f.read_text()
+                # Truncate to last 50KB if very large
+                if len(content) > 50 * 1024:
+                    content = content[-(50 * 1024):]
+                sessions.append({
+                    "filename": f.name,
+                    "content": content,
+                })
+
+        # Return in reverse order (latest session first)
+        sessions.reverse()
+        return {"sessions": sessions}
 
     @app.get("/", response_class=HTMLResponse)
     def index():
