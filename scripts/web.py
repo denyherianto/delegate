@@ -429,6 +429,8 @@ function _taskRowHtml(t) {
 }
 
 function _updateTaskRowInPlace(row, t) {
+  // Sync expanded class so CSS max-height transition fires
+  row.classList.toggle('expanded', _expandedTasks.has(t.id));
   const s = _taskStatsCache[t.id];
   const fmtDate = d => d ? new Date(d).toLocaleString() : '\u2014';
   // Update summary fields
@@ -520,7 +522,12 @@ async function loadTasks() {
     // In-place update — no DOM rebuild, no transition restart
     for (const t of tasks) {
       const row = listEl.querySelector('.task-row[data-id="' + t.id + '"]');
-      if (row) _updateTaskRowInPlace(row, t);
+      if (row) {
+        // Sync expanded class with _expandedTasks state
+        const shouldExpand = _expandedTasks.has(t.id);
+        row.classList.toggle('expanded', shouldExpand);
+        _updateTaskRowInPlace(row, t);
+      }
     }
   } else {
     // Full rebuild — first load or tasks changed
