@@ -500,25 +500,73 @@ async function loadChat() {
   sel.value = prev || (mgr ? mgr.name : agents[0]?.name || '');
 }
 
+let _expandedAgents = new Set();
+let _agentStatsCache = {};
+
 async function loadAgents() {
   const res = await fetch('/agents');
   const agents = await res.json();
   const el = document.getElementById('agents');
-  // Preserve which cards are expanded
-  const expanded = new Set();
-  el.querySelectorAll('.agent-card.expanded').forEach(c => expanded.add(c.dataset.name));
-  el.innerHTML = agents.map(a => `<div class="agent-card${expanded.has(a.name) ? ' expanded' : ''}" data-name="${a.name}" onclick="toggleAgent(this, '${a.name}')">
-    <span class="dot ${a.pid ? 'dot-active' : 'dot-idle'}"></span>
-    <span class="agent-name">${cap(a.name)}</span>
-    <span class="agent-status">${a.pid ? 'Running (PID ' + a.pid + ')' : 'Idle'} \u00b7 ${a.unread_inbox} unread</span>
-    <div class="agent-stats" id="agent-stats-${a.name}" onclick="event.stopPropagation()"></div>
-  </div>`).join('');
-  // Re-fetch stats for expanded cards
-  for (const name of expanded) fetchAgentStats(name);
+  const agentNames = new Set(agents.map(a => a.name));
+  const existingCards = new Set();
+  el.querySelectorAll('.agent-card').forEach(c => existingCards.add(c.dataset.name));
+
+  // Determine if we need a full rebuild (agents added/removed) or just update in-place
+  const sameSet = agentNames.size === existingCards.size && [...agentNames].every(n => existingCards.has(n));
+
+  if (sameSet) {
+    // Update existing cards in-place — no flicker
+    for (const a of agents) {
+      const card = el.querySelector(`.agent-card[data-name="${a.name}"]`);
+      if (!card) continue;
+      const dot = card.querySelector('.dot');
+      dot.className = 'dot ' + (a.pid ? 'dot-active' : 'dot-idle');
+      card.querySelector('.agent-status').textContent =
+        (a.pid ? 'Running (PID ' + a.pid + ')' : 'Idle') + ' \u00b7 ' + a.unread_inbox + ' unread';
+    }
+  } else {
+    // Full rebuild — agents changed
+    el.innerHTML = agents.map(a => `<div class="agent-card${_expandedAgents.has(a.name) ? ' expanded' : ''}" data-name="${a.name}" onclick="toggleAgent(this, '${a.name}')">
+      <span class="dot ${a.pid ? 'dot-active' : 'dot-idle'}"></span>
+      <span class="agent-name">${cap(a.name)}</span>
+      <span class="agent-status">${a.pid ? 'Running (PID ' + a.pid + ')' : 'Idle'} \u00b7 ${a.unread_inbox} unread</span>
+      <div class="agent-stats" id="agent-stats-${a.name}" onclick="event.stopPropagation()"></div>
+    </div>`).join('');
+    // Restore stats from cache and re-fetch for expanded cards
+    for (const name of _expandedAgents) {
+      if (agentNames.has(name)) {
+        if (_agentStatsCache[name]) renderAgentStats(name, _agentStatsCache[name]);
+        fetchAgentStats(name);
+      }
+    }
+  }
+  // Refresh stats for expanded cards periodically (in-place path too)
+  for (const name of _expandedAgents) {
+    if (agentNames.has(name)) fetchAgentStats(name);
+  }
 }
 async function toggleAgent(card, name) {
   card.classList.toggle('expanded');
-  if (card.classList.contains('expanded')) fetchAgentStats(name);
+  if (card.classList.contains('expanded')) {
+    _expandedAgents.add(name);
+    fetchAgentStats(name);
+  } else {
+    _expandedAgents.delete(name);
+  }
+}
+function renderAgentStats(name, s) {
+  const el = document.getElementById('agent-stats-' + name);
+  if (!el) return;
+  el.innerHTML = `<div class="agent-stats-grid">
+    <div class="agent-stat"><div class="agent-stat-label">Tasks done</div><div class="agent-stat-value">${s.tasks_done}</div></div>
+    <div class="agent-stat"><div class="agent-stat-label">In review</div><div class="agent-stat-value">${s.tasks_in_review}</div></div>
+    <div class="agent-stat"><div class="agent-stat-label">Total tasks</div><div class="agent-stat-value">${s.tasks_total}</div></div>
+    <div class="agent-stat"><div class="agent-stat-label">Sessions</div><div class="agent-stat-value">${s.session_count}</div></div>
+    <div class="agent-stat"><div class="agent-stat-label">Tokens (in/out)</div><div class="agent-stat-value">${fmtTokens(s.total_tokens_in, s.total_tokens_out)}</div></div>
+    <div class="agent-stat"><div class="agent-stat-label">Total cost</div><div class="agent-stat-value">${fmtCost(s.total_cost_usd)}</div></div>
+    <div class="agent-stat"><div class="agent-stat-label">Agent time</div><div class="agent-stat-value">${fmtElapsed(s.agent_time_seconds)}</div></div>
+    <div class="agent-stat"><div class="agent-stat-label">Avg task time</div><div class="agent-stat-value">${fmtElapsed(s.avg_task_seconds)}</div></div>
+  </div>`;
 }
 async function fetchAgentStats(name) {
   const el = document.getElementById('agent-stats-' + name);
@@ -526,16 +574,8 @@ async function fetchAgentStats(name) {
   try {
     const r = await fetch('/agents/' + name + '/stats');
     const s = await r.json();
-    el.innerHTML = `<div class="agent-stats-grid">
-      <div class="agent-stat"><div class="agent-stat-label">Tasks done</div><div class="agent-stat-value">${s.tasks_done}</div></div>
-      <div class="agent-stat"><div class="agent-stat-label">In review</div><div class="agent-stat-value">${s.tasks_in_review}</div></div>
-      <div class="agent-stat"><div class="agent-stat-label">Total tasks</div><div class="agent-stat-value">${s.tasks_total}</div></div>
-      <div class="agent-stat"><div class="agent-stat-label">Sessions</div><div class="agent-stat-value">${s.session_count}</div></div>
-      <div class="agent-stat"><div class="agent-stat-label">Tokens (in/out)</div><div class="agent-stat-value">${fmtTokens(s.total_tokens_in, s.total_tokens_out)}</div></div>
-      <div class="agent-stat"><div class="agent-stat-label">Total cost</div><div class="agent-stat-value">${fmtCost(s.total_cost_usd)}</div></div>
-      <div class="agent-stat"><div class="agent-stat-label">Agent time</div><div class="agent-stat-value">${fmtElapsed(s.agent_time_seconds)}</div></div>
-      <div class="agent-stat"><div class="agent-stat-label">Avg task time</div><div class="agent-stat-value">${fmtElapsed(s.avg_task_seconds)}</div></div>
-    </div>`;
+    _agentStatsCache[name] = s;
+    renderAgentStats(name, s);
   } catch(e) { el.innerHTML = '<p style="color:#555;font-size:12px">Stats unavailable</p>'; }
 }
 
