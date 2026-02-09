@@ -469,10 +469,10 @@ HTML_PAGE = """\
   .msg-event-line { flex: 1; height: 1px; background: var(--border-subtle); }
   .msg-event-text { color: var(--text-faint); font-size: 11px; white-space: nowrap; }
   .msg-event-time { color: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
-  .chat-input { display: flex; gap: 8px; flex-shrink: 0; }
-  .chat-input input { flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: inherit; font-size: 13px; outline: none; transition: border-color 0.15s; }
-  .chat-input input:focus { border-color: var(--border-focus); }
-  .chat-input input::placeholder { color: var(--text-faint); }
+  .chat-input { display: flex; gap: 8px; flex-shrink: 0; align-items: flex-end; }
+  .chat-input textarea { flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: inherit; font-size: 13px; outline: none; transition: border-color 0.15s; resize: none; min-height: 3.6em; max-height: 12em; overflow-y: auto; line-height: 1.4; }
+  .chat-input textarea:focus { border-color: var(--border-focus); }
+  .chat-input textarea::placeholder { color: var(--text-faint); }
   .chat-input select { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: inherit; font-size: 13px; outline: none; cursor: pointer; }
   .chat-input button { padding: 10px 20px; border-radius: 8px; border: none; background: var(--btn-bg); color: var(--btn-text); font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.15s; }
   .chat-input button:hover { background: var(--btn-hover); }
@@ -618,7 +618,7 @@ HTML_PAGE = """\
     <div class="chat-log" id="chatLog"></div>
     <div class="chat-input">
       <select id="recipient"></select>
-      <input type="text" id="msgInput" placeholder="Send a message..." onkeydown="if(event.key==='Enter')sendMsg()">
+      <textarea id="msgInput" placeholder="Send a message..." rows="3" onkeydown="handleChatKeydown(event)" oninput="autoResizeTextarea(this)"></textarea>
       <button class="mic-btn" id="micBtn" onclick="toggleMic()" title="Voice input" aria-label="Voice input" style="display:none"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="1" width="5" height="9" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0"/><line x1="8" y1="12.5" x2="8" y2="15"/><line x1="5.5" y1="15" x2="10.5" y2="15"/></svg></button>
       <button onclick="sendMsg()">Send</button>
     </div>
@@ -1410,6 +1410,16 @@ document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closePanel();
 });
 
+function autoResizeTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+function resetTextareaHeight(el) {
+  el.style.height = '';
+}
+function handleChatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+}
 async function sendMsg() {
   if (_micActive && _recognition) { _recognition.stop(); _micActive = false; const mb = document.getElementById('micBtn'); if (mb) { mb.classList.remove('recording'); mb.title = 'Voice input'; } }
   const input = document.getElementById('msgInput');
@@ -1423,6 +1433,7 @@ async function sendMsg() {
     body: JSON.stringify({recipient, content: input.value})
   });
   input.value = '';
+  resetTextareaHeight(input);
 }
 
 // Lightweight refresh of relative timestamps (no data fetch)
@@ -1479,7 +1490,7 @@ let _micFinalText = '';
         interim += e.results[i][0].transcript;
       }
     }
-    document.getElementById('msgInput').value = _micBaseText + _micFinalText + interim;
+    const _el = document.getElementById('msgInput'); _el.value = _micBaseText + _micFinalText + interim; autoResizeTextarea(_el);
   };
   _recognition.onend = function() {
     _micActive = false; _micStopping = false;
