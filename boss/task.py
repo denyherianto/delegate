@@ -250,9 +250,9 @@ def get_task_diff(hc_home: Path, task_id: int) -> str:
     (via symlink in ``~/.boss/repos/<repo>/``).  Otherwise falls
     back to ``hc_home`` as the git working directory.
 
-    If ``base_sha`` is set on the task, uses ``base_sha...branch`` for a
-    precise diff showing only the agent's changes.  Otherwise falls back
-    to ``main...branch``, then git log + git show.
+    If ``base_sha`` is set on the task, uses ``base_sha...branch`` (three-dot
+    merge-base diff) for a precise diff showing only the agent's changes.
+    Otherwise falls back to ``main...branch``.
     """
     task = get_task(hc_home, task_id)
     branch = task.get("branch", "")
@@ -267,7 +267,7 @@ def get_task_diff(hc_home: Path, task_id: int) -> str:
     else:
         git_cwd = str(hc_home)
 
-    # Preferred: use base_sha for precise diff
+    # Use base_sha if available, otherwise diff against main
     base_sha = task.get("base_sha", "")
     diff_base = base_sha if base_sha else "main"
 
@@ -281,43 +281,6 @@ def get_task_diff(hc_home: Path, task_id: int) -> str:
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-
-    # Fallback: use git log to find commits, then git show
-    try:
-        log_result = subprocess.run(
-            ["git", "log", "--oneline", branch],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=git_cwd,
-        )
-        if log_result.returncode == 0 and log_result.stdout.strip():
-            lines = log_result.stdout.strip().splitlines()
-            if len(lines) >= 2:
-                last_commit = lines[0].split()[0]
-                first_commit = lines[-1].split()[0]
-                show_result = subprocess.run(
-                    ["git", "show", f"{first_commit}..{last_commit}"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                    cwd=git_cwd,
-                )
-                if show_result.returncode == 0:
-                    return show_result.stdout
-            elif len(lines) == 1:
-                sha = lines[0].split()[0]
-                show_result = subprocess.run(
-                    ["git", "show", sha],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                    cwd=git_cwd,
-                )
-                if show_result.returncode == 0:
-                    return show_result.stdout
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
 

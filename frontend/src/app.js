@@ -749,7 +749,7 @@ function renderDiffFiles() {
     return '<div class="diff-empty">No files changed</div>';
   let html = '<div class="diff-file-list">';
   for (const f of files) {
-    const name = f.newName || f.oldName || "unknown";
+    const name = (f.newName === '/dev/null' ? f.oldName : f.newName) || f.oldName || "unknown";
     html +=
       '<div class="diff-file-list-item" onclick="switchDiffTab(\'diff\')"><span class="diff-file-list-name">' +
       esc(name) +
