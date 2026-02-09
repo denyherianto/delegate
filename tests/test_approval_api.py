@@ -58,6 +58,28 @@ class TestApproveEndpoint:
         resp = client.post("/tasks/9999/approve")
         assert resp.status_code == 404
 
+    def test_approve_wrong_status_400(self, client, tmp_team):
+        """Cannot approve a task that is not in 'needs_merge' status."""
+        task = create_task(tmp_team, title="Open Task")
+        resp = client.post(f"/tasks/{task['id']}/approve")
+        assert resp.status_code == 400
+        assert "needs_merge" in resp.json()["detail"]
+
+    def test_approve_in_progress_400(self, client, tmp_team):
+        """Cannot approve a task in 'in_progress' status."""
+        task = create_task(tmp_team, title="WIP Task")
+        change_status(tmp_team, task["id"], "in_progress")
+        resp = client.post(f"/tasks/{task['id']}/approve")
+        assert resp.status_code == 400
+
+    def test_approve_review_400(self, client, tmp_team):
+        """Cannot approve a task still in 'review' status."""
+        task = create_task(tmp_team, title="Review Task")
+        change_status(tmp_team, task["id"], "in_progress")
+        change_status(tmp_team, task["id"], "review")
+        resp = client.post(f"/tasks/{task['id']}/approve")
+        assert resp.status_code == 400
+
     def test_approve_logs_event(self, client, needs_merge_task, tmp_team):
         client.post(f"/tasks/{needs_merge_task['id']}/approve")
 

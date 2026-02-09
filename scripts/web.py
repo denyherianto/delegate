@@ -166,12 +166,19 @@ def create_app(root: Path | None = None) -> FastAPI:
 
         Sets task.approval_status to 'approved'. For manual-approval repos,
         this signals the daemon to merge on its next cycle.
+        Only tasks in 'needs_merge' status can be approved.
         """
         from fastapi import HTTPException
         try:
             task = _get_task(root, task_id)
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        if task["status"] != "needs_merge":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot approve task in '{task['status']}' status. Task must be in 'needs_merge' status.",
+            )
 
         updated = _update_task(root, task_id, approval_status="approved")
 
