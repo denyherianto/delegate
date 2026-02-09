@@ -198,6 +198,9 @@ function _openTeamDropdown() {
   // Remove old dropdown if any
   _closeTeamDropdown();
   _teamDropdownOpen = true;
+  // Rotate chevron to indicate open state
+  const chevron = document.getElementById("sidebarTeamChevron");
+  if (chevron) chevron.style.transform = "rotate(180deg)";
   const dd = document.createElement("div");
   dd.className = "sidebar-team-dropdown";
   dd.id = "sidebarTeamDropdown";
@@ -216,6 +219,9 @@ function _openTeamDropdown() {
 
 function _closeTeamDropdown() {
   _teamDropdownOpen = false;
+  // Reset chevron rotation
+  const chevron = document.getElementById("sidebarTeamChevron");
+  if (chevron) chevron.style.transform = "";
   const dd = document.getElementById("sidebarTeamDropdown");
   if (dd) dd.remove();
 }
