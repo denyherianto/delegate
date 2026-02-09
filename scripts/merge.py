@@ -169,10 +169,19 @@ def _do_merge(clone_path: Path, branch: str) -> tuple[bool, str]:
 
 
 def _notify_manager(root: Path, task: dict, detail: str) -> None:
-    """Send a conflict notification to the engineering manager."""
+    """Send a conflict notification to the engineering manager.
+
+    The message is sent from the director (the daemon runs on the
+    director's behalf) to the manager.
+    """
     manager = get_member_by_role(root, "manager")
     if not manager:
         logger.warning("No manager found to notify about merge conflict")
+        return
+
+    director = get_member_by_role(root, "director")
+    if not director:
+        logger.warning("No director found to send merge conflict notification")
         return
 
     task_id = task["id"]
@@ -190,8 +199,7 @@ def _notify_manager(root: Path, task: dict, detail: str) -> None:
         f"The assignee should rebase and resolve the conflict."
     )
 
-    # Send from a system/daemon identity
-    send_message(root, "system", manager, message)
+    send_message(root, director, manager, message)
     logger.info("Notified %s about merge conflict on T%04d", manager, task_id)
 
 

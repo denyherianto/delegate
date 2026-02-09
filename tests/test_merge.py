@@ -286,8 +286,8 @@ class TestMergeOnce:
 
 
 class TestNotifyManager:
-    def test_sends_message_to_manager(self, tmp_team):
-        """Notification should be sent to the team manager."""
+    def test_sends_message_from_director_to_manager(self, tmp_team):
+        """Notification should be sent from director to manager."""
         task = {
             "id": 1,
             "repo": "myrepo",
@@ -301,8 +301,8 @@ class TestNotifyManager:
             mock_send.assert_called_once()
             args = mock_send.call_args[0]
             assert args[0] == tmp_team
-            assert args[1] == "system"
-            assert args[2] == "manager"  # the manager from conftest
+            assert args[1] == "director"  # sender is the director
+            assert args[2] == "manager"   # recipient is the manager
             assert "T0001" in args[3]
             assert "CONFLICT" in args[3]
             assert "alice" in args[3]
@@ -312,6 +312,19 @@ class TestNotifyManager:
         task = {"id": 1, "repo": "r", "branch": "b", "assignee": "a"}
 
         with patch("scripts.merge.get_member_by_role", return_value=None):
+            # Should not raise
+            _notify_manager(tmp_team, task, "detail")
+
+    def test_handles_no_director(self, tmp_team):
+        """Should not crash if no director is found."""
+        task = {"id": 1, "repo": "r", "branch": "b", "assignee": "a"}
+
+        def side_effect(root, role):
+            if role == "manager":
+                return "manager"
+            return None  # no director
+
+        with patch("scripts.merge.get_member_by_role", side_effect=side_effect):
             # Should not raise
             _notify_manager(tmp_team, task, "detail")
 
