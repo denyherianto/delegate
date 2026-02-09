@@ -631,6 +631,38 @@ HTML_PAGE = """\
   .agent-log-content { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; line-height: 1.5; color: var(--text-secondary); padding: 8px 12px; white-space: pre-wrap; max-height: 400px; overflow-y: auto; display: none; }
   .agent-log-content.expanded { display: block; }
 
+  /* Task Inspector Panel */
+  .diff-panel-body:has(.task-inspector) { padding: 0; overflow: hidden; }
+  .task-inspector { display: flex; flex-direction: column; height: 100%; }
+  .task-inspector-fields { padding: 16px 20px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
+  .task-inspector-fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .task-inspector-field { display: flex; flex-direction: column; gap: 2px; }
+  .task-inspector-field-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+  .task-inspector-field-value { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+  .task-inspector-field-value .badge { font-size: 11px; }
+  .task-inspector-field-mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; color: #60a5fa; }
+  .task-inspector-diff { flex: 1; overflow-y: auto; border-bottom: 1px solid var(--border-subtle); min-height: 0; }
+  .task-inspector-diff-header { display: flex; gap: 2px; padding: 8px 20px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; background: var(--bg-sidebar); }
+  .task-inspector-diff-body { padding: 16px 20px; overflow-y: auto; flex: 1; }
+  .task-inspector-approval { padding: 16px 20px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; }
+  .task-inspector-approval-actions { display: flex; gap: 10px; align-items: center; }
+  .btn-approve { padding: 8px 20px; border-radius: 6px; border: none; background: #22c55e; color: #fff; font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.15s; }
+  .btn-approve:hover { background: #16a34a; }
+  .btn-approve:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-reject { padding: 8px 20px; border-radius: 6px; border: 1px solid rgba(239,68,68,0.4); background: rgba(239,68,68,0.08); color: #ef4444; font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+  .btn-reject:hover { background: rgba(239,68,68,0.16); border-color: rgba(239,68,68,0.6); }
+  .btn-reject:disabled { opacity: 0.5; cursor: not-allowed; }
+  .reject-reason-input { width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: inherit; font-size: 13px; outline: none; transition: border-color 0.15s; }
+  .reject-reason-input:focus { border-color: var(--border-focus); }
+  .reject-reason-row { display: flex; gap: 8px; align-items: center; }
+  .approval-badge { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; }
+  .approval-badge-approved { background: rgba(34,197,94,0.12); color: #22c55e; }
+  .approval-badge-rejected { background: rgba(239,68,68,0.12); color: #ef4444; }
+  .approval-rejection-reason { font-size: 12px; color: var(--text-secondary); margin-top: 4px; font-style: italic; }
+  .badge-needs_merge { background: rgba(168,85,247,0.12); color: #a855f7; }
+  .badge-merged { background: rgba(34,197,94,0.12); color: #22c55e; }
+  .badge-rejected { background: rgba(239,68,68,0.12); color: #ef4444; }
+
   /* Mute toggle */
   .mute-toggle { background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 4px 8px; transition: color 0.15s; margin-left: auto; display: flex; align-items: center; justify-content: center; line-height: 1; }
   .mute-toggle:hover { color: var(--text-secondary); }
@@ -1038,12 +1070,7 @@ async function loadTasks() {
   }
 }
 function toggleTask(id) {
-  if (_expandedTasks.has(id)) {
-    _expandedTasks.delete(id);
-  } else {
-    _expandedTasks.add(id);
-  }
-  loadTasks();
+  openTaskPanel(id);
 }
 
 async function loadChat() {
@@ -1227,7 +1254,12 @@ async function loadSidebar() {
 }
 
 // --- Panel (shared state for diff + agent modes) ---
-let _panelMode = null; // 'diff' | 'agent'
+let _panelMode = null; // 'diff' | 'agent' | 'task'
+let _panelTaskId = null;
+let _panelTaskData = null;
+let _taskDiffData = null;
+let _taskDiffTab = 'files';
+let _rejectReasonVisible = false;
 let _panelAgent = null;
 let _agentTabData = {};
 let _agentCurrentTab = 'inbox';
@@ -1329,8 +1361,9 @@ async function openDiffPanel(taskId) {
   document.getElementById('diffPanelBranch').textContent = 'Loading...';
   document.getElementById('diffPanelCommits').innerHTML = '';
   document.getElementById('diffPanelCommits').style.display = '';
-  // Restore diff tabs
+  // Restore diff tabs (may have been hidden by task panel mode)
   const tabsEl = panel.querySelector('.diff-panel-tabs');
+  tabsEl.style.display = '';
   tabsEl.innerHTML = '<button class="diff-tab active" data-dtab="files" onclick="switchDiffTab(\\'files\\')">Files Changed</button><button class="diff-tab" data-dtab="diff" onclick="switchDiffTab(\\'diff\\')">Full Diff</button>';
   document.getElementById('diffPanelBody').innerHTML = '<div class="diff-empty">Loading diff...</div>';
   panel.classList.add('open');
@@ -1357,6 +1390,11 @@ function closePanel() {
   _panelMode = null;
   _panelAgent = null;
   _agentTabData = {};
+  _panelTaskId = null;
+  _panelTaskData = null;
+  _taskDiffData = null;
+  _taskDiffTab = 'files';
+  _rejectReasonVisible = false;
 }
 function closeDiffPanel() { closePanel(); }
 
@@ -1441,6 +1479,220 @@ function _renderAgentTab(tab, data) {
   else if (tab === 'stats') body.innerHTML = renderAgentStatsPanel(data);
 }
 
+// --- Task Inspector Panel ---
+function renderTaskFields(task, stats) {
+  const tid = 'T' + String(task.id).padStart(4, '0');
+  const branch = task.branch || (stats && stats.branch) || '';
+  const commits = task.commits || (stats && stats.commits) || [];
+  return '<div class="task-inspector-fields">' +
+    '<div class="task-inspector-fields-grid">' +
+      '<div class="task-inspector-field"><span class="task-inspector-field-label">Status</span><span class="task-inspector-field-value"><span class="badge badge-' + task.status + '">' + fmtStatus(task.status) + '</span></span></div>' +
+      '<div class="task-inspector-field"><span class="task-inspector-field-label">Priority</span><span class="task-inspector-field-value">' + cap(task.priority) + '</span></div>' +
+      '<div class="task-inspector-field"><span class="task-inspector-field-label">Assignee</span><span class="task-inspector-field-value">' + (task.assignee ? cap(task.assignee) : '\\u2014') + '</span></div>' +
+      '<div class="task-inspector-field"><span class="task-inspector-field-label">Reviewer</span><span class="task-inspector-field-value">' + (task.reviewer ? cap(task.reviewer) : '\\u2014') + '</span></div>' +
+      '<div class="task-inspector-field"><span class="task-inspector-field-label">Repo</span><span class="task-inspector-field-value">' + (task.repo || '\\u2014') + '</span></div>' +
+      (branch ? '<div class="task-inspector-field"><span class="task-inspector-field-label">Branch</span><span class="task-inspector-field-value task-inspector-field-mono">' + esc(branch) + '</span></div>' : '<div class="task-inspector-field"><span class="task-inspector-field-label">Branch</span><span class="task-inspector-field-value">\\u2014</span></div>') +
+      '<div class="task-inspector-field"><span class="task-inspector-field-label">Created</span><span class="task-inspector-field-value ts" data-ts="' + (task.created_at || '') + '">' + fmtTimestamp(task.created_at) + '</span></div>' +
+      '<div class="task-inspector-field"><span class="task-inspector-field-label">Updated</span><span class="task-inspector-field-value ts" data-ts="' + (task.updated_at || '') + '">' + fmtTimestamp(task.updated_at) + '</span></div>' +
+    '</div>' +
+    (commits.length ? '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' + commits.map(c => '<span class="diff-panel-commit">' + esc(String(c).substring(0,7)) + '</span>').join('') + '</div>' : '') +
+  '</div>';
+}
+
+function renderTaskDiffSection(files, tab) {
+  const tabsHtml = '<div class="task-inspector-diff-header">' +
+    '<button class="diff-tab' + (tab === 'files' ? ' active' : '') + '" data-dtab="files" onclick="switchTaskDiffTab(\\'files\\')">Files Changed</button>' +
+    '<button class="diff-tab' + (tab === 'diff' ? ' active' : '') + '" data-dtab="diff" onclick="switchTaskDiffTab(\\'diff\\')">Full Diff</button>' +
+  '</div>';
+  const bodyHtml = '<div class="task-inspector-diff-body">' +
+    (files === null ? '<div class="diff-empty">Loading diff...</div>' :
+     tab === 'files' ? renderDiffFiles(files) : renderDiffFull(files)) +
+  '</div>';
+  return tabsHtml + bodyHtml;
+}
+
+function renderTaskApprovalSection(task) {
+  const status = task.status;
+  const approvalStatus = task.approval_status || '';
+
+  // For merged/approved tasks show accepted badge
+  if (status === 'merged' || approvalStatus === 'approved') {
+    return '<div class="task-inspector-approval"><div class="approval-badge approval-badge-approved">\\u2714 Approved</div></div>';
+  }
+  // For rejected tasks show rejected badge with reason
+  if (status === 'rejected' || approvalStatus === 'rejected') {
+    const reason = task.rejection_reason || '';
+    return '<div class="task-inspector-approval"><div class="approval-badge approval-badge-rejected">\\u2716 Rejected</div>' +
+      (reason ? '<div class="approval-rejection-reason">' + esc(reason) + '</div>' : '') +
+    '</div>';
+  }
+  // For needs_merge tasks show approve/reject buttons
+  if (status === 'needs_merge') {
+    let html = '<div class="task-inspector-approval">';
+    html += '<div class="task-inspector-approval-actions">';
+    html += '<button class="btn-approve" onclick="approveTask(' + task.id + ')">Approve</button>';
+    html += '<button class="btn-reject" onclick="toggleRejectReason()">Reject</button>';
+    html += '</div>';
+    if (_rejectReasonVisible) {
+      html += '<div class="reject-reason-row"><input type="text" class="reject-reason-input" id="rejectReasonInput" placeholder="Reason for rejection..." onkeydown="if(event.key===\\'Enter\\')rejectTask(' + task.id + ')"><button class="btn-reject" onclick="rejectTask(' + task.id + ')" style="flex-shrink:0">Confirm</button></div>';
+    }
+    html += '</div>';
+    return html;
+  }
+  // For other statuses, hide approval section
+  return '';
+}
+
+function renderTaskInspectorBody() {
+  if (!_panelTaskData) return '<div class="diff-empty">Loading...</div>';
+  const task = _panelTaskData.task;
+  const stats = _panelTaskData.stats;
+  let html = '<div class="task-inspector">';
+  html += renderTaskFields(task, stats);
+  // Diff section
+  if (task.repo) {
+    html += '<div style="display:flex;flex-direction:column;flex:1;min-height:0">';
+    html += renderTaskDiffSection(_taskDiffData, _taskDiffTab);
+    html += '</div>';
+  } else {
+    html += '<div class="task-inspector-diff" style="display:flex;align-items:center;justify-content:center"><div class="diff-empty">No code changes</div></div>';
+  }
+  // Approval section
+  html += renderTaskApprovalSection(task);
+  html += '</div>';
+  return html;
+}
+
+function switchTaskDiffTab(tab) {
+  _taskDiffTab = tab;
+  // Re-render only the diff body
+  const panel = document.getElementById('diffPanel');
+  const diffHeader = panel.querySelector('.task-inspector-diff-header');
+  const diffBody = panel.querySelector('.task-inspector-diff-body');
+  if (diffHeader) {
+    diffHeader.querySelectorAll('.diff-tab').forEach(t => t.classList.toggle('active', t.dataset.dtab === tab));
+  }
+  if (diffBody && _taskDiffData) {
+    diffBody.innerHTML = tab === 'files' ? renderDiffFiles(_taskDiffData) : renderDiffFull(_taskDiffData);
+  }
+}
+
+function toggleRejectReason() {
+  _rejectReasonVisible = !_rejectReasonVisible;
+  // Re-render the panel body
+  document.getElementById('diffPanelBody').innerHTML = renderTaskInspectorBody();
+  if (_rejectReasonVisible) {
+    setTimeout(() => { const el = document.getElementById('rejectReasonInput'); if (el) el.focus(); }, 50);
+  }
+}
+
+async function approveTask(taskId) {
+  try {
+    const res = await fetch('/tasks/' + taskId + '/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    if (res.ok) {
+      // Refresh panel data
+      openTaskPanel(taskId);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert('Failed to approve: ' + (err.detail || res.statusText));
+    }
+  } catch(e) {
+    alert('Failed to approve task: ' + e.message);
+  }
+}
+
+async function rejectTask(taskId) {
+  const reasonEl = document.getElementById('rejectReasonInput');
+  const reason = reasonEl ? reasonEl.value.trim() : '';
+  try {
+    const res = await fetch('/tasks/' + taskId + '/reject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason })
+    });
+    if (res.ok) {
+      _rejectReasonVisible = false;
+      openTaskPanel(taskId);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert('Failed to reject: ' + (err.detail || res.statusText));
+    }
+  } catch(e) {
+    alert('Failed to reject task: ' + e.message);
+  }
+}
+
+async function openTaskPanel(taskId) {
+  _panelMode = 'task';
+  _panelTaskId = taskId;
+  _panelAgent = null;
+  _agentTabData = {};
+  _diffData = null;
+  _taskDiffData = null;
+  _taskDiffTab = 'files';
+
+  const panel = document.getElementById('diffPanel');
+  const backdrop = document.getElementById('diffBackdrop');
+  const tid = 'T' + String(taskId).padStart(4, '0');
+
+  document.getElementById('diffPanelTitle').textContent = tid;
+  document.getElementById('diffPanelBranch').textContent = 'Loading...';
+  document.getElementById('diffPanelCommits').innerHTML = '';
+  document.getElementById('diffPanelCommits').style.display = 'none';
+
+  // Hide tabs for task mode — we render our own sections inside the body
+  const tabsEl = panel.querySelector('.diff-panel-tabs');
+  tabsEl.innerHTML = '';
+  tabsEl.style.display = 'none';
+
+  document.getElementById('diffPanelBody').innerHTML = '<div class="diff-empty">Loading...</div>';
+  panel.classList.add('open');
+  backdrop.classList.add('open');
+
+  try {
+    // Fetch task data and stats in parallel
+    const [taskRes, statsRes] = await Promise.all([
+      fetch('/tasks'),
+      fetch('/tasks/' + taskId + '/stats')
+    ]);
+    const allTasks = await taskRes.json();
+    const task = allTasks.find(t => t.id === taskId);
+    const stats = statsRes.ok ? await statsRes.json() : null;
+
+    if (!task) {
+      document.getElementById('diffPanelBody').innerHTML = '<div class="diff-empty">Task not found</div>';
+      return;
+    }
+
+    _panelTaskData = { task, stats };
+    document.getElementById('diffPanelTitle').textContent = tid + ' \\u2014 ' + task.title;
+    document.getElementById('diffPanelBranch').textContent = '';
+
+    // Render initial body (without diff loaded yet)
+    document.getElementById('diffPanelBody').innerHTML = renderTaskInspectorBody();
+
+    // Now fetch diff asynchronously if task has a repo
+    if (task.repo) {
+      try {
+        const diffRes = await fetch('/tasks/' + taskId + '/diff');
+        const diffData = await diffRes.json();
+        _taskDiffData = parseDiff(diffData.diff || '');
+        // Re-render only if still viewing this task
+        if (_panelMode === 'task' && _panelTaskId === taskId) {
+          document.getElementById('diffPanelBody').innerHTML = renderTaskInspectorBody();
+        }
+      } catch(e) {
+        _taskDiffData = [];
+        if (_panelMode === 'task' && _panelTaskId === taskId) {
+          document.getElementById('diffPanelBody').innerHTML = renderTaskInspectorBody();
+        }
+      }
+    }
+  } catch(e) {
+    document.getElementById('diffPanelBody').innerHTML = '<div class="diff-empty">Failed to load task</div>';
+  }
+}
+
 async function openAgentPanel(agentName) {
   _panelMode = 'agent';
   _panelAgent = agentName;
@@ -1464,8 +1716,9 @@ async function openAgentPanel(agentName) {
     if (agent) document.getElementById('diffPanelBranch').textContent = cap(agent.role);
   } catch(e) {}
 
-  // Replace tabs with agent tabs
+  // Replace tabs with agent tabs (restore display in case task panel hid them)
   const tabsEl = panel.querySelector('.diff-panel-tabs');
+  tabsEl.style.display = '';
   tabsEl.innerHTML = '<button class="diff-tab active" data-dtab="inbox" onclick="switchAgentTab(\\'inbox\\')">Inbox</button>' +
     '<button class="diff-tab" data-dtab="outbox" onclick="switchAgentTab(\\'outbox\\')">Outbox</button>' +
     '<button class="diff-tab" data-dtab="logs" onclick="switchAgentTab(\\'logs\\')">Logs</button>' +
