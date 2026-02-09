@@ -295,6 +295,8 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             "branch": task.get("branch", ""),
             "commits": task.get("commits", []),
             "diff": diff_text,
+            "merge_base": task.get("merge_base", ""),
+            "merge_tip": task.get("merge_tip", ""),
         }
 
     # --- Task approval endpoints ---

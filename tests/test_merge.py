@@ -350,6 +350,92 @@ class TestMergeTask:
 # merge_once tests
 # ---------------------------------------------------------------------------
 
+class TestMergeBaseAndTip:
+    """Tests for merge_base and merge_tip fields."""
+
+    def test_empty_on_task_creation(self, hc_home):
+        """merge_base and merge_tip should be empty strings on new tasks."""
+        task = create_task(hc_home, title="New task")
+        assert task["merge_base"] == ""
+        assert task["merge_tip"] == ""
+
+    def test_set_after_successful_merge(self, hc_home, tmp_path):
+        """merge_base and merge_tip should be set after a successful merge."""
+        repo = _setup_git_repo(tmp_path)
+        branch = "alice/T0001"
+        _make_feature_branch(repo, branch)
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        # Record main HEAD before merge (expected merge_base)
+        pre_merge = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=str(repo),
+            capture_output=True, text=True, check=True,
+        )
+        expected_base = pre_merge.stdout.strip()
+
+        task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        update_task(hc_home, task["id"], approval_status="approved")
+
+        result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
+        assert result.success is True
+
+        updated = get_task(hc_home, task["id"])
+        assert updated["merge_base"] == expected_base
+        assert updated["merge_tip"] != ""
+        assert updated["merge_tip"] != updated["merge_base"]
+
+        # merge_tip should be the current HEAD of main
+        post_merge = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=str(repo),
+            capture_output=True, text=True, check=True,
+        )
+        assert updated["merge_tip"] == post_merge.stdout.strip()
+
+    def test_merge_base_tip_give_correct_diff(self, hc_home, tmp_path):
+        """git diff merge_base..merge_tip should show exactly the merged changes."""
+        repo = _setup_git_repo(tmp_path)
+        branch = "alice/T0001"
+        _make_feature_branch(repo, branch, filename="new_feature.py", content="# feature code\n")
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        update_task(hc_home, task["id"], approval_status="approved")
+
+        result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
+        assert result.success is True
+
+        updated = get_task(hc_home, task["id"])
+        diff_result = subprocess.run(
+            ["git", "diff", f"{updated['merge_base']}..{updated['merge_tip']}"],
+            cwd=str(repo), capture_output=True, text=True, check=True,
+        )
+        assert "new_feature.py" in diff_result.stdout
+        assert "# feature code" in diff_result.stdout
+
+    def test_not_set_on_failed_merge(self, hc_home, tmp_path):
+        """merge_base and merge_tip should remain empty on failed merges."""
+        repo = _setup_git_repo(tmp_path)
+
+        # Create a conflicting scenario
+        _make_feature_branch(repo, "alice/T0001", filename="file.txt", content="feature\n")
+        (repo / "file.txt").write_text("main conflict\n")
+        subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Conflict on main"], cwd=str(repo), capture_output=True, check=True)
+
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001")
+        update_task(hc_home, task["id"], approval_status="approved")
+
+        with patch("boss.merge.notify_conflict"):
+            result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
+
+        assert result.success is False
+        updated = get_task(hc_home, task["id"])
+        assert updated["merge_base"] == ""
+        assert updated["merge_tip"] == ""
+
+
 class TestMergeOnce:
     def test_empty_when_no_tasks(self, hc_home):
         results = merge_once(hc_home, SAMPLE_TEAM)

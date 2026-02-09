@@ -865,8 +865,14 @@ async function openDiffPanel(taskId) {
   try {
     const res = await fetch("/tasks/" + taskId + "/diff");
     const data = await res.json();
-    document.getElementById("diffPanelBranch").textContent =
-      data.branch || "no branch";
+    // Show merge_base..merge_tip range if available, otherwise branch name
+    if (data.merge_base && data.merge_tip) {
+      document.getElementById("diffPanelBranch").textContent =
+        data.merge_base.substring(0, 7) + ".." + data.merge_tip.substring(0, 7);
+    } else {
+      document.getElementById("diffPanelBranch").textContent =
+        data.branch || "no branch";
+    }
     document.getElementById("diffPanelCommits").innerHTML = (
       data.commits || []
     )

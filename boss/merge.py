@@ -243,6 +243,11 @@ def merge_task(
             return MergeResult(task_id, False, f"Tests failed: {output[:200]}")
 
     # Step 3: Fast-forward merge
+    # Capture HEAD of main before the merge (merge_base).
+    # Ensure we read main's HEAD, not the current branch.
+    pre_merge = _run_git(["rev-parse", "main"], cwd=repo_str)
+    merge_base_sha = pre_merge.stdout.strip() if pre_merge.returncode == 0 else ""
+
     ok, output = _ff_merge(repo_str, branch)
     if not ok:
         change_status(hc_home, task_id, "conflict")
@@ -250,7 +255,12 @@ def merge_task(
         log_event(hc_home, f"Merge: {format_task_id(task_id)} ff-merge failed")
         return MergeResult(task_id, False, f"Merge failed: {output[:200]}")
 
-    # Step 4: Mark as merged
+    # Capture HEAD of main after the merge (merge_tip)
+    post_merge = _run_git(["rev-parse", "main"], cwd=repo_str)
+    merge_tip_sha = post_merge.stdout.strip() if post_merge.returncode == 0 else ""
+
+    # Step 4: Record merge_base and merge_tip, then mark as merged
+    update_task(hc_home, task_id, merge_base=merge_base_sha, merge_tip=merge_tip_sha)
     change_status(hc_home, task_id, "merged")
     log_event(hc_home, f"Merge: {format_task_id(task_id)} merged to main ✓")
 

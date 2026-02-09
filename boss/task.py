@@ -119,6 +119,8 @@ def create_task(
         "commits": [],
         "rejection_reason": "",
         "approval_status": "",
+        "merge_base": "",
+        "merge_tip": "",
     }
 
     path = _task_path(td, task_id)
@@ -145,6 +147,8 @@ def get_task(hc_home: Path, task_id: int) -> dict:
     task.setdefault("rejection_reason", "")
     task.setdefault("approval_status", "")
     task.setdefault("tags", [])
+    task.setdefault("merge_base", "")
+    task.setdefault("merge_tip", "")
     return task
 
 
@@ -267,7 +271,24 @@ def get_task_diff(hc_home: Path, task_id: int) -> str:
     else:
         git_cwd = str(hc_home)
 
-    # Use base_sha if available, otherwise diff against main
+    # Prefer merge_base..merge_tip for merged tasks (exact diff that landed)
+    merge_base = task.get("merge_base", "")
+    merge_tip = task.get("merge_tip", "")
+    if merge_base and merge_tip:
+        try:
+            result = subprocess.run(
+                ["git", "diff", f"{merge_base}..{merge_tip}"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=git_cwd,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+    # Fall back to base_sha...branch (pre-merge or older tasks)
     base_sha = task.get("base_sha", "")
     diff_base = base_sha if base_sha else "main"
 
