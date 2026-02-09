@@ -157,6 +157,31 @@ def update_session_task(hc_home: Path, session_id: int, task_id: int) -> None:
     conn.close()
 
 
+def update_session_tokens(
+    hc_home: Path,
+    session_id: int,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
+    cost_usd: float = 0.0,
+) -> None:
+    """Persist running token/cost totals mid-session.
+
+    Called after each agent turn so the dashboard reflects live usage
+    even if the agent crashes before end_session().
+    """
+    conn = _connect(hc_home)
+    conn.execute(
+        """UPDATE sessions SET
+            tokens_in = ?,
+            tokens_out = ?,
+            cost_usd = ?
+        WHERE id = ?""",
+        (tokens_in, tokens_out, cost_usd, session_id),
+    )
+    conn.commit()
+    conn.close()
+
+
 def get_task_stats(hc_home: Path, task_id: int) -> dict:
     """Get aggregated stats for a task from the sessions table."""
     conn = _connect(hc_home)

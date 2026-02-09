@@ -11,6 +11,7 @@ from boss.chat import (
     start_session,
     end_session,
     update_session_task,
+    update_session_tokens,
     get_task_stats,
     get_project_stats,
 )
@@ -260,6 +261,45 @@ class TestSessions:
         stats = get_project_stats(tmp_team, "nonexistent")
         assert stats["session_count"] == 0
         assert stats["total_tokens_in"] == 0
+
+    def test_update_session_tokens_mid_session(self, tmp_team):
+        """update_session_tokens persists running totals before end_session."""
+        from boss.task import create_task
+        task = create_task(tmp_team, title="Live tracking task")
+        session_id = start_session(tmp_team, "alice", task_id=task["id"])
+
+        # Simulate first turn
+        update_session_tokens(tmp_team, session_id, tokens_in=100, tokens_out=50, cost_usd=0.01)
+        stats = get_task_stats(tmp_team, task["id"])
+        assert stats["total_tokens_in"] == 100
+        assert stats["total_tokens_out"] == 50
+        assert stats["total_cost_usd"] == 0.01
+
+        # Simulate second turn — tokens accumulate, cost is replaced (cumulative from SDK)
+        update_session_tokens(tmp_team, session_id, tokens_in=250, tokens_out=120, cost_usd=0.03)
+        stats = get_task_stats(tmp_team, task["id"])
+        assert stats["total_tokens_in"] == 250
+        assert stats["total_tokens_out"] == 120
+        assert stats["total_cost_usd"] == 0.03
+
+        # end_session should overwrite with final values
+        end_session(tmp_team, session_id, tokens_in=250, tokens_out=120, cost_usd=0.03)
+        stats = get_task_stats(tmp_team, task["id"])
+        assert stats["total_tokens_in"] == 250
+        assert stats["total_tokens_out"] == 120
+        assert stats["total_cost_usd"] == 0.03
+
+    def test_update_session_tokens_visible_before_end(self, tmp_team):
+        """Stats should be visible even if session hasn't ended (crash scenario)."""
+        session_id = start_session(tmp_team, "bob")
+        update_session_tokens(tmp_team, session_id, tokens_in=500, tokens_out=200, cost_usd=0.10)
+
+        # Query agent stats — session has no ended_at but tokens should be visible
+        from boss.chat import get_agent_stats
+        stats = get_agent_stats(tmp_team, "bob")
+        assert stats["total_tokens_in"] == 500
+        assert stats["total_tokens_out"] == 200
+        assert stats["total_cost_usd"] == 0.10
 
 
 class TestGetCurrentTaskId:

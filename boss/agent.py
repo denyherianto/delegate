@@ -449,7 +449,15 @@ async def wait_for_inbox(
 # ---------------------------------------------------------------------------
 
 def _collect_tokens_from_message(msg: Any) -> tuple[int, int, float]:
-    """Extract (tokens_in, tokens_out, cost_usd) from a ResultMessage."""
+    """Extract (tokens_in, tokens_out, cost_usd) from a ResultMessage.
+
+    The SDK's ``total_cost_usd`` on ResultMessage is a **cumulative session
+    total** — it reflects the running cost across all turns in the persistent
+    CLI process.  Callers should treat the returned cost as an absolute value
+    (not a delta) and replace (not sum) their running total with it.
+
+    Token counts from ``usage`` are per-turn deltas and can be summed.
+    """
     msg_type = type(msg).__name__
     if hasattr(msg, "total_cost_usd"):
         cost = msg.total_cost_usd or 0.0
@@ -460,7 +468,7 @@ def _collect_tokens_from_message(msg: Any) -> tuple[int, int, float]:
             tin = usage.get("input_tokens", 0)
             tout = usage.get("output_tokens", 0)
         logger.debug(
-            "Token extract from %s: usage=%r cost_usd=%r -> tin=%d tout=%d cost=%.4f",
+            "Token extract from %s: usage=%r cost_usd=%r -> tin=%d tout=%d cost=%.6f",
             msg_type, usage, msg.total_cost_usd, tin, tout, cost,
         )
         return tin, tout, cost
@@ -515,7 +523,7 @@ async def run_agent_loop(
     token_budget = state.get("token_budget")
 
     # Session tracking
-    from boss.chat import start_session, end_session, log_event, update_session_task
+    from boss.chat import start_session, end_session, log_event, update_session_task, update_session_tokens
     current_task = _get_current_task(hc_home, agent)
     current_task_id = current_task["id"] if current_task else None
     session_id = start_session(hc_home, agent, task_id=current_task_id)
@@ -566,8 +574,22 @@ async def run_agent_loop(
                 tin, tout, cost = _collect_tokens_from_message(msg)
                 total_tokens_in += tin
                 total_tokens_out += tout
-                total_cost_usd += cost
+                # cost is cumulative session total from SDK — replace, don't sum
+                if cost > 0:
+                    total_cost_usd = cost
                 _append_to_worklog(worklog_lines, msg)
+
+            # Persist running totals after each turn (crash-safe)
+            update_session_tokens(
+                hc_home, session_id,
+                tokens_in=total_tokens_in,
+                tokens_out=total_tokens_out,
+                cost_usd=total_cost_usd,
+            )
+            logger.info(
+                "Turn 1 tokens: in=%d out=%d cost=$%.6f",
+                total_tokens_in, total_tokens_out, total_cost_usd,
+            )
 
             # Mark only the first unread message as read (one-at-a-time processing)
             _first = read_inbox(hc_home, team, agent, unread_only=True)
@@ -599,8 +621,22 @@ async def run_agent_loop(
                     tin, tout, cost = _collect_tokens_from_message(msg)
                     total_tokens_in += tin
                     total_tokens_out += tout
-                    total_cost_usd += cost
+                    # cost is cumulative session total from SDK — replace, don't sum
+                    if cost > 0:
+                        total_cost_usd = cost
                     _append_to_worklog(worklog_lines, msg)
+
+                # Persist running totals after each turn (crash-safe)
+                update_session_tokens(
+                    hc_home, session_id,
+                    tokens_in=total_tokens_in,
+                    tokens_out=total_tokens_out,
+                    cost_usd=total_cost_usd,
+                )
+                logger.info(
+                    "Turn %d tokens: in=%d out=%d cost=$%.6f",
+                    turn, total_tokens_in, total_tokens_out, total_cost_usd,
+                )
 
                 # Mark only the first unread message as read (one-at-a-time)
                 _first = read_inbox(hc_home, team, agent, unread_only=True)
@@ -731,7 +767,9 @@ async def _run_agent_oneshot(
             tin, tout, cost = _collect_tokens_from_message(message)
             total_tokens_in += tin
             total_tokens_out += tout
-            total_cost_usd += cost
+            # cost is cumulative session total from SDK — replace, don't sum
+            if cost > 0:
+                total_cost_usd = cost
             _append_to_worklog(worklog_lines, message)
 
         worklog_content = "\n".join(worklog_lines)
