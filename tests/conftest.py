@@ -1,8 +1,17 @@
 """Shared test fixtures for standup tests."""
 
+import sys
 from pathlib import Path
 
 import pytest
+
+# Ensure the worktree's headcount/ directory is on the package path so that
+# new modules (e.g. headcount.notify) are importable even before the branch
+# is merged to main and installed.
+_worktree_hc = str(Path(__file__).resolve().parent.parent / "headcount")
+import headcount  # noqa: E402
+if _worktree_hc not in headcount.__path__:
+    headcount.__path__.insert(0, _worktree_hc)
 
 from scripts.bootstrap import bootstrap
 

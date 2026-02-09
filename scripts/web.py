@@ -34,7 +34,7 @@ from pydantic import BaseModel
 
 from scripts.task import list_tasks as _list_tasks, get_task as _get_task, get_task_diff as _get_task_diff, update_task as _update_task, change_status as _change_status, VALID_STATUSES
 from scripts.chat import get_messages as _get_messages, get_task_stats as _get_task_stats, get_agent_stats as _get_agent_stats
-from scripts.mailbox import send as _send, read_inbox as _read_inbox, read_outbox as _read_outbox
+from scripts.mailbox import send as _send, read_inbox as _read_inbox, read_outbox as _read_outbox, deliver as _deliver, Message as _Message
 from scripts.bootstrap import get_member_by_role
 
 logger = logging.getLogger(__name__)
@@ -200,7 +200,9 @@ def create_app(root: Path | None = None) -> FastAPI:
         """Reject a task with a reason.
 
         Sets task status to 'rejected', stores the rejection reason,
-        and sends a notification to the EM (manager) for triage.
+        and sends a structured notification to the manager for triage.
+        The notification includes task details and suggested actions
+        (rework / reassign / discard).
         """
         from fastapi import HTTPException
         try:
@@ -219,17 +221,36 @@ def create_app(root: Path | None = None) -> FastAPI:
                                rejection_reason=body.reason,
                                approval_status="rejected")
 
-        # Notify the EM (manager) so they can triage
+        # Send structured notification to the manager for triage
         director_name = get_member_by_role(root, "director") or "director"
         manager_name = get_member_by_role(root, "manager") or "manager"
         title = task.get("title", f"T{task_id:04d}")
-        assignee = task.get("assignee", "unknown")
-        _send(
-            root,
-            director_name,
-            manager_name,
-            f"Task T{task_id:04d} ({title}) by {assignee} was rejected. Reason: {body.reason}",
+        assignee = task.get("assignee", "(unassigned)")
+
+        notification = (
+            f"TASK_REJECTED: T{task_id:04d}\n"
+            f"\n"
+            f"Task: T{task_id:04d} — {title}\n"
+            f"Assignee: {assignee}\n"
+            f"Reason: {body.reason or '(no reason provided)'}\n"
+            f"\n"
+            f"Suggested actions:\n"
+            f"  - Rework: reset to in_progress, same assignee fixes the issues\n"
+            f"  - Reassign: assign to a different team member\n"
+            f"  - Discard: close the task if no longer needed"
         )
+
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        msg = _Message(
+            sender=director_name,
+            recipient=manager_name,
+            time=now,
+            body=notification,
+        )
+        try:
+            _deliver(root, msg)
+        except (ValueError, FileNotFoundError):
+            logger.warning("Could not deliver rejection notification for T%04d", task_id)
 
         from scripts.chat import log_event
         log_event(root, f"T{task_id:04d} rejected: {body.reason}")

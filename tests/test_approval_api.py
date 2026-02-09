@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from scripts.task import create_task, change_status, get_task, update_task
 from scripts.web import create_app
-from scripts.mailbox import read_outbox
+from scripts.mailbox import read_inbox
 
 
 @pytest.fixture
@@ -120,16 +120,16 @@ class TestRejectEndpoint:
         assert "created_at" in data
 
     def test_reject_sends_notification_to_manager(self, client, needs_merge_task, tmp_team):
-        """Rejecting a task should send a notification to the EM (manager)."""
+        """Rejecting a task should deliver a notification to the manager's inbox."""
         client.post(
             f"/tasks/{needs_merge_task['id']}/reject",
             json={"reason": "Fails CI checks"},
         )
 
-        # Check director's outbox for the notification (pending routing to manager)
-        outbox = read_outbox(tmp_team, "director", pending_only=True)
-        assert len(outbox) >= 1
-        notification = outbox[0]
+        # Check manager's inbox for the notification (direct delivery)
+        inbox = read_inbox(tmp_team, "manager", unread_only=True)
+        assert len(inbox) >= 1
+        notification = inbox[0]
         assert notification.recipient == "manager"
         assert "rejected" in notification.body.lower()
         assert "Fails CI checks" in notification.body
@@ -141,8 +141,8 @@ class TestRejectEndpoint:
             json={"reason": "Needs rework"},
         )
 
-        outbox = read_outbox(tmp_team, "director", pending_only=True)
-        notification = outbox[0]
+        inbox = read_inbox(tmp_team, "manager", unread_only=True)
+        notification = inbox[0]
         assert f"T{needs_merge_task['id']:04d}" in notification.body
         assert "Feature X" in notification.body
 
