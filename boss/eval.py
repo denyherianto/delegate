@@ -51,6 +51,7 @@ DEFAULT_CHARTER_FILES = [
     "task-management.md",
     "code-review.md",
     "manager.md",
+    "continuous-improvement.md",
 ]
 
 # Default team name for eval runs

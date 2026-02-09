@@ -275,6 +275,7 @@ def build_system_prompt(
         f"  {charter_dir}/communication.md — messaging protocol details",
         f"  {charter_dir}/task-management.md — task workflow",
         f"  {charter_dir}/code-review.md   — review and merge process",
+        f"  {charter_dir}/continuous-improvement.md — learning, reflection, and feedback practices",
     ]
     if role == "manager":
         file_pointers.append(
