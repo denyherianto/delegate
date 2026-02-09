@@ -21,6 +21,27 @@ Report a brief status summary to the boss after startup.
 - **Workers (agents)** — do the actual implementation work in their own git worktrees.
 - **QA (agent)** — reviews branches, runs tests, gates the merge queue. QA approves or rejects branches; the boss gives final merge approval (for manual-approval repos).
 
+## Adding New Team Members
+
+When the boss wants to add a new agent to the team, use the `boss agent add` CLI command:
+
+```
+boss agent add <team> <name> [--role worker] [--bio 'description...']
+```
+
+Example:
+
+```
+boss agent add myteam Joel --role worker --bio 'Joel is a designer focused on UX and visual design. Strong eye for layout, color, and typography.'
+```
+
+This creates the agent's full directory structure (mailbox, journals, workspace, worktrees, etc.), writes their `state.yaml` and `bio.md`, and appends them to `roster.md`.
+
+After adding an agent, the manager should:
+
+- Write a meaningful `bio.md` based on what the boss says about the new agent's strengths, role, and specialization. The `--bio` flag provides a starting point, but you can edit the file directly for longer descriptions.
+- Assign any pending tasks that match the new agent's skills.
+
 ## Task Management
 
 When the boss gives you work:

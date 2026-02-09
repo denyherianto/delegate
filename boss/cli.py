@@ -6,6 +6,7 @@ Commands:
     boss daemon stop                   — stop running daemon
     boss team create <name> ...        — create a new team
     boss team list                     — list existing teams
+    boss agent add <team> <name>       — add an agent to a team
     boss config set boss <name>    — set org-wide boss name
     boss config set source-repo <path> — set boss source repo path
     boss repo add <path_or_url> [--name N]  — register a repository
@@ -194,6 +195,44 @@ def team_list(ctx: click.Context) -> None:
     click.echo("Teams:")
     for t in teams:
         click.echo(f"  - {t}")
+
+
+# ──────────────────────────────────────────────────────────────
+# boss agent add
+# ──────────────────────────────────────────────────────────────
+
+@main.group()
+def agent() -> None:
+    """Manage agents on a team."""
+    pass
+
+
+@agent.command("add")
+@click.argument("team")
+@click.argument("name")
+@click.option(
+    "--role", default="worker",
+    help="Role for the new agent (default: worker).",
+)
+@click.option(
+    "--bio", default=None,
+    help="Short bio/description of the agent's strengths and focus.",
+)
+@click.pass_context
+def agent_add(ctx: click.Context, team: str, name: str, role: str, bio: str | None) -> None:
+    """Add a new agent to an existing team.
+
+    TEAM is the team name.  NAME is the new agent's name.
+    """
+    from boss.bootstrap import add_agent
+
+    hc_home = _get_home(ctx)
+    try:
+        add_agent(hc_home, team_name=team, agent_name=name, role=role, bio=bio)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc))
+
+    click.echo(f"Added agent '{name}' to team '{team}' (role: {role})")
 
 
 # ──────────────────────────────────────────────────────────────

@@ -279,6 +279,94 @@ def bootstrap(
         (dd / subdir).mkdir(parents=True, exist_ok=True)
 
 
+def add_agent(
+    hc_home: Path,
+    team_name: str,
+    agent_name: str,
+    role: str = "worker",
+    bio: str | None = None,
+) -> None:
+    """Add a new agent to an existing team.
+
+    Creates the full agent directory structure (all AGENT_SUBDIRS),
+    state.yaml, bio.md, and context.md.  Appends the agent to the
+    team's roster.md.
+
+    Args:
+        hc_home: Boss home directory (~/.boss).
+        team_name: Name of the existing team.
+        agent_name: Name for the new agent.
+        role: Agent role (default ``"worker"``).
+        bio: Optional bio text.  If omitted a placeholder is written.
+
+    Raises:
+        FileNotFoundError: If the team does not exist.
+        ValueError: If the agent name already exists on this team,
+            collides with another team's agent, or matches the boss name.
+    """
+    td = _team_dir(hc_home, team_name)
+    if not td.is_dir():
+        raise FileNotFoundError(f"Team '{team_name}' does not exist")
+
+    agents_root = _agents_dir(hc_home, team_name)
+    member_dir = agents_root / agent_name
+
+    # --- name validation ---
+    if member_dir.exists():
+        raise ValueError(f"Agent '{agent_name}' already exists on team '{team_name}'")
+
+    boss_name = get_boss(hc_home)
+    if boss_name and agent_name == boss_name:
+        raise ValueError(
+            f"Agent name '{agent_name}' conflicts with the org-wide boss name"
+        )
+
+    existing = _get_all_agent_names(hc_home, exclude_team=team_name)
+    if agent_name in existing:
+        raise ValueError(
+            f"Agent name '{agent_name}' already used in another team"
+        )
+
+    # --- create directory structure ---
+    member_dir.mkdir(parents=True, exist_ok=True)
+    for subdir in AGENT_SUBDIRS:
+        (member_dir / subdir).mkdir(parents=True, exist_ok=True)
+
+    # Bio
+    bio_file = member_dir / "bio.md"
+    if bio:
+        bio_file.write_text(f"# {agent_name}\n\n{bio}\n")
+    else:
+        bio_file.write_text(f"# {agent_name}\n")
+
+    # Context
+    (member_dir / "context.md").write_text("")
+
+    # State
+    (member_dir / "state.yaml").write_text(
+        yaml.dump(_default_state(role), default_flow_style=False)
+    )
+
+    # --- append to roster.md ---
+    rp = _roster_path(hc_home, team_name)
+    if rp.exists():
+        roster_text = rp.read_text()
+    else:
+        roster_text = "# Team Roster\n"
+
+    # Build the roster line
+    if role in ("manager", "qa", "designer"):
+        roster_line = f"- **{agent_name}** ({role})"
+    else:
+        roster_line = f"- **{agent_name}**"
+
+    # Ensure trailing newline before appending
+    if not roster_text.endswith("\n"):
+        roster_text += "\n"
+    roster_text += roster_line + "\n"
+    rp.write_text(roster_text)
+
+
 def get_member_by_role(hc_home: Path, team: str, role: str) -> str | None:
     """Find the team member name with the given role.
 

@@ -5,7 +5,7 @@ import sqlite3
 import pytest
 import yaml
 
-from boss.bootstrap import bootstrap, AGENT_SUBDIRS, get_member_by_role
+from boss.bootstrap import bootstrap, add_agent, AGENT_SUBDIRS, get_member_by_role
 from boss.config import set_boss, get_boss
 from boss.paths import (
     team_dir, agents_dir, agent_dir, tasks_dir, db_path,
@@ -210,3 +210,102 @@ def test_interactive_extra_charter(tmp_path, monkeypatch):
     override = team_dir(hc_home, TEAM) / "override.md"
     assert override.exists()
     assert "Rust for infrastructure" in override.read_text()
+
+
+# ──────────────────────────────────────────────────────────────
+# add_agent tests
+# ──────────────────────────────────────────────────────────────
+
+def test_add_agent_creates_directory_structure(tmp_team):
+    """add_agent creates all expected directories for the new agent."""
+    add_agent(tmp_team, TEAM, "charlie")
+    ad = agent_dir(tmp_team, TEAM, "charlie")
+    assert ad.is_dir()
+    for subdir in AGENT_SUBDIRS:
+        assert (ad / subdir).is_dir(), f"Missing charlie/{subdir}"
+
+
+def test_add_agent_creates_starter_files(tmp_team):
+    """add_agent creates bio.md, context.md, and state.yaml."""
+    add_agent(tmp_team, TEAM, "charlie")
+    ad = agent_dir(tmp_team, TEAM, "charlie")
+    assert (ad / "bio.md").is_file()
+    assert (ad / "context.md").is_file()
+    assert (ad / "state.yaml").is_file()
+
+
+def test_add_agent_default_role(tmp_team):
+    """add_agent defaults to 'worker' role in state.yaml."""
+    add_agent(tmp_team, TEAM, "charlie")
+    state = yaml.safe_load(
+        (agent_dir(tmp_team, TEAM, "charlie") / "state.yaml").read_text()
+    )
+    assert state["role"] == "worker"
+    assert state["pid"] is None
+
+
+def test_add_agent_custom_role(tmp_team):
+    """add_agent stores a custom role in state.yaml."""
+    add_agent(tmp_team, TEAM, "charlie", role="designer")
+    state = yaml.safe_load(
+        (agent_dir(tmp_team, TEAM, "charlie") / "state.yaml").read_text()
+    )
+    assert state["role"] == "designer"
+
+
+def test_add_agent_bio_written(tmp_team):
+    """add_agent writes the provided bio text into bio.md."""
+    add_agent(tmp_team, TEAM, "charlie", bio="Expert in testing")
+    content = (agent_dir(tmp_team, TEAM, "charlie") / "bio.md").read_text()
+    assert "# charlie" in content
+    assert "Expert in testing" in content
+
+
+def test_add_agent_bio_placeholder(tmp_team):
+    """add_agent writes a placeholder bio when no bio is given."""
+    add_agent(tmp_team, TEAM, "charlie")
+    content = (agent_dir(tmp_team, TEAM, "charlie") / "bio.md").read_text()
+    assert content.strip() == "# charlie"
+
+
+def test_add_agent_appends_to_roster(tmp_team):
+    """add_agent appends the new agent to roster.md."""
+    add_agent(tmp_team, TEAM, "charlie")
+    content = roster_path(tmp_team, TEAM).read_text()
+    assert "charlie" in content
+    # Original members still present
+    for name in ["manager", "alice", "bob"]:
+        assert name in content
+
+
+def test_add_agent_roster_shows_special_role(tmp_team):
+    """add_agent annotates designer/qa roles in roster.md."""
+    add_agent(tmp_team, TEAM, "charlie", role="designer")
+    content = roster_path(tmp_team, TEAM).read_text()
+    assert "(designer)" in content
+
+
+def test_add_agent_rejects_duplicate_on_team(tmp_team):
+    """add_agent errors if the agent already exists on the team."""
+    with pytest.raises(ValueError, match="already exists"):
+        add_agent(tmp_team, TEAM, "alice")
+
+
+def test_add_agent_rejects_boss_name(tmp_team):
+    """add_agent errors if the name conflicts with the boss name."""
+    with pytest.raises(ValueError, match="boss name"):
+        add_agent(tmp_team, TEAM, "nikhil")
+
+
+def test_add_agent_rejects_cross_team_collision(hc):
+    """add_agent errors if the name is used in another team."""
+    bootstrap(hc, "team1", manager="mgr1", agents=["alice"])
+    bootstrap(hc, "team2", manager="mgr2", agents=["bob"])
+    with pytest.raises(ValueError, match="already used"):
+        add_agent(hc, "team2", "alice")
+
+
+def test_add_agent_team_not_found(hc):
+    """add_agent errors if the team doesn't exist."""
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        add_agent(hc, "nonexistent", "charlie")
