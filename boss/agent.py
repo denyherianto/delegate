@@ -372,19 +372,24 @@ def build_user_message(
                 f"=== PREVIOUS SESSION CONTEXT ===\n{context.read_text().strip()}"
             )
 
-    # Unread messages
+    # Unread messages — show ALL for context, but ask the agent to act on
+    # only the first one.  After the turn, only that first message is marked
+    # read; subsequent turns handle the rest one-by-one.
     messages = read_inbox(hc_home, team, agent, unread_only=True)
     if messages:
         parts.append(f"=== NEW MESSAGES ({len(messages)}) ===")
         for i, msg in enumerate(messages, 1):
-            parts.append(f"--- Message {i}/{len(messages)} ---")
+            if i == 1:
+                parts.append(f">>> ACTION REQUIRED — Message {i}/{len(messages)} <<<")
+            else:
+                parts.append(f"--- Upcoming message {i}/{len(messages)} (for context only) ---")
             parts.append(f"[{msg.time}] From {msg.sender}:\n{msg.body}")
-        if len(messages) > 1:
-            parts.append(
-                f"\n⚠️  You have {len(messages)} messages above. "
-                "You MUST take action on EVERY message — send a reply, "
-                "create a task, or otherwise respond to each one before moving on."
-            )
+        parts.append(
+            "\n👉 Respond to the ACTION REQUIRED message above (message 1). "
+            "You may read the other messages for context and adapt your "
+            "response accordingly, but only take action on message 1. "
+            "The remaining messages will be delivered for action in subsequent turns."
+        )
     else:
         parts.append("No new messages.")
 
@@ -566,10 +571,10 @@ async def run_agent_loop(
                 total_cost_usd += cost
                 _append_to_worklog(worklog_lines, msg)
 
-            # Mark inbox read
-            for m in read_inbox(hc_home, team, agent, unread_only=True):
-                if m.filename:
-                    mark_inbox_read(hc_home, team, agent, m.filename)
+            # Mark only the first unread message as read (one-at-a-time processing)
+            _first = read_inbox(hc_home, team, agent, unread_only=True)
+            if _first and _first[0].filename:
+                mark_inbox_read(hc_home, team, agent, _first[0].filename)
 
             # Re-check task association (may set up worktree if task acquired a repo)
             if current_task_id is None:
@@ -599,10 +604,10 @@ async def run_agent_loop(
                     total_cost_usd += cost
                     _append_to_worklog(worklog_lines, msg)
 
-                # Mark inbox read
-                for m in read_inbox(hc_home, team, agent, unread_only=True):
-                    if m.filename:
-                        mark_inbox_read(hc_home, team, agent, m.filename)
+                # Mark only the first unread message as read (one-at-a-time)
+                _first = read_inbox(hc_home, team, agent, unread_only=True)
+                if _first and _first[0].filename:
+                    mark_inbox_read(hc_home, team, agent, _first[0].filename)
 
                 # Re-check task association
                 if current_task_id is None:
@@ -737,9 +742,10 @@ async def _run_agent_oneshot(
         log_path = ad / "logs" / f"{log_num}.worklog.md"
         log_path.write_text(worklog_content)
 
-        for msg in read_inbox(hc_home, team, agent, unread_only=True):
-            if msg.filename:
-                mark_inbox_read(hc_home, team, agent, msg.filename)
+        # Mark only the first unread message as read (one-at-a-time)
+        _first = read_inbox(hc_home, team, agent, unread_only=True)
+        if _first and _first[0].filename:
+            mark_inbox_read(hc_home, team, agent, _first[0].filename)
 
         return worklog_content
 
