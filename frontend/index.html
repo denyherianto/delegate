@@ -71,14 +71,16 @@
 
 <div class="main">
 <div class="header">
-  <div class="tabs">
-    <button class="tab active" data-tab="chat" onclick="switchTab('chat')">Chat</button>
-    <button class="tab" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
-    <button class="tab" data-tab="agents" onclick="switchTab('agents')">Agents</button>
-  </div>
-  <div class="header-actions">
-    <button class="mute-toggle" id="muteToggle" onclick="toggleMute()" title="Toggle notification sounds"></button>
-    <button class="theme-toggle" id="themeToggle" onclick="cycleTheme()" title="Toggle theme"></button>
+  <div class="header-inner">
+    <div class="tabs">
+      <button class="tab active" data-tab="chat" onclick="switchTab('chat')">Chat</button>
+      <button class="tab" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
+      <button class="tab" data-tab="agents" onclick="switchTab('agents')">Agents</button>
+    </div>
+    <div class="header-actions">
+      <button class="mute-toggle" id="muteToggle" onclick="toggleMute()" title="Toggle notification sounds"></button>
+      <button class="theme-toggle" id="themeToggle" onclick="cycleTheme()" title="Toggle theme"></button>
+    </div>
   </div>
 </div>
 <div class="content">
