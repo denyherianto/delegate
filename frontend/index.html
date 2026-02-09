@@ -87,11 +87,10 @@
         <svg class="filter-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="4.5"/><line x1="9.5" y1="9.5" x2="13" y2="13"/></svg>
         <input type="text" class="filter-search" id="chatFilterSearch" placeholder="Search messages..." oninput="onChatSearchInput()">
       </div>
-      <span class="filter-label">From</span>
       <select id="chatFilterFrom" onchange="onChatFilterChange()">
         <option value="">Anyone</option>
       </select>
-      <span class="filter-label">To</span>
+      <span class="filter-arrow" id="chatFilterArrow" onclick="toggleFilterArrow()" title="Toggle direction: one-way / bidirectional">&rarr;</span>
       <select id="chatFilterTo" onchange="onChatFilterChange()">
         <option value="">Anyone</option>
       </select>

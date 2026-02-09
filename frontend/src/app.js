@@ -52,6 +52,9 @@ let _micFinalText = "";
 let _chatSearchTimer = null;
 let _taskSearchTimer = null;
 
+// Chat filter arrow direction: "one-way" (→) or "bidi" (↔)
+let _chatFilterDirection = "one-way";
+
 // =====================================================================
 // Filter persistence (sessionStorage)
 // =====================================================================
@@ -62,6 +65,7 @@ function _saveChatFilters() {
       from: document.getElementById("chatFilterFrom").value,
       to: document.getElementById("chatFilterTo").value,
       showEvents: document.getElementById("chatShowEvents").checked,
+      direction: _chatFilterDirection,
     }));
   } catch (e) {}
 }
@@ -74,6 +78,11 @@ function _restoreChatFilters() {
     if (f.from) document.getElementById("chatFilterFrom").value = f.from;
     if (f.to) document.getElementById("chatFilterTo").value = f.to;
     if (f.showEvents === false) document.getElementById("chatShowEvents").checked = false;
+    if (f.direction === "bidi") {
+      _chatFilterDirection = "bidi";
+      const el = document.getElementById("chatFilterArrow");
+      if (el) { el.innerHTML = "↔"; el.classList.add("bidi"); }
+    }
   } catch (e) {}
 }
 function _saveTaskFilters() {
@@ -109,6 +118,14 @@ function onChatSearchInput() {
   }, 300);
 }
 function onChatFilterChange() {
+  _saveChatFilters();
+  loadChat();
+}
+function toggleFilterArrow() {
+  _chatFilterDirection = _chatFilterDirection === "one-way" ? "bidi" : "one-way";
+  const el = document.getElementById("chatFilterArrow");
+  el.innerHTML = _chatFilterDirection === "bidi" ? "↔" : "→";
+  el.classList.toggle("bidi", _chatFilterDirection === "bidi");
   _saveChatFilters();
   loadChat();
 }
@@ -910,24 +927,52 @@ async function _loadChatInner() {
   const toSel = document.getElementById("chatFilterTo");
   const prevFrom = fromSel.value;
   const prevTo = toSel.value;
-  if (fromSel.options.length <= 1 || toSel.options.length <= 1) {
+
+  // Pre-seed filter dropdowns with all agents (with role labels)
+  if (_currentTeam) {
+    try {
+      const agRes = await fetch("/teams/" + _currentTeam + "/agents");
+      const agList = await agRes.json();
+      // Merge agent names with any senders/recipients from messages
+      const allNames = new Set([...senders, ...recipients, ...agList.map((a) => a.name)]);
+      const roleMap = {};
+      for (const a of agList) roleMap[a.name] = a.role || "worker";
+      const makeOpts = (names) =>
+        '<option value="">Anyone</option>' +
+        [...names]
+          .sort()
+          .map((n) => {
+            const role = roleMap[n];
+            const label = role ? `${cap(n)} (${role})` : cap(n);
+            return `<option value="${n}">${label}</option>`;
+          })
+          .join("");
+      fromSel.innerHTML = makeOpts(allNames);
+      toSel.innerHTML = makeOpts(allNames);
+    } catch (e) {
+      // Fallback to message-based population
+      if (fromSel.options.length <= 1 || toSel.options.length <= 1) {
+        fromSel.innerHTML =
+          '<option value="">Anyone</option>' +
+          [...senders].sort().map((n) => `<option value="${n}">${cap(n)}</option>`).join("");
+        toSel.innerHTML =
+          '<option value="">Anyone</option>' +
+          [...recipients].sort().map((n) => `<option value="${n}">${cap(n)}</option>`).join("");
+      }
+    }
+  } else if (fromSel.options.length <= 1 || toSel.options.length <= 1) {
     fromSel.innerHTML =
       '<option value="">Anyone</option>' +
-      [...senders]
-        .sort()
-        .map((n) => `<option value="${n}">${cap(n)}</option>`)
-        .join("");
+      [...senders].sort().map((n) => `<option value="${n}">${cap(n)}</option>`).join("");
     toSel.innerHTML =
       '<option value="">Anyone</option>' +
-      [...recipients]
-        .sort()
-        .map((n) => `<option value="${n}">${cap(n)}</option>`)
-        .join("");
+      [...recipients].sort().map((n) => `<option value="${n}">${cap(n)}</option>`).join("");
   }
   fromSel.value = prevFrom;
   toSel.value = prevTo;
-  // Auto-bidirectional when both From and To are set
-  const between = !!(filterFrom && filterTo);
+
+  // Filter by direction: arrow toggle controls one-way vs bidirectional
+  const between = _chatFilterDirection === "bidi" && !!(filterFrom && filterTo);
   if (filterFrom || filterTo) {
     msgs = msgs.filter((m) => {
       if (m.type === "event") return true;
@@ -968,19 +1013,17 @@ async function _loadChatInner() {
     .join("");
   if (wasNearBottom) log.scrollTop = log.scrollHeight;
 
-  // Populate recipient dropdown — only team managers
+  // Populate recipient dropdown — all agents, managers first with (manager) label
   if (!_currentTeam) return;
   const agentsRes = await fetch("/teams/" + _currentTeam + "/agents");
   const agents = await agentsRes.json();
   const sel = document.getElementById("recipient");
   const prev = sel.value;
-  const managers = agents.filter((a) => a.role === "manager");
-  sel.innerHTML = managers
-    .map(
-      (a) =>
-        `<option value="${a.name}">${cap(a.name)} (${_currentTeam})</option>`
-    )
-    .join("");
+  const managers = agents.filter((a) => a.role === "manager").sort((a, b) => a.name.localeCompare(b.name));
+  const others = agents.filter((a) => a.role !== "manager").sort((a, b) => a.name.localeCompare(b.name));
+  sel.innerHTML =
+    managers.map((a) => `<option value="${a.name}">${cap(a.name)} (manager)</option>`).join("") +
+    others.map((a) => `<option value="${a.name}">${cap(a.name)} (${a.role || "worker"})</option>`).join("");
   if (!sel.innerHTML)
     sel.innerHTML = agents
       .map((a) => `<option value="${a.name}">${cap(a.name)}</option>`)
@@ -1900,6 +1943,7 @@ Object.assign(window, {
   toggleTaskActivity,
   onChatSearchInput,
   onChatFilterChange,
+  toggleFilterArrow,
   onTaskSearchInput,
   onTaskFilterChange,
 });

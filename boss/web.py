@@ -46,8 +46,6 @@ from boss.config import get_boss
 from boss.task import list_tasks as _list_tasks, get_task as _get_task, get_task_diff as _get_task_diff, update_task as _update_task, change_status as _change_status, VALID_STATUSES, format_task_id
 from boss.chat import get_messages as _get_messages, get_task_stats as _get_task_stats, get_agent_stats as _get_agent_stats, log_event as _log_event
 from boss.mailbox import send as _send, read_inbox as _read_inbox, read_outbox as _read_outbox
-from boss.bootstrap import get_member_by_role
-
 logger = logging.getLogger(__name__)
 
 
@@ -431,14 +429,15 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
     @app.post("/messages")
     def post_message(msg: SendMessage):
-        """Boss sends a message — restricted to team managers only."""
+        """Boss sends a message to any agent in the team."""
         boss_name = get_boss(hc_home) or "boss"
-        # Verify recipient is a manager
-        manager_name = get_member_by_role(hc_home, msg.team, "manager")
-        if manager_name != msg.recipient:
+        # Verify recipient is a valid agent in the team
+        team_agents = _list_team_agents(hc_home, msg.team)
+        agent_names = {a["name"] for a in team_agents}
+        if msg.recipient not in agent_names:
             raise HTTPException(
                 status_code=403,
-                detail=f"Boss can only send messages to the team manager ({manager_name})",
+                detail=f"Recipient '{msg.recipient}' is not an agent in team '{msg.team}'",
             )
         _send(hc_home, msg.team, boss_name, msg.recipient, msg.content)
         return {"status": "queued"}
