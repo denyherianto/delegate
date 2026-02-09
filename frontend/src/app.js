@@ -902,25 +902,147 @@ async function _loadChatInner() {
 // =====================================================================
 // Agents
 // =====================================================================
+const _roleBadgeMap = {
+  worker: "Worker",
+  manager: "Manager",
+  qa: "QA",
+  design: "Design",
+  backend: "Backend",
+  frontend: "Frontend",
+};
+
+function _fmtTokensShort(n) {
+  if (n == null || n === 0) return "0";
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1) + "K";
+  return String(n);
+}
+
+function _fmtDuration(sec) {
+  if (sec == null || sec === 0) return "\u2014";
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (h > 0) return h + "h " + m + "m";
+  return m + "m";
+}
+
+function _fmtRelativeTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const now = new Date();
+  const sec = Math.floor((now - d) / 1000);
+  const min = Math.floor(sec / 60);
+  const hr = Math.floor(min / 60);
+  if (sec < 60) return "just now";
+  if (min < 60) return min + "m ago";
+  if (hr < 24) return hr + "h ago";
+  return Math.floor(hr / 24) + "d ago";
+}
+
 async function loadAgents() {
   if (!_currentTeam) return;
-  let res;
+  let agentsRes, tasksRes;
   try {
-    res = await fetch("/teams/" + _currentTeam + "/agents");
+    [agentsRes, tasksRes] = await Promise.all([
+      fetch("/teams/" + _currentTeam + "/agents"),
+      fetch("/tasks"),
+    ]);
   } catch (e) {
     return;
   }
-  if (!res.ok) return;
-  const agents = await res.json();
+  if (!agentsRes.ok) return;
+  const agents = await agentsRes.json();
+  const tasks = tasksRes.ok ? await tasksRes.json() : [];
+
+  // Fetch stats for all agents in parallel
+  const statsMap = {};
+  await Promise.all(
+    agents.map(async (a) => {
+      try {
+        const r = await fetch("/teams/" + _currentTeam + "/agents/" + a.name + "/stats");
+        if (r.ok) statsMap[a.name] = await r.json();
+      } catch (e) {}
+    })
+  );
+
+  // Build lookup: agent -> current in_progress task
+  const inProgressTasks = tasks.filter((t) => t.status === "in_progress");
+
+  // Count tasks done today per agent
+  const now = new Date();
+  const oneDayAgo = new Date(now - 24 * 60 * 60 * 1000);
+  const doneTodayByAgent = {};
+  for (const t of tasks) {
+    if (t.completed_at && new Date(t.completed_at) > oneDayAgo && t.status === "done" && t.assignee) {
+      doneTodayByAgent[t.assignee] = (doneTodayByAgent[t.assignee] || 0) + 1;
+    }
+  }
+
   const el = document.getElementById("agents");
   el.innerHTML = agents
-    .map(
-      (a) => `<div class="agent-card" data-name="${a.name}" onclick="openAgentPanel('${a.name}')">
-    <span class="dot ${a.pid ? "dot-active" : "dot-idle"}"></span>
-    <span class="agent-name">${cap(a.name)}</span>
-    <span class="agent-status">${a.pid ? "Running (PID " + a.pid + ")" : "Idle"} \u00b7 ${a.unread_inbox} unread</span>
-  </div>`
-    )
+    .map((a) => {
+      const stats = statsMap[a.name] || {};
+      const currentTask = inProgressTasks.find((t) => t.assignee === a.name);
+      const roleBadge = _roleBadgeMap[a.role] || cap(a.role || "worker");
+      const doneToday = doneTodayByAgent[a.name] || 0;
+
+      // Status dot class
+      let dotClass = "agent-card-dot-offline";
+      let statusLabel = "idle";
+      if (a.pid) {
+        dotClass = "agent-card-dot-active";
+        statusLabel = "active";
+      } else if (a.unread_inbox > 0) {
+        dotClass = "agent-card-dot-queued";
+        statusLabel = "queued";
+      }
+
+      // Row 1: Identity
+      const taskLink = currentTask
+        ? '<span class="agent-card-task-link" onclick="event.stopPropagation();openTaskPanel(' + currentTask.id + ')">T' + String(currentTask.id).padStart(4, "0") + '</span>'
+        : '<span class="agent-card-idle-label">' + statusLabel + '</span>';
+
+      // Row 2: Activity
+      let activityText = "Idle";
+      if (a.pid && currentTask) {
+        activityText = "Working on " + esc(currentTask.title);
+      } else if (a.pid) {
+        activityText = "Working...";
+      } else if (a.unread_inbox > 0) {
+        activityText = a.unread_inbox + " message" + (a.unread_inbox !== 1 ? "s" : "") + " waiting";
+      }
+
+      // Last message preview from inbox (we don't have it here, use updated_at from tasks)
+      let lastActivity = "";
+      const agentTasks = tasks.filter((t) => t.assignee === a.name).sort((x, y) => (y.updated_at || "").localeCompare(x.updated_at || ""));
+      if (agentTasks.length > 0 && agentTasks[0].updated_at) {
+        lastActivity = "Last active " + _fmtRelativeTime(agentTasks[0].updated_at);
+      }
+
+      // Row 3: Stats
+      const totalTokens = (stats.total_tokens_in || 0) + (stats.total_tokens_out || 0);
+      const cost = stats.total_cost_usd != null ? "$" + Number(stats.total_cost_usd).toFixed(2) : "$0.00";
+      const agentTime = _fmtDuration(stats.agent_time_seconds);
+
+      return '<div class="agent-card-rich" onclick="openAgentPanel(\'' + a.name + '\')">' +
+        '<div class="agent-card-row1">' +
+          '<span class="agent-card-dot ' + dotClass + '"></span>' +
+          '<span class="agent-card-name">' + cap(a.name) + '</span>' +
+          '<span class="agent-card-role badge-role-' + (a.role || "worker") + '">' + roleBadge + '</span>' +
+          '<span class="agent-card-task-col">' + taskLink + '</span>' +
+        '</div>' +
+        '<div class="agent-card-row2">' +
+          '<span class="agent-card-activity">' + esc(activityText) + '</span>' +
+          (lastActivity ? '<span class="agent-card-last-active">' + esc(lastActivity) + '</span>' : '') +
+        '</div>' +
+        '<div class="agent-card-row3">' +
+          '<span class="agent-card-stat"><span class="agent-card-stat-value">' + doneToday + '</span><span class="agent-card-stat-label">done today</span></span>' +
+          '<span class="agent-card-stat"><span class="agent-card-stat-value">' + _fmtTokensShort(totalTokens) + '</span><span class="agent-card-stat-label">tokens</span></span>' +
+          '<span class="agent-card-stat"><span class="agent-card-stat-value">' + cost + '</span><span class="agent-card-stat-label">cost</span></span>' +
+          '<span class="agent-card-stat"><span class="agent-card-stat-value">' + agentTime + '</span><span class="agent-card-stat-label">uptime</span></span>' +
+        '</div>' +
+      '</div>';
+    })
     .join("");
 }
 
