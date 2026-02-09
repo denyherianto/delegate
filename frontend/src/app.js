@@ -1258,7 +1258,7 @@ async function loadAgents() {
       // Map sidebar dot class to agent-card dot class
       const dotClass = "agent-card-" + sidebarDot;
       const dotTooltip = getAgentDotTooltip(sidebarDot, a, tasks);
-      const statusLabel = sidebarDot === "dot-offline" ? "idle" : sidebarDot.replace("dot-", "");
+      const statusLabel = sidebarDot === "dot-offline" ? "Offline" : sidebarDot.replace("dot-", "");
 
       // Row 1: Identity
       const taskLink = currentTask
@@ -1266,7 +1266,7 @@ async function loadAgents() {
         : '<span class="agent-card-idle-label">' + statusLabel + '</span>';
 
       // Row 2: Activity
-      let activityText = "Idle";
+      let activityText = "Offline";
       if (a.pid && currentTask) {
         activityText = "Working on " + esc(currentTask.title);
       } else if (a.pid) {
@@ -1415,11 +1415,11 @@ async function loadSidebar() {
       if (currentTask) {
         var tid = "T" + String(currentTask.id).padStart(4, "0");
         taskDisplay =
-          '<span class="sidebar-task-id" style="margin-right:4px">' + tid + '</span>' +
-          '<span style="color:var(--text-muted)">\u2014</span> ' +
+          '<span class="sidebar-task-id">' + tid + '</span>' +
+          '<span class="sidebar-agent-task-sep">\u2014</span> ' +
           esc(currentTask.title);
       } else {
-        taskDisplay = '<span style="color:var(--text-faint);font-style:italic">Idle</span>';
+        taskDisplay = '<span class="sidebar-agent-offline">Offline</span>';
       }
       // Last active time (only if agent has PID)
       var lastActiveDisplay = "";
@@ -1430,7 +1430,7 @@ async function loadSidebar() {
         }
       }
       agentHtml +=
-        '<div class="sidebar-agent-row" style="cursor:pointer" onclick="openAgentPanel(\'' + a.name + '\')">' +
+        '<div class="sidebar-agent-row" onclick="openAgentPanel(\'' + a.name + '\')">' +
         '<span class="sidebar-agent-dot ' + dotClass + '" title="' + esc(dotTooltip) + '"></span>' +
         '<span class="sidebar-agent-name">' + cap(a.name) + '</span>' +
         '<span class="sidebar-agent-activity">' + taskDisplay + '</span>' +
@@ -1456,7 +1456,7 @@ async function loadSidebar() {
     for (const t of sorted) {
       const tid = "T" + String(t.id).padStart(4, "0");
       taskHtml +=
-        '<div class="sidebar-task-row" style="cursor:pointer" onclick="openTaskPanel(' +
+        '<div class="sidebar-task-row" onclick="openTaskPanel(' +
         t.id +
         ')"><span class="sidebar-task-dot dot-' + t.status + '" title="' + fmtStatus(t.status) + '"></span>' +
         '<span class="sidebar-task-id">' +

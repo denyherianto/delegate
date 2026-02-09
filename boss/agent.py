@@ -780,7 +780,7 @@ def _session_setup(
     current_task_id = current_task["id"] if current_task else None
     session_id = start_session(hc_home, agent, task_id=current_task_id)
     task_label = f" on {format_task_id(current_task_id)}" if current_task_id else ""
-    log_event(hc_home, f"{agent.capitalize()} started{task_label}")
+    log_event(hc_home, f"{agent.capitalize()} is online{task_label}")
 
     # Workspace
     workspace = get_task_workspace(hc_home, team, agent, current_task)
@@ -842,7 +842,7 @@ def _session_teardown(ctx: _SessionContext) -> str:
     total_tokens = ctx.total_tokens_in + ctx.total_tokens_out
     tokens_fmt = f"{total_tokens:,}"
     cost_str = f" \u00b7 ${ctx.total_cost_usd:.4f}" if ctx.total_cost_usd else ""
-    log_event(ctx.hc_home, f"{ctx.agent.capitalize()} finished ({tokens_fmt} tokens{cost_str})")
+    log_event(ctx.hc_home, f"{ctx.agent.capitalize()} went offline ({tokens_fmt} tokens{cost_str})")
 
     # Write worklog
     worklog_content = "\n".join(ctx.worklog_lines)

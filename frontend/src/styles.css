@@ -426,7 +426,8 @@ body {
 .sidebar-task-dot.dot-rejected { background: var(--status-rejected); }
 .sidebar-task-dot.dot-conflict { background: var(--status-conflict); }
 .sidebar-agent-list { display: flex; flex-direction: column; gap: 0; max-height: calc(28px * 7); overflow-y: auto; }
-.sidebar-agent-row { display: flex; align-items: center; gap: 8px; height: 28px; min-height: 28px; font-size: 12px; padding: 0 4px; }
+.sidebar-agent-row { display: flex; align-items: center; gap: 8px; height: 28px; min-height: 28px; font-size: 12px; padding: 0 4px; cursor: pointer; border-radius: 4px; transition: background 0.15s; }
+.sidebar-agent-row:hover { background: var(--bg-hover); }
 .sidebar-agent-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 /* Agent activity dots (replaces binary online/offline) */
 .sidebar-agent-dot.dot-active { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4); }
@@ -435,10 +436,13 @@ body {
 .sidebar-agent-dot.dot-offline { background: var(--dot-offline); }
 .sidebar-agent-name { color: var(--text-primary); font-weight: 500; white-space: nowrap; width: 60px; min-width: 60px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-agent-activity { color: var(--text-secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.sidebar-agent-offline { color: var(--text-faint); }
+.sidebar-agent-task-sep { color: var(--text-muted); margin: 0 2px; }
+.sidebar-agent-activity .sidebar-task-id { margin-right: 2px; }
 /* Agent last-active time (replaces cost in sidebar) */
 .sidebar-agent-time { color: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; flex-shrink: 0; white-space: nowrap; }
 .sidebar-task-list { display: flex; flex-direction: column; gap: 0; max-height: calc(28px * 7); overflow-y: auto; }
-.sidebar-task-row { display: flex; align-items: center; gap: 8px; height: 28px; min-height: 28px; font-size: 12px; padding: 0 4px; border-radius: 4px; transition: background 0.15s; }
+.sidebar-task-row { display: flex; align-items: center; gap: 8px; height: 28px; min-height: 28px; font-size: 12px; padding: 0 4px; border-radius: 4px; transition: background 0.15s; cursor: pointer; }
 .sidebar-task-row:hover { background: var(--bg-hover); }
 .sidebar-task-id { color: var(--text-muted); font-family: 'SF Mono', 'Fira Code', monospace; font-variant-numeric: tabular-nums; flex-shrink: 0; min-width: 42px; font-size: 11px; }
 .sidebar-task-name { color: var(--text-primary); font-size: 11px; font-weight: 500; flex-shrink: 0; width: 60px; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
