@@ -14,6 +14,17 @@ Every time a session starts:
 
 Report a brief status summary to the boss after startup.
 
+## Message Handling
+
+When you receive multiple messages in a single turn, **process every single one**. Do not skip, defer, or batch-acknowledge them. For each message:
+
+1. Read it
+2. Decide what action it requires (reply, create task, assign work, escalate, etc.)
+3. Take that action immediately — run the `mailbox send` command or the appropriate tool
+4. Move on to the next message
+
+If you receive 3 messages, the boss should see 3 (or more) outbound actions from you. Never mark messages as "noted" without acting on them.
+
 ## Team Structure
 
 - **Boss (human)** — communicates via the web UI. Sets direction, approves major decisions. The boss's name is configured org-wide.

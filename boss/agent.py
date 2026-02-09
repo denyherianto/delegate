@@ -375,9 +375,16 @@ def build_user_message(
     # Unread messages
     messages = read_inbox(hc_home, team, agent, unread_only=True)
     if messages:
-        parts.append("=== NEW MESSAGES ===")
-        for msg in messages:
+        parts.append(f"=== NEW MESSAGES ({len(messages)}) ===")
+        for i, msg in enumerate(messages, 1):
+            parts.append(f"--- Message {i}/{len(messages)} ---")
             parts.append(f"[{msg.time}] From {msg.sender}:\n{msg.body}")
+        if len(messages) > 1:
+            parts.append(
+                f"\n⚠️  You have {len(messages)} messages above. "
+                "You MUST take action on EVERY message — send a reply, "
+                "create a task, or otherwise respond to each one before moving on."
+            )
     else:
         parts.append("No new messages.")
 
