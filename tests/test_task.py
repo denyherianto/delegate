@@ -461,6 +461,82 @@ class TestMergeQueueFields:
         assert loaded["approval_status"] == ""
 
 
+class TestBranchMetadataBackfill:
+    """Tests that branch and base_sha are backfilled on status transitions."""
+
+    @patch("boss.task.subprocess.run")
+    def test_review_backfills_branch_when_empty(self, mock_run, tmp_team):
+        """Transitioning to review should backfill branch from assignee + task_id."""
+        task = create_task(tmp_team, title="Feature X", repo="myrepo")
+        assign_task(tmp_team, task["id"], "alice")
+        change_status(tmp_team, task["id"], "in_progress")
+
+        # Mock git merge-base for base_sha backfill
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "abc123def456" * 3 + "abcd"  # 40 chars
+        mock_run.return_value = mock_result
+
+        updated = change_status(tmp_team, task["id"], "review")
+        assert updated["branch"] == "alice/T0001"
+
+    @patch("boss.task.subprocess.run")
+    def test_review_backfills_base_sha_when_empty(self, mock_run, tmp_team):
+        """Transitioning to review should backfill base_sha via git merge-base."""
+        task = create_task(tmp_team, title="Feature X", repo="myrepo")
+        assign_task(tmp_team, task["id"], "alice")
+        set_task_branch(tmp_team, task["id"], "alice/T0001")
+        change_status(tmp_team, task["id"], "in_progress")
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "abc123def456789012345678901234567890"  # 36 chars
+        mock_run.return_value = mock_result
+
+        updated = change_status(tmp_team, task["id"], "review")
+        assert updated["base_sha"] == "abc123def456789012345678901234567890"
+
+    def test_review_does_not_overwrite_existing_branch(self, tmp_team):
+        """If branch is already set, review transition should not overwrite it."""
+        task = create_task(tmp_team, title="Feature X", repo="myrepo")
+        assign_task(tmp_team, task["id"], "alice")
+        set_task_branch(tmp_team, task["id"], "alice/custom-branch")
+        update_task(tmp_team, task["id"], base_sha="existing_sha")
+        change_status(tmp_team, task["id"], "in_progress")
+
+        updated = change_status(tmp_team, task["id"], "review")
+        assert updated["branch"] == "alice/custom-branch"
+        assert updated["base_sha"] == "existing_sha"
+
+    def test_no_backfill_without_repo(self, tmp_team):
+        """Tasks without a repo should not attempt backfill."""
+        task = create_task(tmp_team, title="No Repo Task")
+        assign_task(tmp_team, task["id"], "alice")
+        change_status(tmp_team, task["id"], "in_progress")
+        updated = change_status(tmp_team, task["id"], "review")
+        assert updated["branch"] == ""
+        assert updated["base_sha"] == ""
+
+    @patch("boss.task.subprocess.run")
+    def test_needs_merge_backfills_branch(self, mock_run, tmp_team):
+        """Transitioning to needs_merge should also backfill branch."""
+        task = create_task(tmp_team, title="Feature X", repo="myrepo")
+        assign_task(tmp_team, task["id"], "alice")
+        change_status(tmp_team, task["id"], "in_progress")
+
+        # For the review transition
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "abc123def456789012345678901234567890"
+        mock_run.return_value = mock_result
+
+        change_status(tmp_team, task["id"], "review")
+
+        # Branch was backfilled during review; verify it's still there for needs_merge
+        updated = change_status(tmp_team, task["id"], "needs_merge")
+        assert updated["branch"] == "alice/T0001"
+
+
 class TestValidTransitions:
     """Tests that verify the VALID_TRANSITIONS map is correct."""
 

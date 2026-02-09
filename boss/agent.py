@@ -395,6 +395,59 @@ def cleanup_task_worktree(
         )
 
 
+def _ensure_task_branch_metadata(
+    hc_home: Path,
+    team: str,
+    agent: str,
+    task: dict,
+    wt_path: Path,
+) -> None:
+    """Backfill branch and base_sha on a task when already-existing worktree is reused.
+
+    When an agent restarts or a worktree was created before the metadata-saving
+    logic existed, the task YAML may have empty ``branch`` and ``base_sha``
+    fields.  This function detects that and fills them in so downstream diff
+    and merge tooling can work.
+    """
+    task_id = task["id"]
+    needs_update = False
+    updates: dict = {}
+
+    # Backfill branch name
+    if not task.get("branch"):
+        branch = _branch_name(agent, task_id, task.get("title", ""))
+        updates["branch"] = branch
+        needs_update = True
+        logger.info("Backfilling branch=%s on task %s", branch, task_id)
+
+    # Backfill base_sha from main HEAD in the repo
+    if not task.get("base_sha"):
+        try:
+            from boss.repo import get_repo_path
+            repo_name = task.get("repo", "")
+            repo_dir = get_repo_path(hc_home, repo_name)
+            real_repo = repo_dir.resolve()
+            import subprocess
+            result = subprocess.run(
+                ["git", "merge-base", "main", "HEAD"],
+                cwd=str(wt_path),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            base_sha = result.stdout.strip()
+            if base_sha:
+                updates["base_sha"] = base_sha
+                needs_update = True
+                logger.info("Backfilling base_sha=%s on task %s", base_sha[:8], task_id)
+        except Exception as exc:
+            logger.warning("Could not backfill base_sha for task %s: %s", task_id, exc)
+
+    if needs_update:
+        from boss.task import update_task
+        update_task(hc_home, task_id, **updates)
+
+
 def get_task_workspace(
     hc_home: Path,
     team: str,
@@ -405,6 +458,10 @@ def get_task_workspace(
 
     If the agent's current task has a repo, returns (and ensures) the worktree
     path.  Otherwise returns the generic ``<agent>/workspace/`` directory.
+
+    When the worktree already exists but the task is missing branch or
+    base_sha metadata (e.g. after a restart), this function backfills them
+    so that downstream diff and merge tooling works correctly.
     """
     ad = _resolve_agent_dir(hc_home, team, agent)
     default_workspace = ad / "workspace"
@@ -421,6 +478,7 @@ def get_task_workspace(
     from boss.repo import get_worktree_path
     wt_path = get_worktree_path(hc_home, team, repo_name, agent, task["id"])
     if wt_path.is_dir():
+        _ensure_task_branch_metadata(hc_home, team, agent, task, wt_path)
         return wt_path
 
     # Create it

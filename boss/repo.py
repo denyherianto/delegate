@@ -246,6 +246,16 @@ def create_agent_worktree(
     wt_path = wt_dir / wt_name
 
     if wt_path.exists():
+        # Worktree exists — still backfill base_sha if missing on the task
+        try:
+            from boss.task import get_task as _get_task, update_task as _update_task
+            task = _get_task(hc_home, task_id)
+            if not task.get("base_sha"):
+                base_sha = _get_main_head(real_repo)
+                _update_task(hc_home, task_id, base_sha=base_sha)
+                logger.info("Backfilled base_sha=%s for existing worktree %s", base_sha[:8], task_id)
+        except Exception as exc:
+            logger.warning("Could not backfill base_sha for %s: %s", task_id, exc)
         logger.info("Worktree already exists at %s", wt_path)
         return wt_path
 

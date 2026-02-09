@@ -188,6 +188,55 @@ def set_reviewer(hc_home: Path, task_id: int, reviewer: str) -> dict:
     return task
 
 
+def _backfill_branch_metadata(hc_home: Path, task: dict, updates: dict) -> None:
+    """Try to fill in missing branch and base_sha on a task.
+
+    Called as a safety net when a task enters ``review`` or ``needs_merge``
+    status.  If the task already has both fields populated, this is a no-op.
+
+    For ``branch``, derives the name from the assignee and task ID.
+    For ``base_sha``, computes ``git merge-base main <branch>`` in the repo.
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+
+    repo_name = task.get("repo", "")
+    if not repo_name:
+        return
+
+    assignee = task.get("assignee", "")
+    task_id = task["id"]
+
+    # Backfill branch name
+    if not task.get("branch") and "branch" not in updates:
+        if assignee:
+            branch = f"{assignee}/{format_task_id(task_id)}"
+            updates["branch"] = branch
+            _log.info("Backfilling branch=%s on task %s during status change", branch, task_id)
+
+    # Backfill base_sha
+    branch = updates.get("branch") or task.get("branch", "")
+    if not task.get("base_sha") and "base_sha" not in updates and branch:
+        try:
+            from boss.paths import repo_path as _repo_path
+            git_cwd = str(_repo_path(hc_home, repo_name))
+            result = subprocess.run(
+                ["git", "merge-base", "main", branch],
+                cwd=git_cwd,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                updates["base_sha"] = result.stdout.strip()
+                _log.info(
+                    "Backfilling base_sha=%s on task %s during status change",
+                    updates["base_sha"][:8], task_id,
+                )
+        except Exception as exc:
+            _log.warning("Could not backfill base_sha for task %s: %s", task_id, exc)
+
+
 def change_status(hc_home: Path, task_id: int, status: str) -> dict:
     """Change task status. Sets completed_at when moving to 'done' or 'merged'.
 
@@ -215,6 +264,13 @@ def change_status(hc_home: Path, task_id: int, status: str) -> dict:
     updates: dict = {"status": status}
     if status in ("done", "merged"):
         updates["completed_at"] = _now()
+
+    # Safety net: backfill branch/base_sha when entering review or needs_merge
+    # if they're still empty.  This catches cases where the worktree was
+    # created before the metadata-saving logic ran (e.g. agent restart).
+    if status in ("review", "needs_merge"):
+        _backfill_branch_metadata(hc_home, old_task, updates)
+
     task = update_task(hc_home, task_id, **updates)
 
     new_status = status.replace("_", " ").title()

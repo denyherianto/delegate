@@ -166,3 +166,32 @@ class TestWorktree:
             hc_home, TEAM, repo_name, "alice", task_id=3, branch="alice/T0003",
         )
         assert wt1 == wt2
+
+    def test_backfills_base_sha_on_existing_worktree(self, hc_home, local_repo):
+        """When worktree already exists but task has no base_sha, backfill it."""
+        register_repo(hc_home, str(local_repo))
+        repo_name = local_repo.name
+
+        # Create a task
+        task = create_task(hc_home, title="Backfill test")
+        update_task(hc_home, task["id"], repo=repo_name)
+
+        # First call creates the worktree and sets base_sha
+        create_agent_worktree(
+            hc_home, TEAM, repo_name, "alice", task_id=task["id"], branch="alice/T0001",
+        )
+        t1 = get_task(hc_home, task["id"])
+        assert t1["base_sha"] != ""
+
+        # Clear base_sha to simulate the bug
+        update_task(hc_home, task["id"], base_sha="")
+        t_cleared = get_task(hc_home, task["id"])
+        assert t_cleared["base_sha"] == ""
+
+        # Second call should backfill base_sha even though worktree exists
+        create_agent_worktree(
+            hc_home, TEAM, repo_name, "alice", task_id=task["id"], branch="alice/T0001",
+        )
+        t2 = get_task(hc_home, task["id"])
+        assert t2["base_sha"] != ""
+        assert len(t2["base_sha"]) == 40
