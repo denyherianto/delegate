@@ -24,6 +24,7 @@ import os
 import re
 import sys
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -718,6 +719,217 @@ def _process_turn_messages(
 
 
 # ---------------------------------------------------------------------------
+# Session context & shared helpers
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _SessionContext:
+    """Mutable state shared across session setup, turn processing, and teardown."""
+
+    hc_home: Path
+    team: str
+    agent: str
+    ad: Path
+    alog: AgentLogger
+    session_id: int
+    current_task: dict | None
+    current_task_id: int | None
+    token_budget: int | None
+    max_turns: int | None
+    workspace: Path
+    worklog_lines: list[str] = field(default_factory=list)
+    total_tokens_in: int = 0
+    total_tokens_out: int = 0
+    total_cost_usd: float = 0.0
+    turn: int = 0
+    exit_reason: str = "normal"
+
+
+def _session_setup(
+    hc_home: Path,
+    team: str,
+    agent: str,
+) -> _SessionContext:
+    """Set up a new agent session: PID guard, session tracking, logging.
+
+    Returns a _SessionContext with all shared state initialized.
+    Raises RuntimeError if the agent is already running.
+    """
+    from boss.chat import start_session, log_event
+
+    ad = _agent_dir(hc_home, team, agent)
+    alog = AgentLogger(agent)
+
+    # Guard against double-start
+    state = _read_state(ad)
+    if state.get("pid") is not None:
+        raise RuntimeError(f"Agent {agent} already running with PID {state['pid']}")
+
+    # Set PID
+    state["pid"] = os.getpid()
+    _write_state(ad, state)
+
+    # Read token budget and compute max turns
+    token_budget = state.get("token_budget")
+    max_turns = None
+    if token_budget:
+        max_turns = max(1, token_budget // 4000)
+
+    # Session tracking
+    current_task = _get_current_task(hc_home, agent)
+    current_task_id = current_task["id"] if current_task else None
+    session_id = start_session(hc_home, agent, task_id=current_task_id)
+    task_label = f" on {format_task_id(current_task_id)}" if current_task_id else ""
+    log_event(hc_home, f"{agent.capitalize()} started{task_label}")
+
+    # Workspace
+    workspace = get_task_workspace(hc_home, team, agent, current_task)
+
+    # Worklog
+    worklog_lines: list[str] = [
+        f"# Worklog — {agent}",
+        f"Session: {datetime.now(timezone.utc).isoformat()}",
+    ]
+
+    # Log session start
+    alog.session_start_log(
+        task_id=current_task_id,
+        token_budget=token_budget,
+        workspace=workspace,
+        session_id=session_id,
+        max_turns=max_turns,
+    )
+
+    return _SessionContext(
+        hc_home=hc_home,
+        team=team,
+        agent=agent,
+        ad=ad,
+        alog=alog,
+        session_id=session_id,
+        current_task=current_task,
+        current_task_id=current_task_id,
+        token_budget=token_budget,
+        max_turns=max_turns,
+        workspace=workspace,
+        worklog_lines=worklog_lines,
+    )
+
+
+def _session_teardown(ctx: _SessionContext) -> str:
+    """Finalize a session: log summary, write worklog, save context, clear PID.
+
+    Returns the worklog content string.
+    """
+    from boss.chat import end_session, log_event
+
+    # Log session end summary
+    ctx.alog.session_end_log(
+        turns=ctx.turn,
+        tokens_in=ctx.total_tokens_in,
+        tokens_out=ctx.total_tokens_out,
+        cost_usd=ctx.total_cost_usd,
+        exit_reason=ctx.exit_reason,
+    )
+
+    # End session in DB
+    end_session(
+        ctx.hc_home, ctx.session_id,
+        tokens_in=ctx.total_tokens_in,
+        tokens_out=ctx.total_tokens_out,
+        cost_usd=ctx.total_cost_usd,
+    )
+    total_tokens = ctx.total_tokens_in + ctx.total_tokens_out
+    tokens_fmt = f"{total_tokens:,}"
+    cost_str = f" \u00b7 ${ctx.total_cost_usd:.4f}" if ctx.total_cost_usd else ""
+    log_event(ctx.hc_home, f"{ctx.agent.capitalize()} finished ({tokens_fmt} tokens{cost_str})")
+
+    # Write worklog
+    worklog_content = "\n".join(ctx.worklog_lines)
+    log_num = _next_worklog_number(ctx.ad)
+    log_path = ctx.ad / "logs" / f"{log_num}.worklog.md"
+    log_path.write_text(worklog_content)
+
+    # Save context.md
+    context_path = ctx.ad / "context.md"
+    context_path.write_text(
+        f"Last session: {datetime.now(timezone.utc).isoformat()}\n"
+        f"Turns: {ctx.turn}\n"
+        f"Tokens: {ctx.total_tokens_in + ctx.total_tokens_out}\n"
+    )
+
+    # Clear PID
+    state = _read_state(ctx.ad)
+    state["pid"] = None
+    _write_state(ctx.ad, state)
+
+    return worklog_content
+
+
+def _finish_turn(
+    ctx: _SessionContext,
+    turn_num: int,
+    turn_tokens_in: int,
+    turn_tokens_out: int,
+    turn_cost: float,
+    turn_tools: list[str],
+) -> None:
+    """Post-response turn wrap-up: accumulate totals, log, persist, mark mail.
+
+    Updates *ctx* in place with new cumulative totals.
+    """
+    from boss.chat import update_session_tokens, update_session_task
+
+    # Compute cost delta (SDK cost is cumulative, not per-turn)
+    cost_delta = turn_cost - ctx.total_cost_usd if turn_cost > 0 else 0.0
+
+    # Accumulate session totals
+    ctx.total_tokens_in += turn_tokens_in
+    ctx.total_tokens_out += turn_tokens_out
+    if turn_cost > 0:
+        ctx.total_cost_usd = turn_cost
+
+    ctx.turn = turn_num
+
+    # Log turn end with full details
+    ctx.alog.turn_end(
+        turn_num,
+        tokens_in=turn_tokens_in,
+        tokens_out=turn_tokens_out,
+        cost_usd=cost_delta,
+        cumulative_tokens_in=ctx.total_tokens_in,
+        cumulative_tokens_out=ctx.total_tokens_out,
+        cumulative_cost=ctx.total_cost_usd,
+        tool_calls=turn_tools if turn_tools else None,
+    )
+
+    # Persist running totals (crash-safe)
+    update_session_tokens(
+        ctx.hc_home, ctx.session_id,
+        tokens_in=ctx.total_tokens_in,
+        tokens_out=ctx.total_tokens_out,
+        cost_usd=ctx.total_cost_usd,
+    )
+
+    # Mark only the first unread message as read (one-at-a-time processing)
+    _first = read_inbox(ctx.hc_home, ctx.team, ctx.agent, unread_only=True)
+    if _first and _first[0].filename:
+        ctx.alog.mail_marked_read(_first[0].filename)
+        mark_inbox_read(ctx.hc_home, ctx.team, ctx.agent, _first[0].filename)
+
+    # Re-check task association (may set up worktree if task acquired a repo)
+    if ctx.current_task_id is None:
+        ctx.current_task = _get_current_task(ctx.hc_home, ctx.agent)
+        if ctx.current_task is not None:
+            ctx.current_task_id = ctx.current_task["id"]
+            update_session_task(ctx.hc_home, ctx.session_id, ctx.current_task_id)
+            ctx.alog.info(
+                "Task association updated | task=%s",
+                format_task_id(ctx.current_task_id),
+            )
+
+
+# ---------------------------------------------------------------------------
 # Main event loop
 # ---------------------------------------------------------------------------
 
@@ -739,93 +951,42 @@ async def run_agent_loop(
     client_class = client_class or DefaultClient
     sdk_options_class = sdk_options_class or DefaultOptions
 
-    ad = _agent_dir(hc_home, team, agent)
-    alog = AgentLogger(agent)
-
-    # Guard against double-start
-    state = _read_state(ad)
-    if state.get("pid") is not None:
-        raise RuntimeError(f"Agent {agent} already running with PID {state['pid']}")
-
-    # Set PID
-    state["pid"] = os.getpid()
-    _write_state(ad, state)
-
-    # Read token budget
-    token_budget = state.get("token_budget")
-
-    # Session tracking
-    from boss.chat import start_session, end_session, log_event, update_session_task, update_session_tokens
-    current_task = _get_current_task(hc_home, agent)
-    current_task_id = current_task["id"] if current_task else None
-    session_id = start_session(hc_home, agent, task_id=current_task_id)
-    task_label = f" on {format_task_id(current_task_id)}" if current_task_id else ""
-    log_event(hc_home, f"{agent.capitalize()} started{task_label}")
-
-    total_tokens_in = 0
-    total_tokens_out = 0
-    total_cost_usd = 0.0
-    exit_reason = "normal"
-
-    # Compute max_turns for logging
-    max_turns = None
-    if token_budget:
-        max_turns = max(1, token_budget // 4000)
-
-    # Log session start
-    alog.session_start_log(
-        task_id=current_task_id,
-        token_budget=token_budget,
-        workspace=get_task_workspace(hc_home, team, agent, current_task),
-        session_id=session_id,
-        max_turns=max_turns,
-    )
-
-    # Worklog
-    worklog_lines: list[str] = [
-        f"# Worklog — {agent}",
-        f"Session: {datetime.now(timezone.utc).isoformat()}",
-    ]
-
-    # Workspace — use worktree if the current task has a repo
-    workspace = get_task_workspace(hc_home, team, agent, current_task)
+    ctx = _session_setup(hc_home, team, agent)
 
     # Build SDK options
     system_prompt = build_system_prompt(
         hc_home, team, agent,
-        current_task=current_task,
-        workspace_path=workspace,
+        current_task=ctx.current_task,
+        workspace_path=ctx.workspace,
     )
     options_kwargs: dict[str, Any] = dict(
         system_prompt=system_prompt,
-        cwd=str(workspace),
+        cwd=str(ctx.workspace),
         permission_mode="bypassPermissions",
         add_dirs=[str(hc_home)],
     )
-    if token_budget:
-        options_kwargs["max_turns"] = max_turns
+    if ctx.token_budget:
+        options_kwargs["max_turns"] = ctx.max_turns
 
     options = sdk_options_class(**options_kwargs)
 
-    turn = 0
-
     try:
-        alog.client_connecting()
+        ctx.alog.client_connecting()
         client = client_class(options)
         await client.connect()
-        alog.client_connected()
+        ctx.alog.client_connected()
 
         try:
             # --- First turn: include context.md for cold-start recovery ---
             user_msg = build_user_message(hc_home, team, agent, include_context=True)
-            worklog_lines.append(f"\n## Turn 1\n{user_msg}")
+            ctx.worklog_lines.append(f"\n## Turn 1\n{user_msg}")
 
             # Log incoming messages from this turn
             messages = read_inbox(hc_home, team, agent, unread_only=True)
             for inbox_msg in messages:
-                alog.message_received(inbox_msg.sender, len(inbox_msg.body))
+                ctx.alog.message_received(inbox_msg.sender, len(inbox_msg.body))
 
-            alog.turn_start(1, user_msg)
+            ctx.alog.turn_start(1, user_msg)
 
             turn_tokens_in = 0
             turn_tokens_out = 0
@@ -835,76 +996,32 @@ async def run_agent_loop(
             await client.query(user_msg, session_id="main")
             async for msg in client.receive_response():
                 turn_tokens_in, turn_tokens_out, turn_cost = _process_turn_messages(
-                    msg, alog, turn_tokens_in, turn_tokens_out, turn_cost,
-                    turn_tools, worklog_lines,
+                    msg, ctx.alog, turn_tokens_in, turn_tokens_out, turn_cost,
+                    turn_tools, ctx.worklog_lines,
                 )
 
-            # Compute cost delta for this turn
-            cost_delta = turn_cost - total_cost_usd if turn_cost > 0 else 0.0
-
-            total_tokens_in += turn_tokens_in
-            total_tokens_out += turn_tokens_out
-            # cost is cumulative session total from SDK — replace, don't sum
-            if turn_cost > 0:
-                total_cost_usd = turn_cost
-
-            # Log turn end with full details
-            alog.turn_end(
-                1,
-                tokens_in=turn_tokens_in,
-                tokens_out=turn_tokens_out,
-                cost_usd=cost_delta,
-                cumulative_tokens_in=total_tokens_in,
-                cumulative_tokens_out=total_tokens_out,
-                cumulative_cost=total_cost_usd,
-                tool_calls=turn_tools if turn_tools else None,
-            )
-
-            # Persist running totals after each turn (crash-safe)
-            update_session_tokens(
-                hc_home, session_id,
-                tokens_in=total_tokens_in,
-                tokens_out=total_tokens_out,
-                cost_usd=total_cost_usd,
-            )
-
-            # Mark only the first unread message as read (one-at-a-time processing)
-            _first = read_inbox(hc_home, team, agent, unread_only=True)
-            if _first and _first[0].filename:
-                alog.mail_marked_read(_first[0].filename)
-                mark_inbox_read(hc_home, team, agent, _first[0].filename)
-
-            # Re-check task association (may set up worktree if task acquired a repo)
-            if current_task_id is None:
-                current_task = _get_current_task(hc_home, agent)
-                if current_task is not None:
-                    current_task_id = current_task["id"]
-                    update_session_task(hc_home, session_id, current_task_id)
-                    alog.info("Task association updated | task=%s", format_task_id(current_task_id))
-
-            turn = 1
+            _finish_turn(ctx, 1, turn_tokens_in, turn_tokens_out, turn_cost, turn_tools)
 
             # --- Event loop: wait for new inbox messages ---
             while True:
-                alog.waiting_for_mail(idle_timeout)
+                ctx.alog.waiting_for_mail(idle_timeout)
                 has_mail = await wait_for_inbox(hc_home, team, agent, timeout=idle_timeout)
                 if not has_mail:
-                    exit_reason = "idle_timeout"
-                    alog.idle_timeout(idle_timeout)
+                    ctx.exit_reason = "idle_timeout"
+                    ctx.alog.idle_timeout(idle_timeout)
                     break
 
-                turn += 1
+                turn = ctx.turn + 1
                 user_msg = build_user_message(hc_home, team, agent)
-                worklog_lines.append(f"\n## Turn {turn}\n{user_msg}")
+                ctx.worklog_lines.append(f"\n## Turn {turn}\n{user_msg}")
 
                 # Log incoming messages
                 messages = read_inbox(hc_home, team, agent, unread_only=True)
                 for inbox_msg in messages:
-                    alog.message_received(inbox_msg.sender, len(inbox_msg.body))
+                    ctx.alog.message_received(inbox_msg.sender, len(inbox_msg.body))
 
-                alog.turn_start(turn, user_msg)
+                ctx.alog.turn_start(turn, user_msg)
 
-                prev_cost = total_cost_usd
                 turn_tokens_in = 0
                 turn_tokens_out = 0
                 turn_cost = 0.0
@@ -913,100 +1030,23 @@ async def run_agent_loop(
                 await client.query(user_msg, session_id="main")
                 async for msg in client.receive_response():
                     turn_tokens_in, turn_tokens_out, turn_cost = _process_turn_messages(
-                        msg, alog, turn_tokens_in, turn_tokens_out, turn_cost,
-                        turn_tools, worklog_lines,
+                        msg, ctx.alog, turn_tokens_in, turn_tokens_out, turn_cost,
+                        turn_tools, ctx.worklog_lines,
                     )
 
-                # Compute cost delta
-                cost_delta = turn_cost - prev_cost if turn_cost > 0 else 0.0
-
-                total_tokens_in += turn_tokens_in
-                total_tokens_out += turn_tokens_out
-                if turn_cost > 0:
-                    total_cost_usd = turn_cost
-
-                alog.turn_end(
-                    turn,
-                    tokens_in=turn_tokens_in,
-                    tokens_out=turn_tokens_out,
-                    cost_usd=cost_delta,
-                    cumulative_tokens_in=total_tokens_in,
-                    cumulative_tokens_out=total_tokens_out,
-                    cumulative_cost=total_cost_usd,
-                    tool_calls=turn_tools if turn_tools else None,
-                )
-
-                # Persist running totals after each turn (crash-safe)
-                update_session_tokens(
-                    hc_home, session_id,
-                    tokens_in=total_tokens_in,
-                    tokens_out=total_tokens_out,
-                    cost_usd=total_cost_usd,
-                )
-
-                # Mark only the first unread message as read (one-at-a-time)
-                _first = read_inbox(hc_home, team, agent, unread_only=True)
-                if _first and _first[0].filename:
-                    alog.mail_marked_read(_first[0].filename)
-                    mark_inbox_read(hc_home, team, agent, _first[0].filename)
-
-                # Re-check task association
-                if current_task_id is None:
-                    current_task = _get_current_task(hc_home, agent)
-                    if current_task is not None:
-                        current_task_id = current_task["id"]
-                        update_session_task(hc_home, session_id, current_task_id)
-                        alog.info("Task association updated | task=%s", format_task_id(current_task_id))
+                _finish_turn(ctx, turn, turn_tokens_in, turn_tokens_out, turn_cost, turn_tools)
 
         finally:
             await client.disconnect()
-            alog.client_disconnected()
+            ctx.alog.client_disconnected()
 
     except Exception as exc:
-        exit_reason = "error"
-        alog.session_error(exc)
+        ctx.exit_reason = "error"
+        ctx.alog.session_error(exc)
         raise
 
     finally:
-        # Log session end summary
-        alog.session_end_log(
-            turns=turn,
-            tokens_in=total_tokens_in,
-            tokens_out=total_tokens_out,
-            cost_usd=total_cost_usd,
-            exit_reason=exit_reason,
-        )
-
-        # End session
-        end_session(
-            hc_home, session_id,
-            tokens_in=total_tokens_in,
-            tokens_out=total_tokens_out,
-            cost_usd=total_cost_usd,
-        )
-        total_tokens = total_tokens_in + total_tokens_out
-        tokens_fmt = f"{total_tokens:,}"
-        cost_str = f" \u00b7 ${total_cost_usd:.4f}" if total_cost_usd else ""
-        log_event(hc_home, f"{agent.capitalize()} finished ({tokens_fmt} tokens{cost_str})")
-
-        # Write worklog
-        worklog_content = "\n".join(worklog_lines)
-        log_num = _next_worklog_number(ad)
-        log_path = ad / "logs" / f"{log_num}.worklog.md"
-        log_path.write_text(worklog_content)
-
-        # Save context.md
-        context_path = ad / "context.md"
-        context_path.write_text(
-            f"Last session: {datetime.now(timezone.utc).isoformat()}\n"
-            f"Turns: {turn}\n"
-            f"Tokens: {total_tokens_in + total_tokens_out}\n"
-        )
-
-        # Clear PID
-        state = _read_state(ad)
-        state["pid"] = None
-        _write_state(ad, state)
+        worklog_content = _session_teardown(ctx)
 
     return worklog_content
 
@@ -1038,142 +1078,61 @@ async def _run_agent_oneshot(
     sdk_options_class: Any,
 ) -> str:
     """Original one-shot agent run (used by old tests)."""
-    ad = _agent_dir(hc_home, team, agent)
-    alog = AgentLogger(agent)
-
-    state = _read_state(ad)
-    if state.get("pid") is not None:
-        raise RuntimeError(f"Agent {agent} already running with PID {state['pid']}")
-
-    state["pid"] = os.getpid()
-    _write_state(ad, state)
-
-    token_budget = state.get("token_budget")
-    current_task = _get_current_task(hc_home, agent)
-    current_task_id = current_task["id"] if current_task else None
-
-    from boss.chat import start_session, end_session, log_event
-    session_id = start_session(hc_home, agent, task_id=current_task_id)
-    task_label = f" on {format_task_id(current_task_id)}" if current_task_id else ""
-    log_event(hc_home, f"{agent.capitalize()} started{task_label}")
-
-    total_tokens_in = 0
-    total_tokens_out = 0
-    total_cost_usd = 0.0
-
-    max_turns = None
-    if token_budget:
-        max_turns = max(1, token_budget // 4000)
-
-    alog.session_start_log(
-        task_id=current_task_id,
-        token_budget=token_budget,
-        session_id=session_id,
-        max_turns=max_turns,
-    )
+    ctx = _session_setup(hc_home, team, agent)
 
     try:
-        workspace = get_task_workspace(hc_home, team, agent, current_task)
         system_prompt = build_system_prompt(
             hc_home, team, agent,
-            current_task=current_task,
-            workspace_path=workspace,
+            current_task=ctx.current_task,
+            workspace_path=ctx.workspace,
         )
         user_message = build_user_message(hc_home, team, agent)
 
         options_kwargs: dict[str, Any] = dict(
             system_prompt=system_prompt,
-            cwd=str(workspace),
+            cwd=str(ctx.workspace),
             permission_mode="bypassPermissions",
             add_dirs=[str(hc_home)],
         )
-        if token_budget:
-            options_kwargs["max_turns"] = max_turns
+        if ctx.token_budget:
+            options_kwargs["max_turns"] = ctx.max_turns
 
         options = sdk_options_class(**options_kwargs)
 
-        worklog_lines = [
-            f"# Worklog — {agent}",
-            f"Session: {datetime.now(timezone.utc).isoformat()}",
+        # Oneshot worklog has a slightly different format (legacy)
+        ctx.worklog_lines.extend([
             f"\n## User Message\n{user_message}",
             "\n## Conversation\n",
-        ]
+        ])
 
         # Log incoming messages
         messages = read_inbox(hc_home, team, agent, unread_only=True)
         for inbox_msg in messages:
-            alog.message_received(inbox_msg.sender, len(inbox_msg.body))
+            ctx.alog.message_received(inbox_msg.sender, len(inbox_msg.body))
 
-        alog.turn_start(1, user_message)
+        ctx.alog.turn_start(1, user_message)
+
+        turn_tokens_in = 0
+        turn_tokens_out = 0
+        turn_cost = 0.0
         turn_tools: list[str] = []
 
         async for message in sdk_query(prompt=user_message, options=options):
-            tin, tout, cost = _collect_tokens_from_message(message)
-            total_tokens_in += tin
-            total_tokens_out += tout
-            # cost is cumulative session total from SDK — replace, don't sum
-            if cost > 0:
-                total_cost_usd = cost
+            turn_tokens_in, turn_tokens_out, turn_cost = _process_turn_messages(
+                message, ctx.alog, turn_tokens_in, turn_tokens_out, turn_cost,
+                turn_tools, ctx.worklog_lines,
+            )
 
-            # Log tool calls
-            tools = _extract_tool_calls(message)
-            for tool_name in tools:
-                alog.tool_call(tool_name)
-                turn_tools.append(tool_name)
+        _finish_turn(ctx, 1, turn_tokens_in, turn_tokens_out, turn_cost, turn_tools)
 
-            _append_to_worklog(worklog_lines, message)
-
-        alog.turn_end(
-            1,
-            tokens_in=total_tokens_in,
-            tokens_out=total_tokens_out,
-            cost_usd=total_cost_usd,
-            cumulative_tokens_in=total_tokens_in,
-            cumulative_tokens_out=total_tokens_out,
-            cumulative_cost=total_cost_usd,
-            tool_calls=turn_tools if turn_tools else None,
-        )
-
-        worklog_content = "\n".join(worklog_lines)
-
-        log_num = _next_worklog_number(ad)
-        log_path = ad / "logs" / f"{log_num}.worklog.md"
-        log_path.write_text(worklog_content)
-
-        # Mark only the first unread message as read (one-at-a-time)
-        _first = read_inbox(hc_home, team, agent, unread_only=True)
-        if _first and _first[0].filename:
-            alog.mail_marked_read(_first[0].filename)
-            mark_inbox_read(hc_home, team, agent, _first[0].filename)
-
-        return worklog_content
+        return "\n".join(ctx.worklog_lines)
 
     except Exception as exc:
-        alog.session_error(exc)
+        ctx.alog.session_error(exc)
         raise
 
     finally:
-        alog.session_end_log(
-            turns=1,
-            tokens_in=total_tokens_in,
-            tokens_out=total_tokens_out,
-            cost_usd=total_cost_usd,
-        )
-
-        end_session(
-            hc_home, session_id,
-            tokens_in=total_tokens_in,
-            tokens_out=total_tokens_out,
-            cost_usd=total_cost_usd,
-        )
-        total_tokens = total_tokens_in + total_tokens_out
-        tokens_fmt = f"{total_tokens:,}"
-        cost_str = f" \u00b7 ${total_cost_usd:.4f}" if total_cost_usd else ""
-        log_event(hc_home, f"{agent.capitalize()} finished ({tokens_fmt} tokens{cost_str})")
-
-        state = _read_state(ad)
-        state["pid"] = None
-        _write_state(ad, state)
+        _session_teardown(ctx)
 
 
 def main():
