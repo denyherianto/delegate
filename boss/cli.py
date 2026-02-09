@@ -345,6 +345,67 @@ def repo_list(ctx: click.Context) -> None:
         click.echo(f"  - {name}: {meta.get('source', '?')}")
 
 
+# ── boss repo pipeline add / list / remove ──
+
+@repo.group("pipeline")
+def repo_pipeline() -> None:
+    """Manage a repo's CI pipeline (named steps)."""
+    pass
+
+
+@repo_pipeline.command("add")
+@click.argument("repo_name")
+@click.option("--name", "step_name", required=True, help="Name for the pipeline step.")
+@click.option("--run", "run_cmd", required=True, help="Shell command to run.")
+@click.pass_context
+def repo_pipeline_add(ctx: click.Context, repo_name: str, step_name: str, run_cmd: str) -> None:
+    """Add a named step to a repo's pipeline."""
+    from boss.config import add_pipeline_step
+
+    hc_home = _get_home(ctx)
+    try:
+        add_pipeline_step(hc_home, repo_name, step_name, run_cmd)
+    except KeyError as exc:
+        raise click.ClickException(str(exc))
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f"Added pipeline step '{step_name}' to repo '{repo_name}'")
+
+
+@repo_pipeline.command("list")
+@click.argument("repo_name")
+@click.pass_context
+def repo_pipeline_list(ctx: click.Context, repo_name: str) -> None:
+    """List pipeline steps for a repo."""
+    from boss.config import get_repo_pipeline
+
+    hc_home = _get_home(ctx)
+    pipeline = get_repo_pipeline(hc_home, repo_name)
+    if not pipeline:
+        click.echo(f"No pipeline configured for repo '{repo_name}'.")
+        return
+
+    click.echo(f"Pipeline for '{repo_name}':")
+    for i, step in enumerate(pipeline, 1):
+        click.echo(f"  {i}. {step['name']}: {step['run']}")
+
+
+@repo_pipeline.command("remove")
+@click.argument("repo_name")
+@click.option("--name", "step_name", required=True, help="Name of the step to remove.")
+@click.pass_context
+def repo_pipeline_remove(ctx: click.Context, repo_name: str, step_name: str) -> None:
+    """Remove a named step from a repo's pipeline."""
+    from boss.config import remove_pipeline_step
+
+    hc_home = _get_home(ctx)
+    try:
+        remove_pipeline_step(hc_home, repo_name, step_name)
+    except KeyError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(f"Removed pipeline step '{step_name}' from repo '{repo_name}'")
+
+
 # ──────────────────────────────────────────────────────────────
 # boss migrate
 # ──────────────────────────────────────────────────────────────

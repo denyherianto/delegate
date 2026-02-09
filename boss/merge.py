@@ -19,7 +19,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from boss.config import get_repo_approval, get_repo_test_cmd
+from boss.config import get_repo_approval, get_repo_test_cmd, get_repo_pipeline
 from boss.notify import notify_conflict
 from boss.task import get_task, change_status, update_task, list_tasks, format_task_id
 from boss.chat import log_event
@@ -95,17 +95,23 @@ def _rebase_branch(repo_dir: str, branch: str, base_sha: str | None = None) -> t
     return True, result.stdout
 
 
-def _run_tests(
+def _run_pipeline(
     repo_dir: str,
     branch: str,
     hc_home: Path | None = None,
     repo_name: str | None = None,
 ) -> tuple[bool, str]:
-    """Run the test suite on the current branch.
+    """Run the configured pipeline (or fall back to auto-detection).
 
-    If a ``test_cmd`` is configured for the repo in boss config, it is used
-    (split via :func:`shlex.split`).  Otherwise falls back to auto-detection
-    based on project files (pyproject.toml, package.json, Makefile).
+    If a ``pipeline`` is configured for the repo, each step is executed in
+    order.  Execution stops on the first failure, reporting which step failed.
+
+    If no pipeline is configured but a legacy ``test_cmd`` exists, it is
+    treated as a single-step pipeline (handled by :func:`get_repo_pipeline`).
+
+    When neither pipeline nor test_cmd is configured, falls back to
+    auto-detection based on project files (pyproject.toml, package.json,
+    Makefile).
 
     Returns (success, output).
     """
@@ -114,23 +120,47 @@ def _run_tests(
     if result.returncode != 0:
         return False, f"Could not checkout {branch}: {result.stderr}"
 
-    # Check for a configured test command first
-    test_cmd: list[str] | None = None
+    # Check for a configured pipeline first
+    pipeline: list[dict] | None = None
 
     if hc_home is not None and repo_name:
-        configured = get_repo_test_cmd(hc_home, repo_name)
-        if configured:
-            test_cmd = shlex.split(configured)
+        pipeline = get_repo_pipeline(hc_home, repo_name)
 
-    # Fall back to auto-detection
-    if test_cmd is None:
-        repo_path = Path(repo_dir)
-        if (repo_path / "pyproject.toml").exists() or (repo_path / "tests").is_dir():
-            test_cmd = ["python", "-m", "pytest", "-x", "-q"]
-        elif (repo_path / "package.json").exists():
-            test_cmd = ["npm", "test"]
-        elif (repo_path / "Makefile").exists():
-            test_cmd = ["make", "test"]
+    if pipeline is not None:
+        # Run each step in order
+        all_output: list[str] = []
+        try:
+            for step in pipeline:
+                step_name = step["name"]
+                step_cmd = shlex.split(step["run"])
+                try:
+                    step_result = subprocess.run(
+                        step_cmd,
+                        cwd=repo_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=300,
+                    )
+                    step_output = step_result.stdout + step_result.stderr
+                    all_output.append(f"[{step_name}] {step_output}")
+                    if step_result.returncode != 0:
+                        return False, f"Step '{step_name}' failed:\n" + "\n".join(all_output)
+                except subprocess.TimeoutExpired:
+                    all_output.append(f"[{step_name}] Timed out after 300 seconds.")
+                    return False, f"Step '{step_name}' failed:\n" + "\n".join(all_output)
+            return True, "\n".join(all_output)
+        finally:
+            _run_git(["checkout", "main"], cwd=repo_dir)
+
+    # Fall back to auto-detection (no pipeline or test_cmd configured)
+    test_cmd: list[str] | None = None
+    repo_path = Path(repo_dir)
+    if (repo_path / "pyproject.toml").exists() or (repo_path / "tests").is_dir():
+        test_cmd = ["python", "-m", "pytest", "-x", "-q"]
+    elif (repo_path / "package.json").exists():
+        test_cmd = ["npm", "test"]
+    elif (repo_path / "Makefile").exists():
+        test_cmd = ["make", "test"]
 
     if test_cmd is None:
         return True, "No test runner detected, skipping tests."
@@ -150,6 +180,10 @@ def _run_tests(
     finally:
         # Switch back to main
         _run_git(["checkout", "main"], cwd=repo_dir)
+
+
+# Keep old name as alias for backward compatibility
+_run_tests = _run_pipeline
 
 
 def _ff_merge(repo_dir: str, branch: str) -> tuple[bool, str]:
@@ -233,14 +267,14 @@ def merge_task(
         log_event(hc_home, f"Merge: {format_task_id(task_id)} rebase conflict")
         return MergeResult(task_id, False, f"Rebase conflict: {output[:200]}")
 
-    # Step 2: Run tests (optional)
+    # Step 2: Run pipeline / tests (optional)
     if not skip_tests:
-        ok, output = _run_tests(repo_str, branch, hc_home=hc_home, repo_name=repo_name)
+        ok, output = _run_pipeline(repo_str, branch, hc_home=hc_home, repo_name=repo_name)
         if not ok:
             change_status(hc_home, task_id, "conflict")
-            notify_conflict(hc_home, team, task, conflict_details=f"Tests failed:\n{output[:500]}")
-            log_event(hc_home, f"Merge: {format_task_id(task_id)} tests failed")
-            return MergeResult(task_id, False, f"Tests failed: {output[:200]}")
+            notify_conflict(hc_home, team, task, conflict_details=f"Pipeline failed:\n{output[:500]}")
+            log_event(hc_home, f"Merge: {format_task_id(task_id)} pipeline failed")
+            return MergeResult(task_id, False, f"Pipeline failed: {output[:200]}")
 
     # Step 3: Fast-forward merge
     # Capture HEAD of main before the merge (merge_base).

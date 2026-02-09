@@ -31,7 +31,7 @@ from boss.paths import agent_dir as _resolve_agent_dir
 from boss.mailbox import send, read_inbox, mark_inbox_read, Message
 from boss.chat import log_event
 from boss.task import list_tasks, set_task_branch, change_status, get_task, format_task_id
-from boss.config import get_repo_test_cmd
+from boss.config import get_repo_test_cmd, get_repo_pipeline
 from boss.bootstrap import get_member_by_role
 
 logger = logging.getLogger(__name__)
@@ -178,6 +178,59 @@ def run_tests(repo_path: Path, test_command: str | None = None) -> ReviewResult:
         )
 
 
+def run_pipeline(repo_path: Path, pipeline: list[dict]) -> ReviewResult:
+    """Run a multi-step pipeline in the given repo directory.
+
+    Executes each step in order.  Stops on the first failure, reporting
+    which step failed.
+
+    Args:
+        repo_path: Path to the checked-out repo.
+        pipeline: List of ``{name: str, run: str}`` step dicts.
+
+    Returns:
+        ReviewResult with combined output from all steps.
+    """
+    import shlex
+
+    all_output: list[str] = []
+    for step in pipeline:
+        step_name = step["name"]
+        step_cmd = shlex.split(step["run"])
+        try:
+            step_result = subprocess.run(
+                step_cmd,
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            step_output = step_result.stdout + step_result.stderr
+            all_output.append(f"[{step_name}] {step_output}")
+            if step_result.returncode != 0:
+                return ReviewResult(
+                    approved=False,
+                    output=f"Step '{step_name}' failed:\n" + "\n".join(all_output),
+                    repo=repo_path.name,
+                    branch="unknown",
+                )
+        except subprocess.TimeoutExpired:
+            all_output.append(f"[{step_name}] Timed out after 300 seconds.")
+            return ReviewResult(
+                approved=False,
+                output=f"Step '{step_name}' failed:\n" + "\n".join(all_output),
+                repo=repo_path.name,
+                branch="unknown",
+            )
+
+    return ReviewResult(
+        approved=True,
+        output="\n".join(all_output),
+        repo=repo_path.name,
+        branch="unknown",
+    )
+
+
 MIN_COVERAGE_PERCENT = 60
 
 
@@ -303,14 +356,16 @@ def handle_review_request(
         _update_task_on_rejection(hc_home, task_id, req)
         return result
 
-    # Use explicitly provided test_command, or look up from repo config
-    effective_test_command = test_command
-    if effective_test_command is None:
-        configured = get_repo_test_cmd(hc_home, req.repo)
-        if configured:
-            effective_test_command = configured
-
-    result = run_tests(wt_path, effective_test_command)
+    # Check for a configured pipeline first, then fall back to test_command
+    pipeline = get_repo_pipeline(hc_home, req.repo)
+    if test_command is not None:
+        # Explicit test_command overrides pipeline
+        result = run_tests(wt_path, test_command)
+    elif pipeline is not None:
+        result = run_pipeline(wt_path, pipeline)
+    else:
+        # No pipeline, no explicit command — auto-detect
+        result = run_tests(wt_path)
     result.repo = req.repo
     result.branch = req.branch
 
