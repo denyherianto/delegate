@@ -13,7 +13,7 @@
 <div class="sidebar" id="sidebar">
   <div class="sidebar-widget sidebar-status-widget" id="sidebarStatus">
     <div class="sidebar-status-header">
-      <span><span class="sidebar-status-dot" id="sidebarStatusDot">●</span> Mission Control</span>
+      <span><span class="sidebar-status-dot" id="sidebarStatusDot">●</span> Boss</span>
     </div>
     <div id="sidebarStatusContent"><span style="color:var(--text-faint);font-size:12px">Loading...</span></div>
   </div>
@@ -35,10 +35,9 @@
 
 <div class="main">
 <div class="header">
-  <h1>Boss</h1>
   <select class="team-selector" id="teamSelector" onchange="onTeamChange()"></select>
   <div class="tabs">
-    <button class="tab active" data-tab="chat" onclick="switchTab('chat')">Mission Control</button>
+    <button class="tab active" data-tab="chat" onclick="switchTab('chat')">Chat</button>
     <button class="tab" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
     <button class="tab" data-tab="agents" onclick="switchTab('agents')">Agents</button>
   </div>
