@@ -11,10 +11,10 @@ Registered repos are stored as **symlinks** in `~/.boss/repos/` pointing to the 
 All work happens on feature branches. Branch naming convention:
 
 ```
-<agent>/T<NNNN>-<short-name>
+<agent>/T<NNNN>
 ```
 
-For example: `alice/T0012-api-spec` or `bob/T0003-login-ui`.
+For example: `alice/T0012` or `bob/T0003`.
 
 No direct pushes to main.
 

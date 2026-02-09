@@ -90,10 +90,10 @@ class TestMergeTask:
     def test_successful_merge(self, hc_home, tmp_path):
         """Full merge: rebase, skip-tests, ff-merge."""
         repo = _setup_git_repo(tmp_path)
-        _make_feature_branch(repo, "alice/T0001-feat")
+        _make_feature_branch(repo, "alice/T0001")
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001-feat")
+        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001")
         update_task(hc_home, task["id"], approval_status="approved")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
@@ -109,7 +109,7 @@ class TestMergeTask:
         repo = _setup_git_repo(tmp_path)
 
         # Create feature branch that modifies file.txt
-        _make_feature_branch(repo, "alice/T0001-conflict", filename="file.txt", content="feature version\n")
+        _make_feature_branch(repo, "alice/T0001", filename="file.txt", content="feature version\n")
 
         # Now modify same file on main
         (repo / "file.txt").write_text("main version\n")
@@ -118,7 +118,7 @@ class TestMergeTask:
 
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001-conflict")
+        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001")
         update_task(hc_home, task["id"], approval_status="approved")
 
         with patch("boss.merge.notify_conflict") as mock_notify:
@@ -159,7 +159,7 @@ class TestMergeTask:
         """Merge should remove agent worktree before rebasing so git doesn't
         refuse to rebase a branch checked out in another worktree."""
         repo = _setup_git_repo(tmp_path)
-        branch = "alice/T0001-wt"
+        branch = "alice/T0001"
         _make_feature_branch(repo, branch)
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
@@ -186,7 +186,7 @@ class TestMergeTask:
     def test_merge_succeeds_with_unstaged_changes(self, hc_home, tmp_path):
         """Merge should stash unstaged changes before rebasing and restore after."""
         repo = _setup_git_repo(tmp_path)
-        branch = "alice/T0001-unstaged"
+        branch = "alice/T0001"
         _make_feature_branch(repo, branch)
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
@@ -208,7 +208,7 @@ class TestMergeTask:
     def test_merge_succeeds_with_modified_tracked_file(self, hc_home, tmp_path):
         """Merge should stash modified tracked files before rebasing."""
         repo = _setup_git_repo(tmp_path)
-        branch = "alice/T0001-modified"
+        branch = "alice/T0001"
         _make_feature_branch(repo, branch)
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
@@ -376,10 +376,10 @@ class TestMergeOnce:
     def test_auto_merge_processes(self, hc_home, tmp_path):
         """Auto approval tasks should be processed without boss approval."""
         repo = _setup_git_repo(tmp_path)
-        _make_feature_branch(repo, "alice/T0001-auto")
+        _make_feature_branch(repo, "alice/T0001")
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001-auto")
+        _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001")
 
         results = merge_once(hc_home, SAMPLE_TEAM)
         assert len(results) == 1
@@ -388,14 +388,14 @@ class TestMergeOnce:
     def test_manual_approved_processes(self, hc_home, tmp_path):
         """Manual tasks with approval_status='approved' should be processed."""
         repo = _setup_git_repo(tmp_path)
-        _make_feature_branch(repo, "alice/T0001-manual")
+        _make_feature_branch(repo, "alice/T0001")
 
         repos_dir = hc_home / "repos"
         repos_dir.mkdir(parents=True, exist_ok=True)
         (repos_dir / "myrepo").symlink_to(repo)
         add_repo(hc_home, "myrepo", str(repo), approval="manual")
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001-manual")
+        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001")
         update_task(hc_home, task["id"], approval_status="approved")
 
         results = merge_once(hc_home, SAMPLE_TEAM)

@@ -115,11 +115,9 @@ def _slugify(title: str, max_len: int = 40) -> str:
 def _branch_name(agent: str, task_id: int, title: str = "") -> str:
     """Compute the branch name for an agent's task.
 
-    Format: ``<agent>/T<task_id>-<slug>``
+    Format: ``<agent>/T<task_id>``
     """
-    slug = _slugify(title) if title else ""
-    suffix = f"-{slug}" if slug else ""
-    return f"{agent}/{format_task_id(task_id)}{suffix}"
+    return f"{agent}/{format_task_id(task_id)}"
 
 
 def setup_task_worktree(

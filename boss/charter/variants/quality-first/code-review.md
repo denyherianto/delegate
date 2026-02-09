@@ -5,7 +5,7 @@
 All work happens on feature branches in git worktrees. Branch naming convention:
 
 ```
-<agent>/T<NNNN>-<short-name>
+<agent>/T<NNNN>
 ```
 
 No direct pushes to main.

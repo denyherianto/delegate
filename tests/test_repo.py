@@ -119,7 +119,7 @@ class TestWorktree:
         repo_name = local_repo.name
 
         wt_path = create_agent_worktree(
-            hc_home, TEAM, repo_name, "alice", task_id=1, branch="alice/T0001-feat",
+            hc_home, TEAM, repo_name, "alice", task_id=1, branch="alice/T0001",
         )
         assert wt_path.is_dir()
         assert (wt_path / "README.md").exists()
@@ -136,7 +136,7 @@ class TestWorktree:
         update_task(hc_home, task["id"], repo=repo_name)
 
         create_agent_worktree(
-            hc_home, TEAM, repo_name, "alice", task_id=task["id"], branch="alice/T0001-base",
+            hc_home, TEAM, repo_name, "alice", task_id=task["id"], branch="alice/T0001",
         )
 
         updated = get_task(hc_home, task["id"])
@@ -148,7 +148,7 @@ class TestWorktree:
         repo_name = local_repo.name
 
         wt_path = create_agent_worktree(
-            hc_home, TEAM, repo_name, "alice", task_id=2, branch="alice/T0002-rm",
+            hc_home, TEAM, repo_name, "alice", task_id=2, branch="alice/T0002",
         )
         assert wt_path.is_dir()
 
@@ -160,9 +160,9 @@ class TestWorktree:
         repo_name = local_repo.name
 
         wt1 = create_agent_worktree(
-            hc_home, TEAM, repo_name, "alice", task_id=3, branch="alice/T0003-idem",
+            hc_home, TEAM, repo_name, "alice", task_id=3, branch="alice/T0003",
         )
         wt2 = create_agent_worktree(
-            hc_home, TEAM, repo_name, "alice", task_id=3, branch="alice/T0003-idem",
+            hc_home, TEAM, repo_name, "alice", task_id=3, branch="alice/T0003",
         )
         assert wt1 == wt2

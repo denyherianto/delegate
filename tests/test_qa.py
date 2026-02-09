@@ -97,7 +97,7 @@ def qa_team_with_task(qa_team):
     change_status(hc_home, task["id"], "review")
 
     # Create a branch that matches the task ID pattern
-    branch_name = f"alice/{format_task_id(task['id'])}-add-multiply"
+    branch_name = f"alice/{format_task_id(task['id'])}"
     subprocess.run(
         ["git", "checkout", "-b", branch_name],
         cwd=repo_path, capture_output=True, check=True,
@@ -121,11 +121,14 @@ def qa_team_with_task(qa_team):
 
 
 class TestExtractTaskIdFromBranch:
-    def test_new_convention(self):
-        assert _extract_task_id_from_branch("alice/T0042-add-feature") == 42
+    def test_current_convention(self):
+        assert _extract_task_id_from_branch("alice/T0042") == 42
 
-    def test_new_convention_large_id(self):
-        assert _extract_task_id_from_branch("bob/T0123-fix-bug") == 123
+    def test_current_convention_large_id(self):
+        assert _extract_task_id_from_branch("bob/T0123") == 123
+
+    def test_legacy_convention_with_slug(self):
+        assert _extract_task_id_from_branch("alice/T0042-add-feature") == 42
 
     def test_old_convention(self):
         assert _extract_task_id_from_branch("alice/backend/0007-build-api") == 7

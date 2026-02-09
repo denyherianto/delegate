@@ -106,7 +106,7 @@ class TestNotifyRejection:
 class TestNotifyConflict:
     def test_sends_message_to_manager(self, notify_team):
         task = _make_task_at_needs_merge(notify_team)
-        task["branch"] = "alice/T0001-build-login"
+        task["branch"] = "alice/T0001"
         change_status(notify_team, task["id"], "conflict")
 
         result = notify_conflict(
@@ -122,7 +122,7 @@ class TestNotifyConflict:
 
     def test_message_contains_task_and_branch(self, notify_team):
         task = _make_task_at_needs_merge(notify_team)
-        task["branch"] = "alice/T0001-build-login"
+        task["branch"] = "alice/T0001"
         change_status(notify_team, task["id"], "conflict")
 
         notify_conflict(
@@ -136,12 +136,12 @@ class TestNotifyConflict:
         assert "MERGE_CONFLICT" in body
         assert f"{format_task_id(task['id'])}" in body
         assert "Build login feature" in body
-        assert "alice/T0001-build-login" in body
+        assert "alice/T0001" in body
         assert "Conflict in auth.py" in body
 
     def test_message_suggests_rebase(self, notify_team):
         task = _make_task_at_needs_merge(notify_team)
-        task["branch"] = "alice/T0001-build-login"
+        task["branch"] = "alice/T0001"
         change_status(notify_team, task["id"], "conflict")
 
         notify_conflict(notify_team, TEAM, task)
@@ -154,7 +154,7 @@ class TestNotifyConflict:
 
     def test_no_details_shows_placeholder(self, notify_team):
         task = _make_task_at_needs_merge(notify_team)
-        task["branch"] = "alice/T0001-build-login"
+        task["branch"] = "alice/T0001"
         change_status(notify_team, task["id"], "conflict")
 
         notify_conflict(notify_team, TEAM, task, conflict_details="")

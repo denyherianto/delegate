@@ -139,7 +139,7 @@ class TestSingleTeamMessaging:
 
     def test_worker_to_qa(self, hc):
         """Worker sends a review request to QA."""
-        send(hc, TEAM_A, "alice", "sarah", "REVIEW_REQUEST: repo=myapp branch=alice/T0001-fix")
+        send(hc, TEAM_A, "alice", "sarah", "REVIEW_REQUEST: repo=myapp branch=alice/T0001")
         route_once(hc, TEAM_A)
 
         inbox = read_inbox(hc, TEAM_A, "sarah")
