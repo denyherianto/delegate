@@ -1,4 +1,22 @@
 import { html as diff2HtmlRender, parse as diff2HtmlParse } from "diff2html";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+
+// Configure marked for GitHub Flavored Markdown
+marked.setOptions({
+  gfm: true,
+  breaks: true,
+});
+
+/**
+ * Render markdown text to sanitized HTML.
+ * Pipeline: markdown text -> marked.parse() -> DOMPurify.sanitize() -> safe HTML
+ */
+function renderMarkdown(text) {
+  if (!text) return "";
+  const rawHtml = marked.parse(text);
+  return DOMPurify.sanitize(rawHtml);
+}
 
 // =====================================================================
 // State
@@ -349,7 +367,7 @@ function _taskRowHtml(t) {
             "</code></div>"
           : ""
       }
-      ${t.description ? '<div class="task-desc">' + esc(t.description) + "</div>" : ""}
+      ${t.description ? '<div class="task-desc md-content">' + renderMarkdown(t.description) + "</div>" : ""}
       <div class="task-dates">
         <span>Created: <span class="ts" data-ts="${t.created_at || ""}">${fmtTimestamp(t.created_at)}</span></span>
         <span>Completed: <span class="ts" data-ts="${t.completed_at || ""}">${fmtTimestamp(t.completed_at)}</span></span>
@@ -615,7 +633,7 @@ async function _loadChatInner() {
       if (m.type === "event")
         return `<div class="msg-event"><span class="msg-event-line"></span><span class="msg-event-text">${esc(m.content)}</span><span class="msg-event-line"></span><span class="msg-event-time ts" data-ts="${m.timestamp}">${fmtTimestamp(m.timestamp)}</span></div>`;
       const c = avatarColor(m.sender);
-      return `<div class="msg"><div class="msg-avatar" style="background:${c}">${avatarInitial(m.sender)}</div><div class="msg-body"><div class="msg-header"><span class="msg-sender" style="cursor:pointer" onclick="openAgentPanel('${m.sender}')">${cap(m.sender)}</span><span class="msg-recipient">\u2192 ${cap(m.recipient)}</span><span class="msg-time ts" data-ts="${m.timestamp}">${fmtTimestamp(m.timestamp)}</span></div><div class="msg-content">${esc(m.content)}</div></div></div>`;
+      return `<div class="msg"><div class="msg-avatar" style="background:${c}">${avatarInitial(m.sender)}</div><div class="msg-body"><div class="msg-header"><span class="msg-sender" style="cursor:pointer" onclick="openAgentPanel('${m.sender}')">${cap(m.sender)}</span><span class="msg-recipient">\u2192 ${cap(m.recipient)}</span><span class="msg-time ts" data-ts="${m.timestamp}">${fmtTimestamp(m.timestamp)}</span></div><div class="msg-content md-content">${renderMarkdown(m.content)}</div></div></div>`;
     })
     .join("");
   if (wasNearBottom) log.scrollTop = log.scrollHeight;
