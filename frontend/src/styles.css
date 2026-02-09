@@ -367,8 +367,8 @@ body {
 .sidebar-agent-dot.dot-stale { background: #eab308; }
 .sidebar-agent-dot.dot-stuck { background: #ef4444; box-shadow: 0 0 4px rgba(239,68,68,0.3); }
 .sidebar-agent-dot.dot-offline { background: var(--dot-offline); }
-.sidebar-agent-name { color: var(--text-primary); font-weight: 500; white-space: nowrap; }
-.sidebar-agent-activity { color: var(--text-muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-agent-name { color: var(--text-primary); font-weight: 500; white-space: nowrap; min-width: 48px; flex-shrink: 0; }
+.sidebar-agent-activity { color: var(--text-secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 /* Agent last-active time (replaces cost in sidebar) */
 .sidebar-agent-time { color: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; flex-shrink: 0; white-space: nowrap; }
 .sidebar-task-list { display: flex; flex-direction: column; gap: 0; max-height: calc(28px * 7); overflow-y: auto; }

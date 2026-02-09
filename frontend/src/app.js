@@ -1029,6 +1029,55 @@ function _fmtRelativeTime(iso) {
   return Math.floor(hr / 24) + "d ago";
 }
 
+function _fmtRelativeTimeShort(iso) {
+  if (!iso) return "";
+  const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  const min = Math.floor(sec / 60);
+  const hr = Math.floor(min / 60);
+  if (sec < 60) return "<1m";
+  if (min < 60) return min + "m";
+  if (hr < 24) return hr + "h";
+  return Math.floor(hr / 24) + "d";
+}
+
+/**
+ * Determine agent activity dot class based on last activity time.
+ * Returns "dot-active", "dot-stale", "dot-stuck", or "dot-offline".
+ */
+function getAgentDotClass(agent, tasks, agentStats) {
+  if (!agent.pid) return "dot-offline";
+  // Determine last activity timestamp
+  const assignedTask = tasks.find(function (t) {
+    return t.assignee === agent.name && t.status === "in_progress";
+  });
+  const taskUpdated = assignedTask ? new Date(assignedTask.updated_at) : null;
+  const lastActive = (agentStats && agentStats.last_active) ? new Date(agentStats.last_active) : null;
+  // Use the most recent timestamp available
+  const timestamps = [taskUpdated, lastActive].filter(Boolean);
+  if (timestamps.length === 0) return "dot-active"; // just started, no data yet
+  const mostRecent = new Date(Math.max.apply(null, timestamps));
+  const minutesAgo = (Date.now() - mostRecent.getTime()) / 60000;
+  if (minutesAgo <= 5) return "dot-active";
+  if (minutesAgo <= 30) return "dot-stale";
+  return "dot-stuck";
+}
+
+/**
+ * Get tooltip text for an agent dot.
+ */
+function getAgentDotTooltip(dotClass, agent, tasks) {
+  if (dotClass === "dot-offline") return "Offline";
+  var assignedTask = tasks.find(function (t) {
+    return t.assignee === agent.name && t.status === "in_progress";
+  });
+  var lastTs = assignedTask && assignedTask.updated_at ? assignedTask.updated_at : null;
+  var timeStr = lastTs ? _fmtRelativeTime(lastTs) : "";
+  if (dotClass === "dot-active") return "Active" + (timeStr ? " \u2014 last activity " + timeStr : "");
+  if (dotClass === "dot-stale") return "May be stuck" + (timeStr ? " \u2014 last activity " + timeStr : "");
+  if (dotClass === "dot-stuck") return "Likely stuck" + (timeStr ? " \u2014 last activity " + timeStr : "");
+  return "";
+}
+
 async function loadAgents() {
   if (!_currentTeam) return;
   let agentsRes, tasksRes;
@@ -1076,16 +1125,12 @@ async function loadAgents() {
       const roleBadge = _roleBadgeMap[a.role] || cap(a.role || "worker");
       const doneToday = doneTodayByAgent[a.name] || 0;
 
-      // Status dot class
-      let dotClass = "agent-card-dot-offline";
-      let statusLabel = "idle";
-      if (a.pid) {
-        dotClass = "agent-card-dot-active";
-        statusLabel = "active";
-      } else if (a.unread_inbox > 0) {
-        dotClass = "agent-card-dot-queued";
-        statusLabel = "queued";
-      }
+      // Activity-based dot classification
+      const sidebarDot = getAgentDotClass(a, tasks, statsMap[a.name]);
+      // Map sidebar dot class to agent-card dot class
+      const dotClass = "agent-card-" + sidebarDot;
+      const dotTooltip = getAgentDotTooltip(sidebarDot, a, tasks);
+      const statusLabel = sidebarDot === "dot-offline" ? "idle" : sidebarDot.replace("dot-", "");
 
       // Row 1: Identity
       const taskLink = currentTask
@@ -1116,7 +1161,7 @@ async function loadAgents() {
 
       return '<div class="agent-card-rich" onclick="openAgentPanel(\'' + a.name + '\')">' +
         '<div class="agent-card-row1">' +
-          '<span class="agent-card-dot ' + dotClass + '"></span>' +
+          '<span class="agent-card-dot ' + dotClass + '" title="' + esc(dotTooltip) + '"></span>' +
           '<span class="agent-card-name">' + cap(a.name) + '</span>' +
           '<span class="agent-card-role badge-role-' + (a.role || "worker") + '">' + roleBadge + '</span>' +
           '<span class="agent-card-task-col">' + taskLink + '</span>' +
@@ -1231,39 +1276,40 @@ async function loadSidebar() {
       }
       if (actionListEl) actionListEl.innerHTML = actionHtml;
     }
-    const inProgressTasks = tasks.filter((t) => t.status === "in_progress");
     let agentHtml = "";
     for (const a of agents || []) {
-      let dotClass = "dot-offline";
-      let activity = "Idle";
+      // Activity-based dot classification
+      var dotClass = getAgentDotClass(a, tasks, statsMap[a.name]);
+      var dotTooltip = getAgentDotTooltip(dotClass, a, tasks);
+      // Determine current task display
+      var currentTask = tasks.find(function (t) {
+        return t.assignee === a.name && t.status === "in_progress";
+      });
+      var taskDisplay;
+      if (currentTask) {
+        var tid = "T" + String(currentTask.id).padStart(4, "0");
+        taskDisplay =
+          '<span class="sidebar-task-id" style="margin-right:4px">' + tid + '</span>' +
+          '<span style="color:var(--text-muted)">\u2014</span> ' +
+          esc(currentTask.title);
+      } else {
+        taskDisplay = '<span style="color:var(--text-faint);font-style:italic">Available</span>';
+      }
+      // Last active time (only if agent has PID)
+      var lastActiveDisplay = "";
       if (a.pid) {
-        dotClass = "dot-working";
-        const agentTask = inProgressTasks.find(
-          (t) => t.assignee === a.name
-        );
-        activity = agentTask
-          ? "T" + String(agentTask.id).padStart(4, "0") + " " + agentTask.title
-          : "Working...";
-      } else if (a.unread_inbox > 0) dotClass = "dot-queued";
-      const cost = statsMap[a.name]
-        ? "$" + Number(statsMap[a.name].total_cost_usd || 0).toFixed(2)
-        : "";
+        var assignedTask = tasks.find(function (t) { return t.assignee === a.name; });
+        if (assignedTask && assignedTask.updated_at) {
+          lastActiveDisplay = _fmtRelativeTimeShort(assignedTask.updated_at);
+        }
+      }
       agentHtml +=
-        '<div class="sidebar-agent-row" style="cursor:pointer" onclick="openAgentPanel(\'' +
-        a.name +
-        "')\">" +
-        '<span class="sidebar-agent-dot ' +
-        dotClass +
-        '"></span>' +
-        '<span class="sidebar-agent-name">' +
-        cap(a.name) +
-        "</span>" +
-        '<span class="sidebar-agent-activity">' +
-        esc(activity) +
-        "</span>" +
-        '<span class="sidebar-agent-cost">' +
-        cost +
-        "</span></div>";
+        '<div class="sidebar-agent-row" style="cursor:pointer" onclick="openAgentPanel(\'' + a.name + '\')">' +
+        '<span class="sidebar-agent-dot ' + dotClass + '" title="' + esc(dotTooltip) + '"></span>' +
+        '<span class="sidebar-agent-name">' + cap(a.name) + '</span>' +
+        '<span class="sidebar-agent-activity">' + taskDisplay + '</span>' +
+        (lastActiveDisplay ? '<span class="sidebar-agent-time">' + lastActiveDisplay + '</span>' : '') +
+        '</div>';
     }
     document.getElementById("sidebarAgentList").innerHTML = agentHtml;
     // Task heuristic: Tier 0 needs_merge, Tier 1 in_progress+review, Tier 2 open, Tier 3 merged+done (max 3). Never show rejected.
