@@ -22,7 +22,7 @@ from pathlib import Path
 from boss.task import format_task_id
 
 from boss.paths import repos_dir as _repos_dir, repo_path as _repo_path, agent_worktrees_dir
-from boss.config import add_repo as _config_add_repo, get_repos as _config_get_repos, update_repo_approval as _config_update_approval
+from boss.config import add_repo as _config_add_repo, get_repos as _config_get_repos, update_repo_approval as _config_update_approval, update_repo_test_cmd as _config_update_test_cmd
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,7 @@ def register_repo(
     source: str,
     name: str | None = None,
     approval: str | None = None,
+    test_cmd: str | None = None,
 ) -> str:
     """Register a local repository by creating a symlink in ~/.boss/repos/.
 
@@ -59,6 +60,8 @@ def register_repo(
         name: Name for the repo (default: derived from source).
         approval: Merge approval mode — 'auto' or 'manual'.
                   Defaults to 'manual' for new repos.
+                  If None on re-registration, leaves existing setting unchanged.
+        test_cmd: Optional shell command to run tests.
                   If None on re-registration, leaves existing setting unchanged.
 
     Returns:
@@ -106,6 +109,11 @@ def register_repo(
         if approval is not None:
             _config_update_approval(hc_home, name, approval)
             logger.info("Updated approval for '%s' to '%s'", name, approval)
+
+        # Update test_cmd setting if explicitly provided
+        if test_cmd is not None:
+            _config_update_test_cmd(hc_home, name, test_cmd)
+            logger.info("Updated test_cmd for '%s'", name)
     else:
         # Create symlink
         link_path.parent.mkdir(parents=True, exist_ok=True)
@@ -113,7 +121,7 @@ def register_repo(
         logger.info("Created symlink %s -> %s", link_path, source_path)
 
         # Register in config (new repo — default approval to 'manual')
-        _config_add_repo(hc_home, name, str(source_path), approval=approval or "manual")
+        _config_add_repo(hc_home, name, str(source_path), approval=approval or "manual", test_cmd=test_cmd)
 
     logger.info("Registered repo '%s' from %s", name, source_path)
     return name

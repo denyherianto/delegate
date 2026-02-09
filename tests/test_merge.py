@@ -20,8 +20,8 @@ from boss.task import (
     update_task,
     get_task,
 )
-from boss.config import add_repo, get_repo_approval, set_boss
-from boss.merge import merge_task, merge_once, MergeResult
+from boss.config import add_repo, get_repo_approval, get_repo_test_cmd, update_repo_test_cmd, set_boss
+from boss.merge import merge_task, merge_once, _run_tests, MergeResult
 from boss.bootstrap import bootstrap
 
 
@@ -421,3 +421,93 @@ class TestGetRepoApproval:
         assert get_repo_approval(hc_home, "myrepo") == "auto"
         assert get_repo_approval(hc_home, "other") == "manual"
         assert get_repo_approval(hc_home, "missing") == "manual"
+
+
+# ---------------------------------------------------------------------------
+# get_repo_test_cmd / update_repo_test_cmd tests
+# ---------------------------------------------------------------------------
+
+class TestRepoTestCmd:
+    def test_returns_none_by_default(self, hc_home):
+        """test_cmd should be None for repos that don't configure it."""
+        assert get_repo_test_cmd(hc_home, "nonexistent") is None
+
+    def test_returns_none_when_not_set(self, hc_home):
+        """Repo registered without test_cmd should return None."""
+        add_repo(hc_home, "myrepo", "/tmp/repo")
+        assert get_repo_test_cmd(hc_home, "myrepo") is None
+
+    def test_add_repo_with_test_cmd(self, hc_home):
+        """add_repo with test_cmd stores it correctly."""
+        add_repo(hc_home, "myrepo", "/tmp/repo", test_cmd="/usr/bin/python -m pytest -x")
+        assert get_repo_test_cmd(hc_home, "myrepo") == "/usr/bin/python -m pytest -x"
+
+    def test_update_repo_test_cmd(self, hc_home):
+        """update_repo_test_cmd sets/changes the test command for an existing repo."""
+        add_repo(hc_home, "myrepo", "/tmp/repo")
+        assert get_repo_test_cmd(hc_home, "myrepo") is None
+
+        update_repo_test_cmd(hc_home, "myrepo", "/path/to/venv/bin/python -m pytest -x -q")
+        assert get_repo_test_cmd(hc_home, "myrepo") == "/path/to/venv/bin/python -m pytest -x -q"
+
+    def test_update_repo_test_cmd_missing_repo(self, hc_home):
+        """update_repo_test_cmd raises KeyError for unknown repo."""
+        with pytest.raises(KeyError, match="not found"):
+            update_repo_test_cmd(hc_home, "no_such_repo", "pytest")
+
+
+# ---------------------------------------------------------------------------
+# _run_tests with configured test_cmd
+# ---------------------------------------------------------------------------
+
+class TestRunTestsWithConfig:
+    def test_uses_configured_test_cmd(self, hc_home, tmp_path):
+        """When a test_cmd is configured, _run_tests should use it instead of auto-detection."""
+        repo = _setup_git_repo(tmp_path)
+        branch = "alice/T0001"
+        _make_feature_branch(repo, branch)
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        # Configure a test command that simply succeeds
+        update_repo_test_cmd(hc_home, "myrepo", "echo tests-passed")
+
+        ok, output = _run_tests(str(repo), branch, hc_home=hc_home, repo_name="myrepo")
+        assert ok is True
+        assert "tests-passed" in output
+
+    def test_configured_test_cmd_failure(self, hc_home, tmp_path):
+        """When configured test_cmd fails, _run_tests should report failure."""
+        repo = _setup_git_repo(tmp_path)
+        branch = "alice/T0001"
+        _make_feature_branch(repo, branch)
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        # Configure a test command that always fails
+        update_repo_test_cmd(hc_home, "myrepo", "false")
+
+        ok, output = _run_tests(str(repo), branch, hc_home=hc_home, repo_name="myrepo")
+        assert ok is False
+
+    def test_falls_back_to_auto_detect_when_no_config(self, hc_home, tmp_path):
+        """When no test_cmd is configured, _run_tests should fall back to auto-detection."""
+        repo = _setup_git_repo(tmp_path)
+        branch = "alice/T0001"
+        _make_feature_branch(repo, branch)
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        # No test_cmd configured — repo has no pyproject.toml / package.json / Makefile
+        # so auto-detection should skip tests
+        ok, output = _run_tests(str(repo), branch, hc_home=hc_home, repo_name="myrepo")
+        assert ok is True
+        assert "no test runner" in output.lower()
+
+    def test_falls_back_without_hc_home(self, tmp_path):
+        """When hc_home is None, _run_tests should use auto-detection only."""
+        repo = _setup_git_repo(tmp_path)
+        branch = "alice/T0001"
+        _make_feature_branch(repo, branch)
+
+        # No hc_home — auto-detection only, no test files → skip
+        ok, output = _run_tests(str(repo), branch)
+        assert ok is True
+        assert "no test runner" in output.lower()

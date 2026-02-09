@@ -15,10 +15,11 @@ The merge worker is called from the daemon loop (via ``merge_once``).
 """
 
 import logging
+import shlex
 import subprocess
 from pathlib import Path
 
-from boss.config import get_repo_approval
+from boss.config import get_repo_approval, get_repo_test_cmd
 from boss.notify import notify_conflict
 from boss.task import get_task, change_status, update_task, list_tasks, format_task_id
 from boss.chat import log_event
@@ -94,10 +95,18 @@ def _rebase_branch(repo_dir: str, branch: str, base_sha: str | None = None) -> t
     return True, result.stdout
 
 
-def _run_tests(repo_dir: str, branch: str) -> tuple[bool, str]:
+def _run_tests(
+    repo_dir: str,
+    branch: str,
+    hc_home: Path | None = None,
+    repo_name: str | None = None,
+) -> tuple[bool, str]:
     """Run the test suite on the current branch.
 
-    Creates a temporary worktree to run tests in isolation.
+    If a ``test_cmd`` is configured for the repo in boss config, it is used
+    (split via :func:`shlex.split`).  Otherwise falls back to auto-detection
+    based on project files (pyproject.toml, package.json, Makefile).
+
     Returns (success, output).
     """
     # Check out the branch in the repo (it's already rebased)
@@ -105,16 +114,23 @@ def _run_tests(repo_dir: str, branch: str) -> tuple[bool, str]:
     if result.returncode != 0:
         return False, f"Could not checkout {branch}: {result.stderr}"
 
-    # Detect and run test suite
-    repo_path = Path(repo_dir)
+    # Check for a configured test command first
     test_cmd: list[str] | None = None
 
-    if (repo_path / "pyproject.toml").exists() or (repo_path / "tests").is_dir():
-        test_cmd = ["python", "-m", "pytest", "-x", "-q"]
-    elif (repo_path / "package.json").exists():
-        test_cmd = ["npm", "test"]
-    elif (repo_path / "Makefile").exists():
-        test_cmd = ["make", "test"]
+    if hc_home is not None and repo_name:
+        configured = get_repo_test_cmd(hc_home, repo_name)
+        if configured:
+            test_cmd = shlex.split(configured)
+
+    # Fall back to auto-detection
+    if test_cmd is None:
+        repo_path = Path(repo_dir)
+        if (repo_path / "pyproject.toml").exists() or (repo_path / "tests").is_dir():
+            test_cmd = ["python", "-m", "pytest", "-x", "-q"]
+        elif (repo_path / "package.json").exists():
+            test_cmd = ["npm", "test"]
+        elif (repo_path / "Makefile").exists():
+            test_cmd = ["make", "test"]
 
     if test_cmd is None:
         return True, "No test runner detected, skipping tests."
@@ -219,7 +235,7 @@ def merge_task(
 
     # Step 2: Run tests (optional)
     if not skip_tests:
-        ok, output = _run_tests(repo_str, branch)
+        ok, output = _run_tests(repo_str, branch, hc_home=hc_home, repo_name=repo_name)
         if not ok:
             change_status(hc_home, task_id, "conflict")
             notify_conflict(hc_home, team, task, conflict_details=f"Tests failed:\n{output[:500]}")

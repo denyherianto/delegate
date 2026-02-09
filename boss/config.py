@@ -64,7 +64,13 @@ def get_repos(hc_home: Path) -> dict:
     return _read(hc_home).get("repos", {})
 
 
-def add_repo(hc_home: Path, name: str, source: str, approval: str = "manual") -> None:
+def add_repo(
+    hc_home: Path,
+    name: str,
+    source: str,
+    approval: str = "manual",
+    test_cmd: str | None = None,
+) -> None:
     """Register a repo in config.
 
     Args:
@@ -72,12 +78,15 @@ def add_repo(hc_home: Path, name: str, source: str, approval: str = "manual") ->
         name: Repo name.
         source: Local path or remote URL.
         approval: Merge approval mode — 'auto' or 'manual' (default: 'manual').
+        test_cmd: Optional shell command to run tests (e.g. '/path/to/.venv/bin/python -m pytest -x -q').
     """
     data = _read(hc_home)
     repos = data.setdefault("repos", {})
     existing = repos.get(name, {})
     existing["source"] = source
     existing["approval"] = approval
+    if test_cmd is not None:
+        existing["test_cmd"] = test_cmd
     repos[name] = existing
     _write(hc_home, data)
 
@@ -106,3 +115,32 @@ def get_repo_approval(hc_home: Path, repo_name: str) -> str:
     repos = get_repos(hc_home)
     meta = repos.get(repo_name, {})
     return meta.get("approval", "manual")
+
+
+# --- Repo test_cmd ---
+
+def get_repo_test_cmd(hc_home: Path, repo_name: str) -> str | None:
+    """Return the configured test command for a repo, or None if not set.
+
+    The test command is a shell command string (e.g. '/path/to/.venv/bin/python -m pytest -x -q')
+    that should be split with shlex.split() before execution.
+    """
+    repos = get_repos(hc_home)
+    meta = repos.get(repo_name, {})
+    return meta.get("test_cmd")
+
+
+def update_repo_test_cmd(hc_home: Path, name: str, test_cmd: str) -> None:
+    """Update the test command for an existing repo.
+
+    Args:
+        hc_home: Boss home directory.
+        name: Repo name (must already exist in config).
+        test_cmd: Shell command string to run tests.
+    """
+    data = _read(hc_home)
+    repos = data.get("repos", {})
+    if name not in repos:
+        raise KeyError(f"Repo '{name}' not found in config")
+    repos[name]["test_cmd"] = test_cmd
+    _write(hc_home, data)

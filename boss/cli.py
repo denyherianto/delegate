@@ -313,13 +313,18 @@ def repo() -> None:
     default=None,
     help="Merge approval mode: 'auto' (merge when QA approves) or 'manual' (require human approval). Default: manual.",
 )
+@click.option(
+    "--test-cmd",
+    default=None,
+    help="Shell command to run tests (e.g. '/path/to/.venv/bin/python -m pytest -x -q').",
+)
 @click.pass_context
-def repo_add(ctx: click.Context, path_or_url: str, repo_name: str | None, approval: str | None) -> None:
+def repo_add(ctx: click.Context, path_or_url: str, repo_name: str | None, approval: str | None, test_cmd: str | None) -> None:
     """Register a repository (local path or remote URL)."""
     from boss.repo import register_repo
 
     hc_home = _get_home(ctx)
-    name = register_repo(hc_home, path_or_url, name=repo_name, approval=approval)
+    name = register_repo(hc_home, path_or_url, name=repo_name, approval=approval, test_cmd=test_cmd)
     click.echo(f"Registered repo '{name}'")
 
 

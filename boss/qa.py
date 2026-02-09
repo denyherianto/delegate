@@ -31,6 +31,7 @@ from boss.paths import agent_dir as _resolve_agent_dir
 from boss.mailbox import send, read_inbox, mark_inbox_read, Message
 from boss.chat import log_event
 from boss.task import list_tasks, set_task_branch, change_status, get_task, format_task_id
+from boss.config import get_repo_test_cmd
 from boss.bootstrap import get_member_by_role
 
 logger = logging.getLogger(__name__)
@@ -302,7 +303,14 @@ def handle_review_request(
         _update_task_on_rejection(hc_home, task_id, req)
         return result
 
-    result = run_tests(wt_path, test_command)
+    # Use explicitly provided test_command, or look up from repo config
+    effective_test_command = test_command
+    if effective_test_command is None:
+        configured = get_repo_test_cmd(hc_home, req.repo)
+        if configured:
+            effective_test_command = configured
+
+    result = run_tests(wt_path, effective_test_command)
     result.repo = req.repo
     result.branch = req.branch
 
