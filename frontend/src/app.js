@@ -672,6 +672,65 @@ function switchTaskPanelDiffTab(tab) {
   }
 }
 
+// =====================================================================
+// Task activity log
+// =====================================================================
+async function loadTaskActivity(taskId, task) {
+  const events = [];
+  // 1. Task creation
+  if (task.created_at) {
+    events.push({ type: "created", time: task.created_at, text: "Task created", icon: "\u2795" });
+  }
+  // 2. Assignment
+  if (task.assignee) {
+    events.push({ type: "assignment", time: task.created_at, text: "Assigned to " + cap(task.assignee), icon: "\uD83D\uDC64" });
+  }
+  // 3. Current status (if not open — we don't have full history in v1)
+  if (task.status && task.status !== "open") {
+    events.push({ type: "status", time: task.updated_at, text: "Status: " + fmtStatus(task.status), icon: "\uD83D\uDD04" });
+  }
+  // 4. Chat messages mentioning this task
+  try {
+    const msgs = await fetch("/messages").then(function (r) { return r.json(); });
+    const taskRef = "T" + String(taskId).padStart(4, "0");
+    for (const m of msgs) {
+      if (m.type === "chat" && m.content && m.content.indexOf(taskRef) !== -1) {
+        events.push({
+          type: "mention",
+          time: m.timestamp,
+          text: "Mentioned by " + cap(m.sender),
+          icon: "\uD83D\uDCAC"
+        });
+      }
+    }
+  } catch (e) {}
+  // Sort chronologically (oldest first)
+  events.sort(function (a, b) { return (a.time || "").localeCompare(b.time || ""); });
+  return events;
+}
+
+function renderTaskActivity(events) {
+  if (!events || !events.length) return '<div class="diff-empty">No activity yet</div>';
+  let html = "";
+  for (const e of events) {
+    html +=
+      '<div class="task-activity-event">' +
+      '<span class="task-activity-icon">' + e.icon + '</span>' +
+      '<span class="task-activity-text">' + esc(e.text) + '</span>' +
+      '<span class="task-activity-time">' + _fmtRelativeTime(e.time) + '</span>' +
+      '</div>';
+  }
+  return html;
+}
+
+function toggleTaskActivity() {
+  const arrow = document.getElementById("taskActivityArrow");
+  const list = document.getElementById("taskActivityList");
+  if (!arrow || !list) return;
+  const expanded = arrow.classList.toggle("expanded");
+  list.classList.toggle("expanded", expanded);
+}
+
 async function openTaskPanel(taskId) {
   // Close agent/diff panel if open (don't stack panels)
   if (_panelMode) closePanel();
@@ -764,6 +823,16 @@ async function openTaskPanel(taskId) {
       body += '<div class="task-panel-desc md-content">' + linkifyFilePaths(linkifyTaskRefs(renderMarkdown(task.description))) + '</div>';
       body += '</div>';
     }
+    // Activity section (collapsible, default collapsed)
+    body += '<div class="task-activity-section">';
+    body += '<div class="task-activity-header" onclick="toggleTaskActivity()">';
+    body += '<span class="task-activity-arrow" id="taskActivityArrow">\u25B6</span>';
+    body += '<span class="task-panel-section-label" style="margin-bottom:0">Activity</span>';
+    body += '</div>';
+    body += '<div class="task-activity-list" id="taskActivityList">';
+    body += '<div class="diff-empty">Loading activity...</div>';
+    body += '</div>';
+    body += '</div>';
     // Approval actions
     body += renderTaskApproval(task);
     // Diff section placeholder
@@ -773,6 +842,14 @@ async function openTaskPanel(taskId) {
     body += '<div id="taskPanelDiffContent"><div class="diff-empty">Loading diff...</div></div>';
     body += '</div>';
     document.getElementById("taskPanelBody").innerHTML = body;
+    // Load activity asynchronously
+    loadTaskActivity(taskId, task).then(function (events) {
+      const actList = document.getElementById("taskActivityList");
+      if (actList) actList.innerHTML = renderTaskActivity(events);
+    }).catch(function () {
+      const actList = document.getElementById("taskActivityList");
+      if (actList) actList.innerHTML = '<div class="diff-empty">Failed to load activity</div>';
+    });
     // Load diff asynchronously
     _taskPanelDiffRaw = "";
     _taskPanelDiffTab = "files";
@@ -1117,6 +1194,43 @@ async function loadSidebar() {
       '<div class="sidebar-stat-card"><div class="sidebar-stat-number">' + openCount + '</div><div class="sidebar-stat-label">Active tasks</div></div>' +
       '<div class="sidebar-stat-card"><div class="sidebar-stat-number">$' + totalCost.toFixed(2) + '</div><div class="sidebar-stat-label">Spent lifetime</div></div>' +
       '</div>';
+    // ---- Action Required widget ----
+    const actionItems = tasks.filter(function (t) {
+      return t.status === "needs_merge" || t.status === "review";
+    }).sort(function (a, b) {
+      return (a.updated_at || "").localeCompare(b.updated_at || "");
+    });
+    const actionCountEl = document.getElementById("sidebarActionCount");
+    const actionListEl = document.getElementById("sidebarActionList");
+    const actionSeeAll = document.querySelector("#sidebarActions .sidebar-see-all");
+    if (actionItems.length === 0) {
+      if (actionCountEl) actionCountEl.style.display = "none";
+      if (actionListEl) actionListEl.innerHTML =
+        '<div class="sidebar-action-empty">' +
+        '<span style="color:var(--accent-green)">\u2713</span> ' +
+        '<span>No items need your attention</span></div>';
+      if (actionSeeAll) actionSeeAll.style.display = "none";
+    } else {
+      if (actionCountEl) {
+        actionCountEl.style.display = "";
+        actionCountEl.textContent = actionItems.length;
+      }
+      if (actionSeeAll) actionSeeAll.style.display = "";
+      let actionHtml = "";
+      for (const t of actionItems) {
+        const tid = "T" + String(t.id).padStart(4, "0");
+        const icon = t.status === "needs_merge" ? "\uD83D\uDD00" : "\uD83D\uDC41";
+        const timeWaiting = _fmtRelativeTime(t.updated_at);
+        actionHtml +=
+          '<div class="sidebar-action-row" onclick="openTaskPanel(' + t.id + ')">' +
+          '<span class="sidebar-action-type-icon">' + icon + '</span>' +
+          '<span class="sidebar-task-id">' + tid + '</span>' +
+          '<span class="sidebar-action-desc">' + esc(t.title) + '</span>' +
+          '<span class="sidebar-action-time">' + timeWaiting + '</span>' +
+          '</div>';
+      }
+      if (actionListEl) actionListEl.innerHTML = actionHtml;
+    }
     const inProgressTasks = tasks.filter((t) => t.status === "in_progress");
     let agentHtml = "";
     for (const a of agents || []) {
@@ -1739,6 +1853,7 @@ Object.assign(window, {
   closeTaskPanel,
   switchTaskPanelDiffTab,
   openFilePanel,
+  toggleTaskActivity,
   onChatSearchInput,
   onChatFilterChange,
   onTaskSearchInput,

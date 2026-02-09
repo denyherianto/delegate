@@ -963,3 +963,64 @@ body {
 .file-breadcrumb-dir { color: var(--text-muted); }
 .file-breadcrumb-sep { color: var(--text-faint); margin: 0 2px; }
 .file-breadcrumb-current { color: var(--text-heading); font-weight: 600; }
+
+/* ---- Task activity timeline (in task panel) ---- */
+.task-activity-section {
+  margin-bottom: 20px;
+}
+.task-activity-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-bottom: 8px;
+}
+.task-activity-header:hover {
+  color: var(--text-primary);
+}
+.task-activity-arrow {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform 0.15s;
+}
+.task-activity-arrow.expanded {
+  transform: rotate(90deg);
+}
+.task-activity-list {
+  display: none;
+}
+.task-activity-list.expanded {
+  display: flex;
+  flex-direction: column;
+}
+.task-activity-event {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.task-activity-event:last-child {
+  border-bottom: none;
+}
+.task-activity-icon {
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+  font-size: 13px;
+  padding-top: 1px;
+}
+.task-activity-text {
+  flex: 1;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.task-activity-time {
+  color: var(--text-faint);
+  font-size: 11px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
