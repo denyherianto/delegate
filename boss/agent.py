@@ -19,10 +19,13 @@ Usage:
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import re
 import sys
+import time
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -37,6 +40,192 @@ logger = logging.getLogger(__name__)
 
 # Default idle timeout in seconds (10 minutes)
 DEFAULT_IDLE_TIMEOUT = 600
+
+
+# ---------------------------------------------------------------------------
+# AgentLogger — structured, per-agent session logger
+# ---------------------------------------------------------------------------
+
+class AgentLogger:
+    """Rich structured logger for agent sessions.
+
+    Wraps Python's logging module with agent-specific context (agent name,
+    turn number) automatically included in every log line.  Provides
+    convenience methods for the major logging events in an agent session.
+
+    Log format:
+        [agent:<name>] [turn:<N>] <message>
+    """
+
+    def __init__(self, agent_name: str, logger: logging.Logger | None = None):
+        self.agent = agent_name
+        self._logger = logger or logging.getLogger(f"boss.agent.{agent_name}")
+        self.turn: int = 0
+        self.session_start: float = time.monotonic()
+
+    def _prefix(self) -> str:
+        """Build a structured prefix for log lines."""
+        return f"[agent:{self.agent}] [turn:{self.turn}]"
+
+    # -- Convenience log methods with auto-prefix -------------------------
+
+    def debug(self, msg: str, *args: Any) -> None:
+        self._logger.debug(f"{self._prefix()} {msg}", *args)
+
+    def info(self, msg: str, *args: Any) -> None:
+        self._logger.info(f"{self._prefix()} {msg}", *args)
+
+    def warning(self, msg: str, *args: Any) -> None:
+        self._logger.warning(f"{self._prefix()} {msg}", *args)
+
+    def error(self, msg: str, *args: Any, exc_info: bool = False) -> None:
+        self._logger.error(f"{self._prefix()} {msg}", *args, exc_info=exc_info)
+
+    # -- Session lifecycle ------------------------------------------------
+
+    def session_start_log(
+        self,
+        *,
+        task_id: int | None,
+        model: str | None = None,
+        token_budget: int | None = None,
+        workspace: Path | None = None,
+        session_id: int | None = None,
+        max_turns: int | None = None,
+    ) -> None:
+        """Log session start with all relevant parameters."""
+        parts = [f"Session started (session_id={session_id})"]
+        if task_id is not None:
+            parts.append(f"task={format_task_id(task_id)}")
+        if model:
+            parts.append(f"model={model}")
+        if token_budget:
+            parts.append(f"token_budget={token_budget:,}")
+        if max_turns is not None:
+            parts.append(f"max_turns={max_turns}")
+        if workspace:
+            parts.append(f"workspace={workspace}")
+        self.info(" | ".join(parts))
+
+    def session_end_log(
+        self,
+        *,
+        turns: int,
+        tokens_in: int,
+        tokens_out: int,
+        cost_usd: float,
+        exit_reason: str = "normal",
+    ) -> None:
+        """Log session end with full summary."""
+        elapsed = time.monotonic() - self.session_start
+        total_tokens = tokens_in + tokens_out
+        self.info(
+            "Session ended | reason=%s | turns=%d | tokens=%s (in=%s, out=%s) "
+            "| cost=$%.4f | duration=%.1fs",
+            exit_reason, turns,
+            f"{total_tokens:,}", f"{tokens_in:,}", f"{tokens_out:,}",
+            cost_usd, elapsed,
+        )
+
+    # -- Turn lifecycle ---------------------------------------------------
+
+    def turn_start(self, turn_num: int, message_preview: str = "") -> None:
+        """Log the start of a new turn."""
+        self.turn = turn_num
+        preview = message_preview[:100]
+        if len(message_preview) > 100:
+            preview += "..."
+        self.info("Turn %d started | input_preview=%r", turn_num, preview)
+
+    def turn_end(
+        self,
+        turn_num: int,
+        *,
+        tokens_in: int,
+        tokens_out: int,
+        cost_usd: float,
+        cumulative_tokens_in: int,
+        cumulative_tokens_out: int,
+        cumulative_cost: float,
+        tool_calls: list[str] | None = None,
+    ) -> None:
+        """Log the end of a turn with token/cost details."""
+        self.turn = turn_num
+        turn_tokens = tokens_in + tokens_out
+        cumul_tokens = cumulative_tokens_in + cumulative_tokens_out
+        parts = [
+            f"Turn {turn_num} complete",
+            f"turn_tokens={turn_tokens:,} (in={tokens_in:,}, out={tokens_out:,})",
+            f"cumulative_tokens={cumul_tokens:,} (in={cumulative_tokens_in:,}, out={cumulative_tokens_out:,})",
+            f"turn_cost=${cost_usd:.4f}",
+            f"cumulative_cost=${cumulative_cost:.4f}",
+        ]
+        if tool_calls:
+            parts.append(f"tools=[{', '.join(tool_calls)}]")
+        self.info(" | ".join(parts))
+
+    # -- Message routing --------------------------------------------------
+
+    def message_received(self, sender: str, content_length: int) -> None:
+        """Log an incoming message from a sender."""
+        self.info(
+            "Message received | from=%s | length=%d chars", sender, content_length,
+        )
+
+    def message_sent(self, recipient: str, content_length: int) -> None:
+        """Log an outgoing message to a recipient."""
+        self.info(
+            "Message sent | to=%s | length=%d chars", recipient, content_length,
+        )
+
+    def mail_marked_read(self, filename: str) -> None:
+        """Log when a message is marked as read."""
+        self.debug("Mail marked read | file=%s", filename)
+
+    # -- Tool calls -------------------------------------------------------
+
+    def tool_call(self, tool_name: str, args_summary: str = "") -> None:
+        """Log a tool call with brief args."""
+        if args_summary:
+            summary = args_summary[:120]
+            if len(args_summary) > 120:
+                summary += "..."
+            self.debug("Tool call | tool=%s | args=%s", tool_name, summary)
+        else:
+            self.debug("Tool call | tool=%s", tool_name)
+
+    # -- Errors -----------------------------------------------------------
+
+    def session_error(self, error: Exception) -> None:
+        """Log a session-level error with traceback."""
+        self.error(
+            "Session error | type=%s | message=%s",
+            type(error).__name__, str(error), exc_info=True,
+        )
+
+    # -- Connection -------------------------------------------------------
+
+    def client_connecting(self) -> None:
+        """Log SDK client connection attempt."""
+        self.info("Connecting to Claude SDK client")
+
+    def client_connected(self) -> None:
+        """Log successful SDK connection."""
+        self.info("Claude SDK client connected")
+
+    def client_disconnected(self) -> None:
+        """Log SDK client disconnection."""
+        self.info("Claude SDK client disconnected")
+
+    # -- Idle / waiting ---------------------------------------------------
+
+    def waiting_for_mail(self, timeout: float) -> None:
+        """Log that the agent is waiting for new mail."""
+        self.debug("Waiting for inbox messages | timeout=%ds", timeout)
+
+    def idle_timeout(self, timeout: float) -> None:
+        """Log idle timeout exit."""
+        self.info("Idle timeout reached (%ds), shutting down", timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +573,7 @@ def build_user_message(
                 parts.append(f"--- Upcoming message {i}/{len(messages)} (for context only) ---")
             parts.append(f"[{msg.time}] From {msg.sender}:\n{msg.body}")
         parts.append(
-            "\n👉 Respond to the ACTION REQUIRED message above (message 1). "
+            "\n\U0001f449 Respond to the ACTION REQUIRED message above (message 1). "
             "You may read the other messages for context and adapt your "
             "response accordingly, but only take action on message 1. "
             "The remaining messages will be delivered for action in subsequent turns."
@@ -477,6 +666,16 @@ def _collect_tokens_from_message(msg: Any) -> tuple[int, int, float]:
     return 0, 0, 0.0
 
 
+def _extract_tool_calls(msg: Any) -> list[str]:
+    """Extract tool call names from a response message."""
+    tools = []
+    if hasattr(msg, "content"):
+        for block in getattr(msg, "content", []):
+            if hasattr(block, "name"):
+                tools.append(block.name)
+    return tools
+
+
 def _append_to_worklog(lines: list[str], msg: Any) -> None:
     """Append assistant / tool content from a message to the worklog."""
     if hasattr(msg, "content"):
@@ -485,6 +684,39 @@ def _append_to_worklog(lines: list[str], msg: Any) -> None:
                 lines.append(f"**Assistant**: {block.text}\n")
             elif hasattr(block, "name"):
                 lines.append(f"**Tool**: {block.name}\n")
+
+
+# ---------------------------------------------------------------------------
+# Turn processing helper
+# ---------------------------------------------------------------------------
+
+def _process_turn_messages(
+    msg: Any,
+    alog: AgentLogger,
+    turn_tokens_in: int,
+    turn_tokens_out: int,
+    turn_cost: float,
+    turn_tools: list[str],
+    worklog_lines: list[str],
+) -> tuple[int, int, float]:
+    """Process a single response message: extract tokens, tools, worklog.
+
+    Returns updated (turn_tokens_in, turn_tokens_out, turn_cost).
+    """
+    tin, tout, cost = _collect_tokens_from_message(msg)
+    turn_tokens_in += tin
+    turn_tokens_out += tout
+    if cost > 0:
+        turn_cost = cost
+
+    # Log tool calls
+    tools = _extract_tool_calls(msg)
+    for tool_name in tools:
+        alog.tool_call(tool_name)
+        turn_tools.append(tool_name)
+
+    _append_to_worklog(worklog_lines, msg)
+    return turn_tokens_in, turn_tokens_out, turn_cost
 
 
 # ---------------------------------------------------------------------------
@@ -510,6 +742,7 @@ async def run_agent_loop(
     sdk_options_class = sdk_options_class or DefaultOptions
 
     ad = _agent_dir(hc_home, team, agent)
+    alog = AgentLogger(agent)
 
     # Guard against double-start
     state = _read_state(ad)
@@ -534,6 +767,21 @@ async def run_agent_loop(
     total_tokens_in = 0
     total_tokens_out = 0
     total_cost_usd = 0.0
+    exit_reason = "normal"
+
+    # Compute max_turns for logging
+    max_turns = None
+    if token_budget:
+        max_turns = max(1, token_budget // 4000)
+
+    # Log session start
+    alog.session_start_log(
+        task_id=current_task_id,
+        token_budget=token_budget,
+        workspace=get_task_workspace(hc_home, team, agent, current_task),
+        session_id=session_id,
+        max_turns=max_turns,
+    )
 
     # Worklog
     worklog_lines: list[str] = [
@@ -557,28 +805,60 @@ async def run_agent_loop(
         add_dirs=[str(hc_home)],
     )
     if token_budget:
-        options_kwargs["max_turns"] = max(1, token_budget // 4000)
+        options_kwargs["max_turns"] = max_turns
 
     options = sdk_options_class(**options_kwargs)
 
     try:
+        alog.client_connecting()
         client = client_class(options)
         await client.connect()
+        alog.client_connected()
 
         try:
             # --- First turn: include context.md for cold-start recovery ---
             user_msg = build_user_message(hc_home, team, agent, include_context=True)
             worklog_lines.append(f"\n## Turn 1\n{user_msg}")
 
+            # Log incoming messages from this turn
+            messages = read_inbox(hc_home, team, agent, unread_only=True)
+            for inbox_msg in messages:
+                alog.message_received(inbox_msg.sender, len(inbox_msg.body))
+
+            alog.turn_start(1, user_msg)
+
+            turn_tokens_in = 0
+            turn_tokens_out = 0
+            turn_cost = 0.0
+            turn_tools: list[str] = []
+
             await client.query(user_msg, session_id="main")
             async for msg in client.receive_response():
-                tin, tout, cost = _collect_tokens_from_message(msg)
-                total_tokens_in += tin
-                total_tokens_out += tout
-                # cost is cumulative session total from SDK — replace, don't sum
-                if cost > 0:
-                    total_cost_usd = cost
-                _append_to_worklog(worklog_lines, msg)
+                turn_tokens_in, turn_tokens_out, turn_cost = _process_turn_messages(
+                    msg, alog, turn_tokens_in, turn_tokens_out, turn_cost,
+                    turn_tools, worklog_lines,
+                )
+
+            # Compute cost delta for this turn
+            cost_delta = turn_cost - total_cost_usd if turn_cost > 0 else 0.0
+
+            total_tokens_in += turn_tokens_in
+            total_tokens_out += turn_tokens_out
+            # cost is cumulative session total from SDK — replace, don't sum
+            if turn_cost > 0:
+                total_cost_usd = turn_cost
+
+            # Log turn end with full details
+            alog.turn_end(
+                1,
+                tokens_in=turn_tokens_in,
+                tokens_out=turn_tokens_out,
+                cost_usd=cost_delta,
+                cumulative_tokens_in=total_tokens_in,
+                cumulative_tokens_out=total_tokens_out,
+                cumulative_cost=total_cost_usd,
+                tool_calls=turn_tools if turn_tools else None,
+            )
 
             # Persist running totals after each turn (crash-safe)
             update_session_tokens(
@@ -587,14 +867,11 @@ async def run_agent_loop(
                 tokens_out=total_tokens_out,
                 cost_usd=total_cost_usd,
             )
-            logger.info(
-                "Turn 1 tokens: in=%d out=%d cost=$%.6f",
-                total_tokens_in, total_tokens_out, total_cost_usd,
-            )
 
             # Mark only the first unread message as read (one-at-a-time processing)
             _first = read_inbox(hc_home, team, agent, unread_only=True)
             if _first and _first[0].filename:
+                alog.mail_marked_read(_first[0].filename)
                 mark_inbox_read(hc_home, team, agent, _first[0].filename)
 
             # Re-check task association (may set up worktree if task acquired a repo)
@@ -603,29 +880,61 @@ async def run_agent_loop(
                 if current_task is not None:
                     current_task_id = current_task["id"]
                     update_session_task(hc_home, session_id, current_task_id)
+                    alog.info("Task association updated | task=%s", format_task_id(current_task_id))
 
             turn = 1
 
             # --- Event loop: wait for new inbox messages ---
             while True:
+                alog.waiting_for_mail(idle_timeout)
                 has_mail = await wait_for_inbox(hc_home, team, agent, timeout=idle_timeout)
                 if not has_mail:
-                    logger.info("Agent %s idle timeout (%ds), exiting", agent, idle_timeout)
+                    exit_reason = "idle_timeout"
+                    alog.idle_timeout(idle_timeout)
                     break
 
                 turn += 1
                 user_msg = build_user_message(hc_home, team, agent)
                 worklog_lines.append(f"\n## Turn {turn}\n{user_msg}")
 
+                # Log incoming messages
+                messages = read_inbox(hc_home, team, agent, unread_only=True)
+                for inbox_msg in messages:
+                    alog.message_received(inbox_msg.sender, len(inbox_msg.body))
+
+                alog.turn_start(turn, user_msg)
+
+                prev_cost = total_cost_usd
+                turn_tokens_in = 0
+                turn_tokens_out = 0
+                turn_cost = 0.0
+                turn_tools = []
+
                 await client.query(user_msg, session_id="main")
                 async for msg in client.receive_response():
-                    tin, tout, cost = _collect_tokens_from_message(msg)
-                    total_tokens_in += tin
-                    total_tokens_out += tout
-                    # cost is cumulative session total from SDK — replace, don't sum
-                    if cost > 0:
-                        total_cost_usd = cost
-                    _append_to_worklog(worklog_lines, msg)
+                    turn_tokens_in, turn_tokens_out, turn_cost = _process_turn_messages(
+                        msg, alog, turn_tokens_in, turn_tokens_out, turn_cost,
+                        turn_tools, worklog_lines,
+                    )
+
+                # Compute cost delta
+                cost_delta = turn_cost - prev_cost if turn_cost > 0 else 0.0
+
+                total_tokens_in += turn_tokens_in
+                total_tokens_out += turn_tokens_out
+                if turn_cost > 0:
+                    total_cost_usd = turn_cost
+
+                alog.turn_end(
+                    turn,
+                    tokens_in=turn_tokens_in,
+                    tokens_out=turn_tokens_out,
+                    cost_usd=cost_delta,
+                    cumulative_tokens_in=total_tokens_in,
+                    cumulative_tokens_out=total_tokens_out,
+                    cumulative_cost=total_cost_usd,
+                    tool_calls=turn_tools if turn_tools else None,
+                )
 
                 # Persist running totals after each turn (crash-safe)
                 update_session_tokens(
@@ -634,14 +943,11 @@ async def run_agent_loop(
                     tokens_out=total_tokens_out,
                     cost_usd=total_cost_usd,
                 )
-                logger.info(
-                    "Turn %d tokens: in=%d out=%d cost=$%.6f",
-                    turn, total_tokens_in, total_tokens_out, total_cost_usd,
-                )
 
                 # Mark only the first unread message as read (one-at-a-time)
                 _first = read_inbox(hc_home, team, agent, unread_only=True)
                 if _first and _first[0].filename:
+                    alog.mail_marked_read(_first[0].filename)
                     mark_inbox_read(hc_home, team, agent, _first[0].filename)
 
                 # Re-check task association
@@ -650,11 +956,27 @@ async def run_agent_loop(
                     if current_task is not None:
                         current_task_id = current_task["id"]
                         update_session_task(hc_home, session_id, current_task_id)
+                        alog.info("Task association updated | task=%s", format_task_id(current_task_id))
 
         finally:
             await client.disconnect()
+            alog.client_disconnected()
+
+    except Exception as exc:
+        exit_reason = "error"
+        alog.session_error(exc)
+        raise
 
     finally:
+        # Log session end summary
+        alog.session_end_log(
+            turns=turn if 'turn' in dir() else 0,
+            tokens_in=total_tokens_in,
+            tokens_out=total_tokens_out,
+            cost_usd=total_cost_usd,
+            exit_reason=exit_reason,
+        )
+
         # End session
         end_session(
             hc_home, session_id,
@@ -717,6 +1039,7 @@ async def _run_agent_oneshot(
 ) -> str:
     """Original one-shot agent run (used by old tests)."""
     ad = _agent_dir(hc_home, team, agent)
+    alog = AgentLogger(agent)
 
     state = _read_state(ad)
     if state.get("pid") is not None:
@@ -738,6 +1061,17 @@ async def _run_agent_oneshot(
     total_tokens_out = 0
     total_cost_usd = 0.0
 
+    max_turns = None
+    if token_budget:
+        max_turns = max(1, token_budget // 4000)
+
+    alog.session_start_log(
+        task_id=current_task_id,
+        token_budget=token_budget,
+        session_id=session_id,
+        max_turns=max_turns,
+    )
+
     try:
         workspace = get_task_workspace(hc_home, team, agent, current_task)
         system_prompt = build_system_prompt(
@@ -754,7 +1088,7 @@ async def _run_agent_oneshot(
             add_dirs=[str(hc_home)],
         )
         if token_budget:
-            options_kwargs["max_turns"] = max(1, token_budget // 4000)
+            options_kwargs["max_turns"] = max_turns
 
         options = sdk_options_class(**options_kwargs)
 
@@ -765,6 +1099,14 @@ async def _run_agent_oneshot(
             "\n## Conversation\n",
         ]
 
+        # Log incoming messages
+        messages = read_inbox(hc_home, team, agent, unread_only=True)
+        for inbox_msg in messages:
+            alog.message_received(inbox_msg.sender, len(inbox_msg.body))
+
+        alog.turn_start(1, user_message)
+        turn_tools: list[str] = []
+
         async for message in sdk_query(prompt=user_message, options=options):
             tin, tout, cost = _collect_tokens_from_message(message)
             total_tokens_in += tin
@@ -772,7 +1114,25 @@ async def _run_agent_oneshot(
             # cost is cumulative session total from SDK — replace, don't sum
             if cost > 0:
                 total_cost_usd = cost
+
+            # Log tool calls
+            tools = _extract_tool_calls(message)
+            for tool_name in tools:
+                alog.tool_call(tool_name)
+                turn_tools.append(tool_name)
+
             _append_to_worklog(worklog_lines, message)
+
+        alog.turn_end(
+            1,
+            tokens_in=total_tokens_in,
+            tokens_out=total_tokens_out,
+            cost_usd=total_cost_usd,
+            cumulative_tokens_in=total_tokens_in,
+            cumulative_tokens_out=total_tokens_out,
+            cumulative_cost=total_cost_usd,
+            tool_calls=turn_tools if turn_tools else None,
+        )
 
         worklog_content = "\n".join(worklog_lines)
 
@@ -783,11 +1143,23 @@ async def _run_agent_oneshot(
         # Mark only the first unread message as read (one-at-a-time)
         _first = read_inbox(hc_home, team, agent, unread_only=True)
         if _first and _first[0].filename:
+            alog.mail_marked_read(_first[0].filename)
             mark_inbox_read(hc_home, team, agent, _first[0].filename)
 
         return worklog_content
 
+    except Exception as exc:
+        alog.session_error(exc)
+        raise
+
     finally:
+        alog.session_end_log(
+            turns=1,
+            tokens_in=total_tokens_in,
+            tokens_out=total_tokens_out,
+            cost_usd=total_cost_usd,
+        )
+
         end_session(
             hc_home, session_id,
             tokens_in=total_tokens_in,
@@ -815,7 +1187,12 @@ def main():
     )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO)
+    # Configure logging with structured format for agent sessions
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    )
     asyncio.run(run_agent_loop(args.home, args.team, args.agent, idle_timeout=args.idle_timeout))
 
 

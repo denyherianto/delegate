@@ -38,7 +38,10 @@ def spawn_agent_subprocess(
 
     cmd = [sys.executable, "-m", "boss.agent", str(hc_home), team, agent]
     proc = subprocess.Popen(cmd)
-    logger.info("Spawned agent %s with PID %d", agent, proc.pid)
+    logger.info(
+        "Spawned agent %s | pid=%d | team=%s | token_budget=%s",
+        agent, proc.pid, team, token_budget,
+    )
 
 
 def _read_state(ad: Path) -> dict:
@@ -93,12 +96,19 @@ def check_and_clear_stale_pids(hc_home: Path, team: str) -> list[str]:
         pid = state.get("pid")
 
         if pid is not None and not _is_pid_alive(pid):
-            logger.warning("Agent %s has stale PID %d, clearing", agent, pid)
+            logger.warning(
+                "Stale PID detected | agent=%s | pid=%d | team=%s — clearing",
+                agent, pid, team,
+            )
             state["pid"] = None
             _write_state(ad, state)
-            # Stale PID cleared — internal housekeeping, no event logged
             cleared.append(agent)
 
+    if cleared:
+        logger.info(
+            "Cleared stale PIDs | team=%s | agents=[%s]",
+            team, ", ".join(cleared),
+        )
     return cleared
 
 
@@ -128,10 +138,20 @@ def get_agents_needing_spawn(hc_home: Path, team: str, max_concurrent: int = 3) 
         unread = read_inbox(hc_home, team, agent, unread_only=True)
         if unread:
             needs_spawn.append(agent)
+            logger.debug(
+                "Agent needs spawn | agent=%s | unread_messages=%d",
+                agent, len(unread),
+            )
 
     # Respect concurrency limit
     available_slots = max(0, max_concurrent - currently_running)
-    return needs_spawn[:available_slots]
+    result = needs_spawn[:available_slots]
+
+    logger.debug(
+        "Spawn check | team=%s | running=%d | need_spawn=%d | available_slots=%d | spawning=%d",
+        team, currently_running, len(needs_spawn), available_slots, len(result),
+    )
+    return result
 
 
 def orchestrate_once(
@@ -156,17 +176,25 @@ def orchestrate_once(
 
     spawned = []
     for agent in to_spawn:
-        logger.info("Spawning agent: %s", agent)
+        logger.info("Spawning agent: %s | team=%s", agent, team)
         log_event(hc_home, f"{agent.capitalize()} starting")
 
         if spawn_fn is not None:
             try:
                 spawn_fn(hc_home, team, agent)
                 spawned.append(agent)
+                logger.info("Agent spawned successfully | agent=%s", agent)
             except Exception:
-                logger.exception("Failed to spawn agent %s", agent)
+                logger.exception(
+                    "Failed to spawn agent | agent=%s | team=%s", agent, team,
+                )
                 log_event(hc_home, f"{agent.capitalize()} failed to start")
         else:
             spawned.append(agent)
 
+    if spawned:
+        logger.info(
+            "Orchestration cycle complete | team=%s | spawned=[%s]",
+            team, ", ".join(spawned),
+        )
     return spawned

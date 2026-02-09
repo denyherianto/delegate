@@ -91,6 +91,10 @@ def route_once(
             try:
                 deliver(hc_home, team, msg)
                 log_message(hc_home, msg.sender, msg.recipient, msg.body)
+                logger.info(
+                    "Routed message | from=%s | to=%s | length=%d chars | team=%s",
+                    msg.sender, msg.recipient, len(msg.body), team,
+                )
             except ValueError as e:
                 logger.error(
                     "Failed to deliver boss message to %s: %s",
@@ -113,6 +117,10 @@ def route_once(
             try:
                 deliver(hc_home, team, msg)
                 log_message(hc_home, msg.sender, msg.recipient, msg.body)
+                logger.info(
+                    "Routed message | from=%s | to=%s | length=%d chars | team=%s",
+                    msg.sender, msg.recipient, len(msg.body), team,
+                )
             except ValueError as e:
                 logger.error(
                     "Failed to deliver message from %s to %s: %s",
@@ -131,5 +139,10 @@ def route_once(
             if msg.filename:
                 mark_outbox_routed(hc_home, team, agent, msg.filename)
             routed += 1
+
+    if routed > 0:
+        logger.info("Routing cycle complete | team=%s | messages_routed=%d", team, routed)
+    else:
+        logger.debug("Routing cycle complete | team=%s | messages_routed=0", team)
 
     return routed
