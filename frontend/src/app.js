@@ -1105,6 +1105,7 @@ async function sendMsg() {
     }
     input.value = "";
     input.style.height = "auto";
+    updateSendBtn();
   } catch (e) {
     console.error("Send error:", e);
   }
@@ -1116,11 +1117,22 @@ async function sendMsg() {
 function autoResizeTextarea(el) {
   el.style.height = "auto";
   el.style.height = el.scrollHeight + "px";
+  updateSendBtn();
 }
 function handleChatKeydown(e) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     sendMsg();
+  }
+}
+function updateSendBtn() {
+  const input = document.getElementById("msgInput");
+  const sendBtn = document.getElementById("sendBtn");
+  if (!sendBtn) return;
+  if (input && input.value.trim()) {
+    sendBtn.classList.add("active");
+  } else {
+    sendBtn.classList.remove("active");
   }
 }
 
@@ -1243,6 +1255,7 @@ Object.assign(window, {
   sendMsg,
   handleChatKeydown,
   autoResizeTextarea,
+  updateSendBtn,
   toggleMic,
   toggleTask,
   openDiffPanel,
