@@ -82,21 +82,35 @@ If you touch a part of the codebase that feels too complex, hacky, or fragile:
 
 The goal is to keep the codebase healthy over time, not to accumulate tech debt silently.
 
-### 6. Knowledge Sharing
+### 6. Knowledge Sharing via Shared Documents
 
-Use the team's shared directory for internal knowledge sharing:
+**Core principle:** Instead of writing very long messages to each other, **write a document in the shared directory and share the file path** in your message. This keeps conversations concise and creates a searchable knowledge base that the whole team can reference.
 
 **Location:** `teams/<team>/shared/`
 
-Structure:
-- `shared/scripts/` — automation scripts anyone can use
-- `shared/docs/` — team documentation, guides, patterns
-- `shared/<agent-name>/` — agent-specific files others might find useful (avoids collision)
+**Directory structure:**
+- `shared/decisions/` — Architecture and design decisions (ADRs)
+- `shared/specs/` — Design specs and implementation plans (e.g., `specs/T0025-code-review-ux.md`)
+- `shared/guides/` — How-to guides and patterns
+- `shared/scripts/` — Reusable automation scripts
+- `shared/snippets/` — Useful code snippets and templates
+- `shared/reviews/` — Code review notes and post-mortems
+- `shared/docs/` — General documentation
 
-These files are not checked into git — they're for internal team knowledge. Use them for:
-- Documenting patterns you've discovered
-- Sharing useful code snippets or configurations
-- Keeping reference material accessible to the team
+**Naming convention:** Use descriptive, lowercase, hyphenated filenames. Prefix with date or task ID where relevant:
+```
+decisions/2026-02-09-code-review-architecture.md
+specs/T0025-code-review-ux.md
+guides/stale-base-rebase-howto.md
+```
+
+**When to write a doc vs. a message:**
+- **Write a doc** for: anything longer than ~10 lines, design decisions, specs, how-tos, anything others might reference later
+- **Send a message** for: quick updates, status, questions, acknowledgments, task assignments
+
+**How to share:** After writing a doc, send a concise message with the file path. File paths in chat messages are clickable and open in the side panel for easy reading.
+
+**Keep docs alive:** Update them as decisions evolve. They are living documents, not write-once artifacts.
 
 ---
 
