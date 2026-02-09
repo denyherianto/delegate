@@ -1,0 +1,108 @@
+"""Tests for the POST /tasks/{id}/reject notification in scripts/web.py.
+
+These tests focus on the structured TASK_REJECTED notification delivered
+to the manager's inbox when a task is rejected.  The endpoint itself
+(status transitions, approval_status, log_event, etc.) is also tested
+in test_approval_api.py.
+"""
+
+import pytest
+from fastapi.testclient import TestClient
+
+from scripts.web import create_app
+from scripts.task import create_task, change_status, assign_task, get_task
+from scripts.mailbox import read_inbox
+
+
+@pytest.fixture
+def client(tmp_team):
+    """Create a FastAPI test client using a bootstrapped team directory."""
+    app = create_app(root=tmp_team)
+    return TestClient(app)
+
+
+def _task_to_needs_merge(root):
+    """Create a task and advance it to needs_merge status. Returns task dict."""
+    task = create_task(root, title="Feature X")
+    assign_task(root, task["id"], "alice")
+    change_status(root, task["id"], "in_progress")
+    change_status(root, task["id"], "review")
+    change_status(root, task["id"], "needs_merge")
+    return get_task(root, task["id"])
+
+
+class TestRejectNotification:
+    def test_reject_delivers_notification_to_manager_inbox(self, tmp_team, client):
+        task = _task_to_needs_merge(tmp_team)
+        resp = client.post(
+            f"/tasks/{task['id']}/reject",
+            json={"reason": "Code quality issues"},
+        )
+        assert resp.status_code == 200
+
+        # Notification should be in manager's inbox (direct delivery)
+        inbox = read_inbox(tmp_team, "manager", unread_only=True)
+        assert len(inbox) >= 1
+
+        msg = inbox[0]
+        assert msg.recipient == "manager"
+
+    def test_notification_contains_task_details(self, tmp_team, client):
+        task = _task_to_needs_merge(tmp_team)
+        client.post(
+            f"/tasks/{task['id']}/reject",
+            json={"reason": "Code quality issues"},
+        )
+        inbox = read_inbox(tmp_team, "manager", unread_only=True)
+        body = inbox[0].body
+
+        assert "TASK_REJECTED" in body
+        assert f"T{task['id']:04d}" in body
+        assert "Feature X" in body
+        assert "alice" in body
+        assert "Code quality issues" in body
+
+    def test_notification_has_suggested_actions(self, tmp_team, client):
+        task = _task_to_needs_merge(tmp_team)
+        client.post(
+            f"/tasks/{task['id']}/reject",
+            json={"reason": "Problems found"},
+        )
+        inbox = read_inbox(tmp_team, "manager", unread_only=True)
+        body = inbox[0].body
+
+        assert "Rework" in body
+        assert "Reassign" in body
+        assert "Discard" in body
+
+    def test_notification_sender_is_director(self, tmp_team, client):
+        task = _task_to_needs_merge(tmp_team)
+        client.post(
+            f"/tasks/{task['id']}/reject",
+            json={"reason": "Not ready"},
+        )
+        inbox = read_inbox(tmp_team, "manager", unread_only=True)
+        msg = inbox[0]
+        assert msg.sender == "director"
+
+    def test_reject_sets_approval_status(self, tmp_team, client):
+        task = _task_to_needs_merge(tmp_team)
+        resp = client.post(
+            f"/tasks/{task['id']}/reject",
+            json={"reason": "Needs work"},
+        )
+        data = resp.json()
+        assert data["status"] == "rejected"
+        assert data["approval_status"] == "rejected"
+        assert data["rejection_reason"] == "Needs work"
+
+    def test_reject_returns_full_task_dict(self, tmp_team, client):
+        task = _task_to_needs_merge(tmp_team)
+        resp = client.post(
+            f"/tasks/{task['id']}/reject",
+            json={"reason": "Issues found"},
+        )
+        data = resp.json()
+        assert data["id"] == task["id"]
+        assert data["title"] == "Feature X"
+        assert "created_at" in data
