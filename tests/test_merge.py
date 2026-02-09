@@ -1,352 +1,233 @@
-"""Tests for scripts/merge.py — merge worker logic."""
+"""Tests for boss/merge.py — merge worker logic.
 
-from unittest.mock import patch, MagicMock, call
+Tests the new merge flow:
+    1. rebase onto main
+    2. run tests (skippable)
+    3. fast-forward merge
+    4. cleanup
+"""
+
 import subprocess
+from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 import pytest
 import yaml
 
-from scripts.task import (
+from boss.task import (
     create_task,
     change_status,
     update_task,
     get_task,
 )
-from scripts.merge import (
-    merge_once,
-    _get_needs_merge_tasks,
-    _do_merge,
-    _notify_manager,
-    _get_repo_approval,
-    _get_repo_clone_path,
-)
+from boss.config import add_repo, get_repo_approval, set_boss
+from boss.merge import merge_task, merge_once, MergeResult
+from boss.bootstrap import bootstrap
 
 
-def _make_needs_merge_task(root, title="Task", repo="myrepo", branch="feature/test"):
+SAMPLE_TEAM = "myteam"
+
+
+@pytest.fixture
+def hc_home(tmp_path):
+    """Create a fully bootstrapped boss home directory."""
+    hc = tmp_path / "hc_home"
+    hc.mkdir()
+    set_boss(hc, "nikhil")
+    bootstrap(hc, SAMPLE_TEAM, manager="edison", agents=["alice", "bob"], qa="sarah")
+    return hc
+
+
+def _make_needs_merge_task(hc_home, title="Task", repo="myrepo", branch="feature/test"):
     """Helper: create a task and advance it to needs_merge status."""
-    task = create_task(root, title=title)
-    update_task(root, task["id"], repo=repo, branch=branch)
-    change_status(root, task["id"], "in_progress")
-    change_status(root, task["id"], "review")
-    change_status(root, task["id"], "needs_merge")
-    return get_task(root, task["id"])
+    task = create_task(hc_home, title=title)
+    update_task(hc_home, task["id"], repo=repo, branch=branch)
+    change_status(hc_home, task["id"], "in_progress")
+    change_status(hc_home, task["id"], "review")
+    change_status(hc_home, task["id"], "needs_merge")
+    return get_task(hc_home, task["id"])
 
 
-class TestGetNeedsMergeTasks:
-    def test_empty_when_no_tasks(self, tmp_team):
-        assert _get_needs_merge_tasks(tmp_team) == []
+def _setup_git_repo(tmp_path: Path) -> Path:
+    """Set up a local git repo with a main branch and initial commit.
 
-    def test_finds_needs_merge_tasks(self, tmp_team):
-        _make_needs_merge_task(tmp_team, title="First")
-        _make_needs_merge_task(tmp_team, title="Second")
-        tasks = _get_needs_merge_tasks(tmp_team)
-        assert len(tasks) == 2
-        assert all(t["status"] == "needs_merge" for t in tasks)
-
-    def test_excludes_other_statuses(self, tmp_team):
-        create_task(tmp_team, title="Open task")
-        task2 = create_task(tmp_team, title="In progress")
-        change_status(tmp_team, task2["id"], "in_progress")
-        _make_needs_merge_task(tmp_team, title="Merge me")
-
-        tasks = _get_needs_merge_tasks(tmp_team)
-        assert len(tasks) == 1
-        assert tasks[0]["title"] == "Merge me"
-
-    def test_ordered_by_updated_at(self, tmp_team):
-        t1 = _make_needs_merge_task(tmp_team, title="First")
-        t2 = _make_needs_merge_task(tmp_team, title="Second")
-        tasks = _get_needs_merge_tasks(tmp_team)
-        assert tasks[0]["id"] == t1["id"]
-        assert tasks[1]["id"] == t2["id"]
+    Returns the repo path.
+    """
+    repo = tmp_path / "source_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=str(repo), capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(repo), capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(repo), capture_output=True)
+    (repo / "README.md").write_text("# Test repo\n")
+    subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=str(repo), capture_output=True)
+    return repo
 
 
-class TestDoMerge:
-    def test_successful_merge(self, tmp_path):
-        """Test _do_merge with a real git repo."""
-        # Set up a bare "origin" repo
-        origin = tmp_path / "origin.git"
-        origin.mkdir()
-        subprocess.run(["git", "init", "--bare", str(origin)], capture_output=True, check=True)
+def _make_feature_branch(repo: Path, branch: str, filename: str = "feature.py", content: str = "# New\n"):
+    """Create a feature branch with a single commit."""
+    subprocess.run(["git", "checkout", "-b", branch], cwd=str(repo), capture_output=True, check=True)
+    (repo / filename).write_text(content)
+    subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
+    subprocess.run(["git", "commit", "-m", f"Add {filename}"], cwd=str(repo), capture_output=True, check=True)
+    subprocess.run(["git", "checkout", "main"], cwd=str(repo), capture_output=True, check=True)
 
-        # Clone it as our working repo
-        clone = tmp_path / "clone"
-        subprocess.run(["git", "clone", str(origin), str(clone)], capture_output=True, check=True)
 
-        # Configure git user for commits
-        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(clone), capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test"], cwd=str(clone), capture_output=True)
+def _register_repo_with_symlink(hc_home: Path, name: str, source_repo: Path):
+    """Register a repo by creating a symlink in hc_home/repos/."""
+    repos_dir = hc_home / "repos"
+    repos_dir.mkdir(parents=True, exist_ok=True)
+    link = repos_dir / name
+    link.symlink_to(source_repo)
+    add_repo(hc_home, name, str(source_repo), approval="auto")
 
-        # Create initial commit on main
-        (clone / "README.md").write_text("# Test repo\n")
-        subprocess.run(["git", "add", "."], cwd=str(clone), capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=str(clone), capture_output=True)
-        subprocess.run(["git", "push", "origin", "main"], cwd=str(clone), capture_output=True)
 
-        # Create a feature branch with changes
-        subprocess.run(["git", "checkout", "-b", "feature/test"], cwd=str(clone), capture_output=True)
-        (clone / "feature.py").write_text("# New feature\n")
-        subprocess.run(["git", "add", "."], cwd=str(clone), capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Add feature"], cwd=str(clone), capture_output=True)
-        subprocess.run(["git", "push", "origin", "feature/test"], cwd=str(clone), capture_output=True)
+# ---------------------------------------------------------------------------
+# merge_task tests (with real git)
+# ---------------------------------------------------------------------------
 
-        # Go back to main
-        subprocess.run(["git", "checkout", "main"], cwd=str(clone), capture_output=True)
+class TestMergeTask:
+    def test_successful_merge(self, hc_home, tmp_path):
+        """Full merge: rebase, skip-tests, ff-merge."""
+        repo = _setup_git_repo(tmp_path)
+        _make_feature_branch(repo, "alice/T0001-feat")
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        success, detail = _do_merge(clone, "feature/test")
-        assert success is True
-        assert "successful" in detail.lower()
+        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001-feat")
+        update_task(hc_home, task["id"], approval_status="approved")
 
-        # Verify the feature file is now on main
-        assert (clone / "feature.py").exists()
+        result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
+        assert result.success is True
+        assert "success" in result.message.lower()
 
-    def test_merge_conflict(self, tmp_path):
-        """Test _do_merge detects conflicts and aborts cleanly."""
-        origin = tmp_path / "origin.git"
-        origin.mkdir()
-        subprocess.run(["git", "init", "--bare", str(origin)], capture_output=True, check=True)
+        updated = get_task(hc_home, task["id"])
+        assert updated["status"] == "merged"
+        assert (repo / "feature.py").exists()  # Feature is on main
 
-        clone = tmp_path / "clone"
-        subprocess.run(["git", "clone", str(origin), str(clone)], capture_output=True, check=True)
+    def test_rebase_conflict(self, hc_home, tmp_path):
+        """Rebase conflict → status becomes 'conflict' and manager notified."""
+        repo = _setup_git_repo(tmp_path)
 
-        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(clone), capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test"], cwd=str(clone), capture_output=True)
+        # Create feature branch that modifies file.txt
+        _make_feature_branch(repo, "alice/T0001-conflict", filename="file.txt", content="feature version\n")
 
-        # Initial commit
-        (clone / "file.txt").write_text("original content\n")
-        subprocess.run(["git", "add", "."], cwd=str(clone), capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Initial"], cwd=str(clone), capture_output=True)
-        subprocess.run(["git", "push", "origin", "main"], cwd=str(clone), capture_output=True)
+        # Now modify same file on main
+        (repo / "file.txt").write_text("main version\n")
+        subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Diverge main"], cwd=str(repo), capture_output=True, check=True)
 
-        # Feature branch changes the same file
-        subprocess.run(["git", "checkout", "-b", "feature/conflict"], cwd=str(clone), capture_output=True)
-        (clone / "file.txt").write_text("feature version\n")
-        subprocess.run(["git", "add", "."], cwd=str(clone), capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Feature change"], cwd=str(clone), capture_output=True)
-        subprocess.run(["git", "push", "origin", "feature/conflict"], cwd=str(clone), capture_output=True)
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        # Main also changes the same file
-        subprocess.run(["git", "checkout", "main"], cwd=str(clone), capture_output=True)
-        (clone / "file.txt").write_text("main version\n")
-        subprocess.run(["git", "add", "."], cwd=str(clone), capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Main change"], cwd=str(clone), capture_output=True)
-        subprocess.run(["git", "push", "origin", "main"], cwd=str(clone), capture_output=True)
+        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001-conflict")
+        update_task(hc_home, task["id"], approval_status="approved")
 
-        success, detail = _do_merge(clone, "feature/conflict")
-        assert success is False
-        assert "conflict" in detail.lower() or "merge" in detail.lower()
+        with patch("boss.merge.notify_conflict") as mock_notify:
+            result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
 
-        # Verify main is still clean (merge was aborted)
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=str(clone),
-            capture_output=True,
-            text=True,
-        )
-        assert result.stdout.strip() == "", "Working directory should be clean after merge abort"
+        assert result.success is False
+        assert "conflict" in result.message.lower() or "rebase" in result.message.lower()
 
+        updated = get_task(hc_home, task["id"])
+        assert updated["status"] == "conflict"
+        mock_notify.assert_called_once()
+
+    def test_missing_branch(self, hc_home):
+        """Task with no branch should fail."""
+        task = create_task(hc_home, title="No branch")
+        update_task(hc_home, task["id"], repo="myrepo")
+        change_status(hc_home, task["id"], "in_progress")
+        change_status(hc_home, task["id"], "review")
+        change_status(hc_home, task["id"], "needs_merge")
+
+        result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
+        assert result.success is False
+        assert "no branch" in result.message.lower()
+
+    def test_missing_repo(self, hc_home):
+        """Task with no repo should fail."""
+        task = create_task(hc_home, title="No repo")
+        update_task(hc_home, task["id"], branch="some/branch")
+        change_status(hc_home, task["id"], "in_progress")
+        change_status(hc_home, task["id"], "review")
+        change_status(hc_home, task["id"], "needs_merge")
+
+        result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
+        assert result.success is False
+        assert "no repo" in result.message.lower()
+
+
+# ---------------------------------------------------------------------------
+# merge_once tests
+# ---------------------------------------------------------------------------
 
 class TestMergeOnce:
-    def test_returns_zero_when_no_tasks(self, tmp_team):
-        assert merge_once(tmp_team) == 0
+    def test_empty_when_no_tasks(self, hc_home):
+        results = merge_once(hc_home, SAMPLE_TEAM)
+        assert results == []
 
-    def test_skips_task_without_repo(self, tmp_team):
-        """Tasks without a repo field should be skipped."""
-        task = create_task(tmp_team, title="No repo")
-        update_task(tmp_team, task["id"], branch="some/branch")
-        change_status(tmp_team, task["id"], "in_progress")
-        change_status(tmp_team, task["id"], "review")
-        change_status(tmp_team, task["id"], "needs_merge")
+    def test_skips_task_without_repo(self, hc_home):
+        """Tasks without a repo field are skipped."""
+        task = create_task(hc_home, title="No repo")
+        update_task(hc_home, task["id"], branch="some/branch")
+        change_status(hc_home, task["id"], "in_progress")
+        change_status(hc_home, task["id"], "review")
+        change_status(hc_home, task["id"], "needs_merge")
 
-        assert merge_once(tmp_team) == 0
+        results = merge_once(hc_home, SAMPLE_TEAM)
+        assert results == []
 
-    def test_skips_task_without_branch(self, tmp_team):
-        """Tasks without a branch field should be skipped."""
-        task = create_task(tmp_team, title="No branch")
-        update_task(tmp_team, task["id"], repo="myrepo")
-        change_status(tmp_team, task["id"], "in_progress")
-        change_status(tmp_team, task["id"], "review")
-        change_status(tmp_team, task["id"], "needs_merge")
-
-        assert merge_once(tmp_team) == 0
-
-    @patch("scripts.merge._get_repo_approval", return_value="manual")
-    def test_skips_manual_unapproved(self, mock_approval, tmp_team):
+    def test_skips_manual_unapproved(self, hc_home):
         """Manual approval tasks without approval_status='approved' are skipped."""
-        _make_needs_merge_task(tmp_team, title="Unapproved")
-        assert merge_once(tmp_team) == 0
+        add_repo(hc_home, "myrepo", "/fake", approval="manual")
+        _make_needs_merge_task(hc_home, title="Unapproved")
+        results = merge_once(hc_home, SAMPLE_TEAM)
+        assert results == []
 
-    @patch("scripts.merge._get_repo_approval", return_value="manual")
-    @patch("scripts.merge._get_repo_clone_path")
-    @patch("scripts.merge._do_merge", return_value=(True, "Merge successful"))
-    def test_merges_manual_approved(self, mock_merge, mock_path, mock_approval, tmp_team, tmp_path):
-        """Manual approval tasks with approval_status='approved' should be merged."""
-        clone = tmp_path / "repos" / "myrepo"
-        clone.mkdir(parents=True)
-        mock_path.return_value = clone
+    def test_auto_merge_processes(self, hc_home, tmp_path):
+        """Auto approval tasks should be processed without boss approval."""
+        repo = _setup_git_repo(tmp_path)
+        _make_feature_branch(repo, "alice/T0001-auto")
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        task = _make_needs_merge_task(tmp_team, title="Approved")
-        update_task(tmp_team, task["id"], approval_status="approved")
+        _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001-auto")
 
-        result = merge_once(tmp_team)
-        assert result == 1
-        assert mock_merge.called
+        results = merge_once(hc_home, SAMPLE_TEAM)
+        assert len(results) == 1
+        assert results[0].success is True
 
-        updated = get_task(tmp_team, task["id"])
-        assert updated["status"] == "merged"
-        assert updated["completed_at"] != ""
+    def test_manual_approved_processes(self, hc_home, tmp_path):
+        """Manual tasks with approval_status='approved' should be processed."""
+        repo = _setup_git_repo(tmp_path)
+        _make_feature_branch(repo, "alice/T0001-manual")
 
-    @patch("scripts.merge._get_repo_approval", return_value="auto")
-    @patch("scripts.merge._get_repo_clone_path")
-    @patch("scripts.merge._do_merge", return_value=(True, "Merge successful"))
-    def test_auto_merge(self, mock_merge, mock_path, mock_approval, tmp_team, tmp_path):
-        """Auto approval tasks should merge without checking approval_status."""
-        clone = tmp_path / "repos" / "myrepo"
-        clone.mkdir(parents=True)
-        mock_path.return_value = clone
+        repos_dir = hc_home / "repos"
+        repos_dir.mkdir(parents=True, exist_ok=True)
+        (repos_dir / "myrepo").symlink_to(repo)
+        add_repo(hc_home, "myrepo", str(repo), approval="manual")
 
-        task = _make_needs_merge_task(tmp_team, title="Auto merge")
+        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001-manual")
+        update_task(hc_home, task["id"], approval_status="approved")
 
-        result = merge_once(tmp_team)
-        assert result == 1
-        mock_merge.assert_called_once_with(clone, "feature/test")
+        results = merge_once(hc_home, SAMPLE_TEAM)
+        assert len(results) == 1
+        assert results[0].success is True
 
-        updated = get_task(tmp_team, task["id"])
+        updated = get_task(hc_home, task["id"])
         assert updated["status"] == "merged"
 
-    @patch("scripts.merge._get_repo_approval", return_value="auto")
-    @patch("scripts.merge._get_repo_clone_path")
-    @patch("scripts.merge._do_merge", return_value=(False, "Merge conflict: CONFLICT in file.txt"))
-    @patch("scripts.merge._notify_manager")
-    def test_conflict_sets_status_and_notifies(
-        self, mock_notify, mock_merge, mock_path, mock_approval, tmp_team, tmp_path
-    ):
-        """On merge conflict, status should become 'conflict' and manager notified."""
-        clone = tmp_path / "repos" / "myrepo"
-        clone.mkdir(parents=True)
-        mock_path.return_value = clone
 
-        task = _make_needs_merge_task(tmp_team, title="Conflict task")
-
-        result = merge_once(tmp_team)
-        assert result == 0  # conflict is not a successful merge
-
-        updated = get_task(tmp_team, task["id"])
-        assert updated["status"] == "conflict"
-
-        mock_notify.assert_called_once()
-        call_args = mock_notify.call_args
-        assert call_args[0][0] == tmp_team  # root
-        assert call_args[0][1]["id"] == task["id"]  # task dict
-        assert "conflict" in call_args[0][2].lower()  # detail
-
-    @patch("scripts.merge._get_repo_approval", return_value="auto")
-    @patch("scripts.merge._get_repo_clone_path")
-    @patch("scripts.merge._do_merge", return_value=(True, "Merge successful"))
-    def test_processes_only_one_per_cycle(self, mock_merge, mock_path, mock_approval, tmp_team, tmp_path):
-        """merge_once should process at most one task per cycle."""
-        clone = tmp_path / "repos" / "myrepo"
-        clone.mkdir(parents=True)
-        mock_path.return_value = clone
-
-        _make_needs_merge_task(tmp_team, title="First", branch="branch/first")
-        _make_needs_merge_task(tmp_team, title="Second", branch="branch/second")
-
-        result = merge_once(tmp_team)
-        assert result == 1
-        assert mock_merge.call_count == 1
-
-    @patch("scripts.merge._get_repo_approval", return_value="auto")
-    @patch("scripts.merge._get_repo_clone_path")
-    @patch("scripts.merge._do_merge", return_value=(True, "Merge successful"))
-    def test_fifo_order(self, mock_merge, mock_path, mock_approval, tmp_team, tmp_path):
-        """Oldest task (by updated_at) should be processed first."""
-        clone = tmp_path / "repos" / "myrepo"
-        clone.mkdir(parents=True)
-        mock_path.return_value = clone
-
-        t1 = _make_needs_merge_task(tmp_team, title="First", branch="branch/first")
-        t2 = _make_needs_merge_task(tmp_team, title="Second", branch="branch/second")
-
-        result = merge_once(tmp_team)
-        assert result == 1
-
-        # First task should have been merged
-        updated_t1 = get_task(tmp_team, t1["id"])
-        updated_t2 = get_task(tmp_team, t2["id"])
-        assert updated_t1["status"] == "merged"
-        assert updated_t2["status"] == "needs_merge"
-
-    @patch("scripts.merge._get_repo_approval", return_value="auto")
-    @patch("scripts.merge._get_repo_clone_path", return_value=None)
-    def test_skips_missing_clone(self, mock_path, mock_approval, tmp_team):
-        """Tasks whose repo clone doesn't exist should be skipped."""
-        _make_needs_merge_task(tmp_team, title="No clone")
-        assert merge_once(tmp_team) == 0
-
-
-class TestNotifyManager:
-    def test_sends_message_from_director_to_manager(self, tmp_team):
-        """Notification should be sent from director to manager."""
-        task = {
-            "id": 1,
-            "repo": "myrepo",
-            "branch": "feature/test",
-            "assignee": "alice",
-        }
-
-        with patch("scripts.merge.send_message") as mock_send:
-            _notify_manager(tmp_team, task, "CONFLICT in file.txt")
-
-            mock_send.assert_called_once()
-            args = mock_send.call_args[0]
-            assert args[0] == tmp_team
-            assert args[1] == "director"  # sender is the director
-            assert args[2] == "manager"   # recipient is the manager
-            assert "T0001" in args[3]
-            assert "CONFLICT" in args[3]
-            assert "alice" in args[3]
-
-    def test_handles_no_manager(self, tmp_team):
-        """Should not crash if no manager is found."""
-        task = {"id": 1, "repo": "r", "branch": "b", "assignee": "a"}
-
-        with patch("scripts.merge.get_member_by_role", return_value=None):
-            # Should not raise
-            _notify_manager(tmp_team, task, "detail")
-
-    def test_handles_no_director(self, tmp_team):
-        """Should not crash if no director is found."""
-        task = {"id": 1, "repo": "r", "branch": "b", "assignee": "a"}
-
-        def side_effect(root, role):
-            if role == "manager":
-                return "manager"
-            return None  # no director
-
-        with patch("scripts.merge.get_member_by_role", side_effect=side_effect):
-            # Should not raise
-            _notify_manager(tmp_team, task, "detail")
-
+# ---------------------------------------------------------------------------
+# get_repo_approval tests
+# ---------------------------------------------------------------------------
 
 class TestGetRepoApproval:
-    def test_returns_manual_by_default(self, tmp_team):
-        """Without config, default should be 'manual'."""
-        assert _get_repo_approval(tmp_team, "nonexistent") == "manual"
+    def test_returns_manual_by_default(self, hc_home):
+        assert get_repo_approval(hc_home, "nonexistent") == "manual"
 
-    def test_reads_from_config(self, tmp_team):
-        """Should read approval setting from config.yaml."""
-        # Create a config.yaml at the expected hc_home location
-        hc_home = tmp_team.parent.parent.parent
-        config_path = hc_home / "config.yaml"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(yaml.dump({
-            "repos": {
-                "myrepo": {"source": "/tmp/repo", "approval": "auto"},
-                "other": {"source": "/tmp/other", "approval": "manual"},
-            }
-        }))
+    def test_reads_from_config(self, hc_home):
+        add_repo(hc_home, "myrepo", "/tmp/repo", approval="auto")
+        add_repo(hc_home, "other", "/tmp/other", approval="manual")
 
-        assert _get_repo_approval(tmp_team, "myrepo") == "auto"
-        assert _get_repo_approval(tmp_team, "other") == "manual"
-        assert _get_repo_approval(tmp_team, "missing") == "manual"
+        assert get_repo_approval(hc_home, "myrepo") == "auto"
+        assert get_repo_approval(hc_home, "other") == "manual"
+        assert get_repo_approval(hc_home, "missing") == "manual"

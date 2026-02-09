@@ -1,0 +1,143 @@
+"""Daemon management — start/stop the background web UI + routing loop.
+
+The daemon runs uvicorn serving the FastAPI app (boss.web) with
+the message router and agent orchestrator running as background tasks.
+
+The daemon PID is written to ``~/.boss/daemon.pid``.
+
+Functions:
+    start_daemon(hc_home, port, ...) — start in background, write PID
+    stop_daemon(hc_home) — read PID file, send SIGTERM
+    is_running(hc_home) — check if the daemon PID is alive
+"""
+
+import logging
+import os
+import signal
+import subprocess
+import sys
+from pathlib import Path
+
+from boss.paths import daemon_pid_path
+
+logger = logging.getLogger(__name__)
+
+
+def is_running(hc_home: Path) -> tuple[bool, int | None]:
+    """Check if the daemon is running.
+
+    Returns (alive, pid). If pid file is missing or stale, returns (False, None).
+    """
+    pid_path = daemon_pid_path(hc_home)
+    if not pid_path.exists():
+        return False, None
+    try:
+        pid = int(pid_path.read_text().strip())
+    except (ValueError, OSError):
+        return False, None
+
+    try:
+        os.kill(pid, 0)
+        return True, pid
+    except (OSError, ProcessLookupError):
+        # Stale PID file — clean up
+        pid_path.unlink(missing_ok=True)
+        return False, None
+
+
+def start_daemon(
+    hc_home: Path,
+    port: int = 8000,
+    interval: float = 1.0,
+    max_concurrent: int = 32,
+    token_budget: int | None = None,
+    foreground: bool = False,
+) -> int | None:
+    """Start the daemon.
+
+    If *foreground* is True, runs uvicorn in the current process (blocking).
+    Otherwise, spawns a background subprocess and writes its PID.
+
+    Returns the PID of the spawned process (or None if foreground).
+    """
+    alive, existing_pid = is_running(hc_home)
+    if alive:
+        raise RuntimeError(f"Daemon already running with PID {existing_pid}")
+
+    hc_home.mkdir(parents=True, exist_ok=True)
+
+    # Set environment variables for the web app
+    env = os.environ.copy()
+    env["BOSS_HOME"] = str(hc_home)
+    env["BOSS_DAEMON"] = "1"
+    env["BOSS_INTERVAL"] = str(interval)
+    env["BOSS_MAX_CONCURRENT"] = str(max_concurrent)
+    env["BOSS_PORT"] = str(port)
+    if token_budget is not None:
+        env["BOSS_TOKEN_BUDGET"] = str(token_budget)
+
+    if foreground:
+        # Run in current process (blocking)
+        os.environ.update(env)
+        import uvicorn
+
+        pid_path = daemon_pid_path(hc_home)
+        pid_path.write_text(str(os.getpid()))
+
+        try:
+            uvicorn.run(
+                "boss.web:create_app",
+                factory=True,
+                host="0.0.0.0",
+                port=port,
+                log_level="info",
+            )
+        finally:
+            pid_path.unlink(missing_ok=True)
+        return None
+
+    # Spawn background process
+    cmd = [
+        sys.executable, "-m", "uvicorn",
+        "boss.web:create_app",
+        "--factory",
+        "--host", "0.0.0.0",
+        "--port", str(port),
+        "--log-level", "info",
+    ]
+
+    proc = subprocess.Popen(
+        cmd,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+    # Write PID
+    pid_path = daemon_pid_path(hc_home)
+    pid_path.write_text(str(proc.pid))
+    logger.info("Daemon started with PID %d on port %d", proc.pid, port)
+
+    return proc.pid
+
+
+def stop_daemon(hc_home: Path) -> bool:
+    """Stop the running daemon.
+
+    Returns True if a daemon was stopped, False if none was running.
+    """
+    alive, pid = is_running(hc_home)
+    if not alive or pid is None:
+        logger.info("No running daemon found")
+        return False
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+        logger.info("Sent SIGTERM to daemon PID %d", pid)
+    except OSError as e:
+        logger.warning("Failed to kill daemon PID %d: %s", pid, e)
+
+    pid_path = daemon_pid_path(hc_home)
+    pid_path.unlink(missing_ok=True)
+    return True

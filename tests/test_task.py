@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from scripts.task import (
+from boss.task import (
     create_task,
     get_task,
     update_task,
@@ -18,6 +18,7 @@ from scripts.task import (
     VALID_STATUSES,
     VALID_TRANSITIONS,
     VALID_APPROVAL_STATUSES,
+    format_task_id,
 )
 
 
@@ -33,7 +34,7 @@ class TestCreateTask:
 
     def test_file_created(self, tmp_team):
         task = create_task(tmp_team, title="Build API")
-        path = tmp_team / ".standup" / "tasks" / f"T{task['id']:04d}.yaml"
+        path = tmp_team / "tasks" / f"{format_task_id(task['id'])}.yaml"
         assert path.is_file()
 
     def test_fields_persisted(self, tmp_team):
@@ -286,20 +287,20 @@ class TestEventLogging:
     """Verify that task operations are logged to the chat event stream."""
 
     def test_create_task_logs_event(self, tmp_team):
-        from scripts.chat import get_messages
+        from boss.chat import get_messages
         create_task(tmp_team, title="Build API", project="backend", priority="high")
         events = get_messages(tmp_team, msg_type="event")
         assert any("Created T0001:" in e["content"] for e in events)
 
     def test_assign_task_logs_event(self, tmp_team):
-        from scripts.chat import get_messages
+        from boss.chat import get_messages
         t = create_task(tmp_team, title="Build API")
         assign_task(tmp_team, t["id"], "alice")
         events = get_messages(tmp_team, msg_type="event")
         assert any("assigned to Alice" in e["content"] for e in events)
 
     def test_change_status_logs_event(self, tmp_team):
-        from scripts.chat import get_messages
+        from boss.chat import get_messages
         t = create_task(tmp_team, title="Build API")
         change_status(tmp_team, t["id"], "in_progress")
         events = get_messages(tmp_team, msg_type="event")
@@ -353,7 +354,7 @@ class TestBranchAndCommits:
         result = get_task_diff(tmp_team, task["id"])
         assert result == "(no branch set)"
 
-    @patch("scripts.task.subprocess.run")
+    @patch("boss.task.subprocess.run")
     def test_get_task_diff_with_branch(self, mock_run, tmp_team):
         task = create_task(tmp_team, title="Feature X")
         set_task_branch(tmp_team, task["id"], "alice/backend/0001-feature-x")
@@ -370,7 +371,7 @@ class TestBranchAndCommits:
         call_args = mock_run.call_args
         assert call_args[0][0] == ["git", "diff", "main...alice/backend/0001-feature-x"]
 
-    @patch("scripts.task.subprocess.run")
+    @patch("boss.task.subprocess.run")
     def test_get_task_diff_fallback(self, mock_run, tmp_team):
         task = create_task(tmp_team, title="Feature X")
         set_task_branch(tmp_team, task["id"], "alice/backend/0001-feature-x")
@@ -393,7 +394,7 @@ class TestBranchAndCommits:
         diff = get_task_diff(tmp_team, task["id"])
         assert "fallback diff content" in diff
 
-    @patch("scripts.task.subprocess.run")
+    @patch("boss.task.subprocess.run")
     def test_get_task_diff_no_diff_available(self, mock_run, tmp_team):
         task = create_task(tmp_team, title="Feature X")
         set_task_branch(tmp_team, task["id"], "alice/backend/0001-feature-x")
@@ -455,8 +456,8 @@ class TestMergeQueueFields:
         import yaml
         task = create_task(tmp_team, title="Old Task")
         # Simulate an old task file without the new fields
-        tasks_dir = tmp_team / ".standup" / "tasks"
-        path = tasks_dir / f"T{task['id']:04d}.yaml"
+        tasks_dir = tmp_team / "tasks"
+        path = tasks_dir / f"{format_task_id(task['id'])}.yaml"
         data = yaml.safe_load(path.read_text())
         del data["rejection_reason"]
         del data["approval_status"]

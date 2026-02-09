@@ -1,14 +1,14 @@
-"""Tests for headcount/notify.py — rejection and conflict notifications."""
+"""Tests for boss/notify.py — rejection and conflict notifications."""
 
 from pathlib import Path
 
 import pytest
 
-from headcount.bootstrap import bootstrap
-from headcount.config import set_director
-from headcount.mailbox import read_inbox
-from headcount.notify import notify_rejection, notify_conflict
-from headcount.task import create_task, assign_task, change_status, get_task
+from boss.bootstrap import bootstrap
+from boss.config import set_boss
+from boss.mailbox import read_inbox
+from boss.notify import notify_rejection, notify_conflict
+from boss.task import create_task, assign_task, change_status, get_task, format_task_id
 
 TEAM = "notifyteam"
 
@@ -17,7 +17,7 @@ TEAM = "notifyteam"
 def notify_team(tmp_path):
     """Bootstrap a team with a manager and workers for notification tests."""
     hc_home = tmp_path / "hc_home"
-    set_director(hc_home, "director")
+    set_boss(hc_home, "boss")
     bootstrap(hc_home, team_name=TEAM, manager="edison", agents=["alice", "bob"])
     return hc_home
 
@@ -50,7 +50,7 @@ class TestNotifyRejection:
         assert len(inbox) == 1
         msg = inbox[0]
         assert msg.recipient == "edison"
-        assert msg.sender == "director"
+        assert msg.sender == "boss"
 
     def test_message_contains_task_details(self, notify_team):
         task = _make_task_at_needs_merge(notify_team)
@@ -64,7 +64,7 @@ class TestNotifyRejection:
         body = inbox[0].body
 
         assert "TASK_REJECTED" in body
-        assert f"T{task['id']:04d}" in body
+        assert f"{format_task_id(task['id'])}" in body
         assert "Build login feature" in body
         assert "alice" in body
         assert "Missing error handling" in body
@@ -118,7 +118,7 @@ class TestNotifyConflict:
         assert len(inbox) == 1
         msg = inbox[0]
         assert msg.recipient == "edison"
-        assert msg.sender == "director"
+        assert msg.sender == "boss"
 
     def test_message_contains_task_and_branch(self, notify_team):
         task = _make_task_at_needs_merge(notify_team)
@@ -134,7 +134,7 @@ class TestNotifyConflict:
         body = inbox[0].body
 
         assert "MERGE_CONFLICT" in body
-        assert f"T{task['id']:04d}" in body
+        assert f"{format_task_id(task['id'])}" in body
         assert "Build login feature" in body
         assert "alice/T0001-build-login" in body
         assert "Conflict in auth.py" in body

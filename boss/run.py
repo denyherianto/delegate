@@ -1,0 +1,87 @@
+"""Daemon entry point — starts the web UI + daemon loop via uvicorn.
+
+Usage:
+    python -m boss.run <home> <team> [--port 8000] [--kick "message"]
+    python -m boss.run <home> <team> --no-reload   # disable auto-restart
+
+Auto-reload is enabled by default: uvicorn watches `boss/` for file
+changes and restarts the worker process, bringing the daemon loop back
+up with the new code.  Pass ``--no-reload`` to disable this (e.g. in
+production or CI).
+"""
+
+import argparse
+import logging
+import os
+from pathlib import Path
+
+import uvicorn
+
+from boss.mailbox import send as mailbox_send
+from boss.bootstrap import get_member_by_role
+from boss.config import get_boss
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+)
+logger = logging.getLogger("daemon")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Boss daemon")
+    parser.add_argument("home", type=Path, help="Boss home directory (~/.boss)")
+    parser.add_argument("team", help="Default team name (for kick message)")
+    parser.add_argument("--interval", type=float, default=1.0, help="Poll interval in seconds")
+    parser.add_argument("--port", type=int, default=8000, help="Web UI port")
+    parser.add_argument("--max-concurrent", type=int, default=32, help="Max concurrent agents")
+    parser.add_argument(
+        "--token-budget", type=int, default=None,
+        help="Default token budget per agent session",
+    )
+    parser.add_argument(
+        "--kick", type=str, default=None,
+        help="Send this message to the manager on startup to bootstrap the conversation",
+    )
+    parser.add_argument(
+        "--no-reload", action="store_true",
+        help="Disable auto-reload on code changes",
+    )
+    args = parser.parse_args()
+
+    hc_home = args.home.resolve()
+
+    # --- Send kick message (once, before uvicorn spawns workers) ---
+    if args.kick:
+        try:
+            boss_name = get_boss(hc_home) or "boss"
+            manager_name = get_member_by_role(hc_home, args.team, "manager") or "manager"
+            mailbox_send(hc_home, args.team, boss_name, manager_name, args.kick)
+            logger.info("Sent kick message from %s to %s: %s", boss_name, manager_name, args.kick[:80])
+        except Exception:
+            logger.exception("Failed to send kick message")
+
+    # --- Configure the app via environment variables ---
+    os.environ["BOSS_HOME"] = str(hc_home)
+    os.environ["BOSS_DAEMON"] = "1"
+    os.environ["BOSS_INTERVAL"] = str(args.interval)
+    os.environ["BOSS_MAX_CONCURRENT"] = str(args.max_concurrent)
+    if args.token_budget is not None:
+        os.environ["BOSS_TOKEN_BUDGET"] = str(args.token_budget)
+
+    # --- Start uvicorn (reload on by default) ---
+    reload = not args.no_reload
+    uvicorn.run(
+        "boss.web:create_app",
+        factory=True,
+        host="0.0.0.0",
+        port=args.port,
+        reload=reload,
+        reload_dirs=["boss"] if reload else None,
+        log_level="info",
+    )
+
+
+if __name__ == "__main__":
+    main()

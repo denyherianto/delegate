@@ -6,24 +6,25 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.pytest_cache/
 
 # uv
 .python-version
 
-# direnv
+# Nix
 .direnv/
+.nix-uv/
 
 # IDE
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
+
+# Frontend
+frontend/node_modules/
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Runtime data (created by bootstrap, not part of source)
-# Uncomment these if you want to keep runtime data out of git:
-# workspace/
-# repos/

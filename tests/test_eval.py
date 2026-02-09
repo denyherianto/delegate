@@ -8,7 +8,9 @@ from unittest.mock import patch, MagicMock
 import pytest
 import yaml
 
-from scripts.eval import (
+from boss.task import format_task_id
+from boss.paths import base_charter_dir, boss_person_dir
+from boss.eval import (
     # T0031 — eval runner
     load_benchmark_specs,
     seed_tasks,
@@ -128,59 +130,51 @@ class TestBootstrapWithVariant:
             root,
             variant_name="ship-fast",
             manager="mgr",
-            director="dir",
+            boss="dir",
             agents=["alice"],
         )
-        standup = root / ".standup"
-        assert standup.is_dir()
-        assert (standup / "charter").is_dir()
-        assert (standup / "roster.md").is_file()
-        assert (standup / "db.sqlite").is_file()
-        assert (standup / "team" / "mgr").is_dir()
-        assert (standup / "team" / "dir").is_dir()
-        assert (standup / "team" / "alice").is_dir()
+        assert root.is_dir()
+        assert (root / "teams" / "eval" / "roster.md").is_file()
+        assert (root / "db.sqlite").is_file()
+        assert (root / "teams" / "eval" / "agents" / "mgr").is_dir()
+        assert (root / "teams" / "eval" / "agents" / "alice").is_dir()
+        # Boss dir is global, outside any team
+        assert boss_person_dir(root).is_dir()
 
-    def test_applies_variant_constitution(self, tmp_path):
-        """The variant's constitution replaces the default one."""
+    def test_applies_variant_override(self, tmp_path):
+        """The variant's charter goes into the team's override.md."""
         root = tmp_path / "team"
         bootstrap_with_variant(
             root,
             variant_name="ship-fast",
             manager="mgr",
-            director="dir",
+            boss="dir",
             agents=[],
         )
-        constitution = root / ".standup" / "charter" / "constitution.md"
-        content = constitution.read_text()
+        override = root / "teams" / "eval" / "override.md"
+        assert override.is_file()
+        content = override.read_text()
         assert "ships fast" in content.lower()
 
-    def test_applies_variant_code_review(self, tmp_path):
-        """The variant's code-review.md replaces the default one."""
+    def test_quality_first_variant_override(self, tmp_path):
+        """The quality-first variant's charter goes into override.md."""
         root = tmp_path / "team"
         bootstrap_with_variant(
             root,
             variant_name="quality-first",
             manager="mgr",
-            director="dir",
+            boss="dir",
             agents=[],
         )
-        code_review = root / ".standup" / "charter" / "code-review.md"
-        content = code_review.read_text()
+        override = root / "teams" / "eval" / "override.md"
+        content = override.read_text()
         # quality-first has stricter review language
         assert "every concern is blocking" in content.lower()
 
-    def test_non_overridden_files_are_default(self, tmp_path):
-        """Charter files not in the variant come from the default templates."""
-        root = tmp_path / "team"
-        bootstrap_with_variant(
-            root,
-            variant_name="ship-fast",
-            manager="mgr",
-            director="dir",
-            agents=[],
-        )
-        # communication.md is not overridden by ship-fast
-        comm = root / ".standup" / "charter" / "communication.md"
+    def test_base_charter_files_exist(self, tmp_path):
+        """Base charter files are shipped with the package."""
+        # communication.md is a base charter file
+        comm = base_charter_dir() / "communication.md"
         assert comm.is_file()
         content = comm.read_text()
         # Should contain default communication protocol content
@@ -193,15 +187,15 @@ class TestBootstrapWithVariant:
 
         bootstrap_with_variant(
             root_fast, variant_name="ship-fast",
-            manager="mgr", director="dir", agents=[],
+            manager="mgr", boss="dir", agents=[],
         )
         bootstrap_with_variant(
             root_quality, variant_name="quality-first",
-            manager="mgr", director="dir", agents=[],
+            manager="mgr", boss="dir", agents=[],
         )
 
-        fast_const = (root_fast / ".standup" / "charter" / "constitution.md").read_text()
-        quality_const = (root_quality / ".standup" / "charter" / "constitution.md").read_text()
+        fast_const = (root_fast / "teams" / "eval" / "override.md").read_text()
+        quality_const = (root_quality / "teams" / "eval" / "override.md").read_text()
         assert fast_const != quality_const
 
     def test_nonexistent_variant_raises(self, tmp_path):
@@ -212,7 +206,7 @@ class TestBootstrapWithVariant:
                 root,
                 variant_name="does-not-exist",
                 manager="mgr",
-                director="dir",
+                boss="dir",
             )
 
     def test_all_charter_files_present(self, tmp_path):
@@ -222,10 +216,10 @@ class TestBootstrapWithVariant:
             root,
             variant_name="quality-first",
             manager="mgr",
-            director="dir",
+            boss="dir",
             agents=["alice"],
         )
-        charter_dir = root / ".standup" / "charter"
+        charter_dir = base_charter_dir()
         expected = {"constitution.md", "communication.md", "task-management.md",
                     "code-review.md", "manager.md"}
         actual = {f.name for f in charter_dir.glob("*.md")}
@@ -287,7 +281,7 @@ def _create_task_file(tasks_dir: Path, task_id: int, status: str = "done", title
         "status": status,
         "assignee": "alice",
     }
-    path = tasks_dir / f"T{task_id:04d}.yaml"
+    path = tasks_dir / f"{format_task_id(task_id)}.yaml"
     path.write_text(yaml.dump(task, default_flow_style=False))
 
 
@@ -295,7 +289,7 @@ def _create_task_file(tasks_dir: Path, task_id: int, status: str = "done", title
 def run_dir(tmp_path):
     """Create a minimal eval run directory with db and tasks."""
     root = tmp_path / "run"
-    standup = root / ".standup"
+    standup = root
     standup.mkdir(parents=True)
 
     # Create DB with sample data
@@ -334,7 +328,7 @@ class TestCollectDbMetrics:
 
     def test_aggregates_session_totals(self, run_dir):
         """Sums tokens, cost, and duration across all sessions."""
-        metrics = _collect_db_metrics(run_dir / ".standup" / "db.sqlite")
+        metrics = _collect_db_metrics(run_dir / "db.sqlite")
         assert metrics["total_tokens_in"] == 15000  # 5000 + 8000 + 2000
         assert metrics["total_tokens_out"] == 6000   # 2000 + 3000 + 1000
         assert metrics["total_cost_usd"] == pytest.approx(0.15)
@@ -343,7 +337,7 @@ class TestCollectDbMetrics:
 
     def test_computes_per_task_averages(self, run_dir):
         """Computes avg sessions/task and avg seconds/task."""
-        metrics = _collect_db_metrics(run_dir / ".standup" / "db.sqlite")
+        metrics = _collect_db_metrics(run_dir / "db.sqlite")
         # 3 sessions across 2 distinct task_ids -> 1.5 sessions/task
         assert metrics["avg_sessions_per_task"] == 1.5
         # 360 seconds / 2 tasks -> 180 seconds/task
@@ -351,16 +345,14 @@ class TestCollectDbMetrics:
 
     def test_counts_chat_messages_only(self, run_dir):
         """Only counts 'chat' type messages, not 'event'."""
-        metrics = _collect_db_metrics(run_dir / ".standup" / "db.sqlite")
+        metrics = _collect_db_metrics(run_dir / "db.sqlite")
         assert metrics["total_messages"] == 4  # 4 chat messages, 1 event excluded
 
     def test_empty_db(self, tmp_path):
         """Handles a db with no data gracefully."""
-        standup = tmp_path / ".standup"
-        standup.mkdir()
-        _create_db(standup / "db.sqlite")
+        _create_db(tmp_path / "db.sqlite")
 
-        metrics = _collect_db_metrics(standup / "db.sqlite")
+        metrics = _collect_db_metrics(tmp_path / "db.sqlite")
         assert metrics["total_tokens_in"] == 0
         assert metrics["total_sessions"] == 0
         assert metrics["avg_sessions_per_task"] == 0.0
@@ -381,7 +373,7 @@ class TestCollectTaskMetrics:
 
     def test_counts_completed_and_failed(self, run_dir):
         """Counts done tasks as completed, others as failed."""
-        metrics = _collect_task_metrics(run_dir / ".standup" / "tasks")
+        metrics = _collect_task_metrics(run_dir / "tasks")
         assert metrics["tasks_completed"] == 2
         assert metrics["tasks_failed"] == 1  # the in_progress one
 
@@ -418,8 +410,8 @@ class TestLintViolations:
         mock_result.stdout = "foo.py:1:1: F841 local variable 'x' is assigned to but never used\nfoo.py:2:1: E302 expected 2 blank lines\n"
         mock_result.stderr = ""
 
-        with patch("scripts.eval.shutil.which", return_value="/usr/bin/ruff"), \
-             patch("scripts.eval.subprocess.run", return_value=mock_result):
+        with patch("boss.eval.shutil.which", return_value="/usr/bin/ruff"), \
+             patch("boss.eval.subprocess.run", return_value=mock_result):
             count = _count_lint_violations(tmp_path, ["foo.py"])
         assert count == 2
 
@@ -432,8 +424,8 @@ class TestLintViolations:
         mock_result.stdout = ""
         mock_result.stderr = ""
 
-        with patch("scripts.eval.shutil.which", return_value="/usr/bin/ruff"), \
-             patch("scripts.eval.subprocess.run", return_value=mock_result):
+        with patch("boss.eval.shutil.which", return_value="/usr/bin/ruff"), \
+             patch("boss.eval.subprocess.run", return_value=mock_result):
             count = _count_lint_violations(tmp_path, ["foo.py"])
         assert count == 0
 
@@ -441,7 +433,7 @@ class TestLintViolations:
         """Returns None when ruff is not installed."""
         (tmp_path / "foo.py").write_text("x = 1\n")
 
-        with patch("scripts.eval.shutil.which", return_value=None):
+        with patch("boss.eval.shutil.which", return_value=None):
             count = _count_lint_violations(tmp_path, ["foo.py"])
         assert count is None
 
@@ -463,8 +455,8 @@ class TestTypeErrors:
         mock_result.stdout = 'foo.py:1:10 - error: Expression of type "str" is incompatible\n0 warnings, 1 error\n'
         mock_result.stderr = ""
 
-        with patch("scripts.eval.shutil.which", return_value="/usr/bin/pyright"), \
-             patch("scripts.eval.subprocess.run", return_value=mock_result):
+        with patch("boss.eval.shutil.which", return_value="/usr/bin/pyright"), \
+             patch("boss.eval.subprocess.run", return_value=mock_result):
             count = _count_type_errors(tmp_path, ["foo.py"])
         assert count == 2  # both lines contain "error"
 
@@ -472,7 +464,7 @@ class TestTypeErrors:
         """Returns None when neither pyright nor mypy is installed."""
         (tmp_path / "foo.py").write_text("x = 1\n")
 
-        with patch("scripts.eval.shutil.which", return_value=None):
+        with patch("boss.eval.shutil.which", return_value=None):
             count = _count_type_errors(tmp_path, ["foo.py"])
         assert count is None
 
@@ -500,8 +492,8 @@ class TestComplexityScore:
         )
         mock_result.stderr = ""
 
-        with patch("scripts.eval.shutil.which", return_value="/usr/bin/radon"), \
-             patch("scripts.eval.subprocess.run", return_value=mock_result):
+        with patch("boss.eval.shutil.which", return_value="/usr/bin/radon"), \
+             patch("boss.eval.subprocess.run", return_value=mock_result):
             score = _compute_complexity(tmp_path, ["foo.py"])
         assert score == 1.0
 
@@ -509,7 +501,7 @@ class TestComplexityScore:
         """Returns None when radon is not installed."""
         (tmp_path / "foo.py").write_text("def f(): pass\n")
 
-        with patch("scripts.eval.shutil.which", return_value=None):
+        with patch("boss.eval.shutil.which", return_value=None):
             score = _compute_complexity(tmp_path, ["foo.py"])
         assert score is None
 
@@ -533,8 +525,8 @@ class TestDiffSize:
         )
         mock_result.stderr = ""
 
-        with patch("scripts.eval.shutil.which", return_value="/usr/bin/git"), \
-             patch("scripts.eval.subprocess.run", return_value=mock_result):
+        with patch("boss.eval.shutil.which", return_value="/usr/bin/git"), \
+             patch("boss.eval.subprocess.run", return_value=mock_result):
             size = _get_diff_size(tmp_path)
         assert size == 230  # 200 + 30
 
@@ -545,14 +537,14 @@ class TestDiffSize:
         mock_result.stdout = " 1 file changed, 50 insertions(+)\n"
         mock_result.stderr = ""
 
-        with patch("scripts.eval.shutil.which", return_value="/usr/bin/git"), \
-             patch("scripts.eval.subprocess.run", return_value=mock_result):
+        with patch("boss.eval.shutil.which", return_value="/usr/bin/git"), \
+             patch("boss.eval.subprocess.run", return_value=mock_result):
             size = _get_diff_size(tmp_path)
         assert size == 50
 
     def test_git_not_available(self, tmp_path):
         """Returns None when git is not available."""
-        with patch("scripts.eval.shutil.which", return_value=None):
+        with patch("boss.eval.shutil.which", return_value=None):
             size = _get_diff_size(tmp_path)
         assert size is None
 
@@ -567,12 +559,12 @@ class TestCollectMetrics:
 
     def test_returns_all_expected_keys(self, run_dir):
         """collect_metrics returns all documented metric keys."""
-        with patch("scripts.eval._get_changed_files", return_value=[]), \
-             patch("scripts.eval._get_diff_size", return_value=0), \
-             patch("scripts.eval._count_lint_violations", return_value=0), \
-             patch("scripts.eval._count_type_errors", return_value=None), \
-             patch("scripts.eval._compute_complexity", return_value=None):
-            metrics = collect_metrics(run_dir)
+        with patch("boss.eval._get_changed_files", return_value=[]), \
+             patch("boss.eval._get_diff_size", return_value=0), \
+             patch("boss.eval._count_lint_violations", return_value=0), \
+             patch("boss.eval._count_type_errors", return_value=None), \
+             patch("boss.eval._compute_complexity", return_value=None):
+            metrics = collect_metrics(run_dir, run_dir=run_dir)
 
         expected_keys = {
             "total_tokens_in", "total_tokens_out", "total_cost_usd",
@@ -586,11 +578,11 @@ class TestCollectMetrics:
 
     def test_computes_messages_per_task(self, run_dir):
         """messages_per_task = total_messages / (completed + failed)."""
-        with patch("scripts.eval._get_changed_files", return_value=[]), \
-             patch("scripts.eval._get_diff_size", return_value=0), \
-             patch("scripts.eval._count_lint_violations", return_value=0), \
-             patch("scripts.eval._count_type_errors", return_value=None), \
-             patch("scripts.eval._compute_complexity", return_value=None):
+        with patch("boss.eval._get_changed_files", return_value=[]), \
+             patch("boss.eval._get_diff_size", return_value=0), \
+             patch("boss.eval._count_lint_violations", return_value=0), \
+             patch("boss.eval._count_type_errors", return_value=None), \
+             patch("boss.eval._compute_complexity", return_value=None):
             metrics = collect_metrics(run_dir)
 
         # 4 chat messages / 3 total tasks = 1.33
@@ -600,11 +592,11 @@ class TestCollectMetrics:
         """All metric values are numbers or None (JSON-safe)."""
         import json
 
-        with patch("scripts.eval._get_changed_files", return_value=[]), \
-             patch("scripts.eval._get_diff_size", return_value=0), \
-             patch("scripts.eval._count_lint_violations", return_value=0), \
-             patch("scripts.eval._count_type_errors", return_value=None), \
-             patch("scripts.eval._compute_complexity", return_value=None):
+        with patch("boss.eval._get_changed_files", return_value=[]), \
+             patch("boss.eval._get_diff_size", return_value=0), \
+             patch("boss.eval._count_lint_violations", return_value=0), \
+             patch("boss.eval._count_type_errors", return_value=None), \
+             patch("boss.eval._compute_complexity", return_value=None):
             metrics = collect_metrics(run_dir)
 
         # Should not raise
@@ -618,16 +610,16 @@ class TestCollectMetrics:
     def test_handles_no_tasks(self, tmp_path):
         """Handles a run dir with db but no tasks."""
         root = tmp_path / "run"
-        standup = root / ".standup"
+        standup = root
         standup.mkdir(parents=True)
         (standup / "tasks").mkdir()
         _create_db(standup / "db.sqlite")
 
-        with patch("scripts.eval._get_changed_files", return_value=[]), \
-             patch("scripts.eval._get_diff_size", return_value=0), \
-             patch("scripts.eval._count_lint_violations", return_value=0), \
-             patch("scripts.eval._count_type_errors", return_value=None), \
-             patch("scripts.eval._compute_complexity", return_value=None):
+        with patch("boss.eval._get_changed_files", return_value=[]), \
+             patch("boss.eval._get_diff_size", return_value=0), \
+             patch("boss.eval._count_lint_violations", return_value=0), \
+             patch("boss.eval._count_type_errors", return_value=None), \
+             patch("boss.eval._compute_complexity", return_value=None):
             metrics = collect_metrics(root)
 
         assert metrics["tasks_completed"] == 0
@@ -812,7 +804,7 @@ class TestJudgeDiff:
 
     def test_returns_scores_with_avg(self):
         """judge_diff returns all dimensions + avg + reasoning."""
-        with patch("scripts.eval._call_llm", return_value=_SAMPLE_JUDGE_JSON):
+        with patch("boss.eval._call_llm", return_value=_SAMPLE_JUDGE_JSON):
             result = judge_diff("diff content", "task spec")
 
         assert result["correctness"] == 4
@@ -825,7 +817,7 @@ class TestJudgeDiff:
 
     def test_retries_on_parse_failure(self):
         """Retries once when the first response fails to parse."""
-        with patch("scripts.eval._call_llm", side_effect=[
+        with patch("boss.eval._call_llm", side_effect=[
             "not valid json",
             _SAMPLE_JUDGE_JSON,
         ]):
@@ -835,7 +827,7 @@ class TestJudgeDiff:
 
     def test_raises_after_two_failures(self):
         """Raises ValueError when both attempts fail."""
-        with patch("scripts.eval._call_llm", return_value="not json"):
+        with patch("boss.eval._call_llm", return_value="not json"):
             with pytest.raises(ValueError, match="Failed to parse"):
                 judge_diff("diff", "spec")
 
@@ -848,7 +840,7 @@ class TestJudgeDiff:
             captured_calls.append(system)
             return _SAMPLE_JUDGE_JSON
 
-        with patch("scripts.eval._call_llm", side_effect=mock_llm):
+        with patch("boss.eval._call_llm", side_effect=mock_llm):
             judge_diff("diff", "spec", rubric=custom_rubric)
 
         assert custom_rubric in captured_calls[0]
@@ -861,7 +853,7 @@ class TestJudgeDiff:
             captured_calls.append(system)
             return _SAMPLE_JUDGE_JSON
 
-        with patch("scripts.eval._call_llm", side_effect=mock_llm):
+        with patch("boss.eval._call_llm", side_effect=mock_llm):
             judge_diff("diff", "spec")
 
         # Check the system prompt includes the default rubric content
@@ -876,7 +868,7 @@ class TestJudgeRun:
     def judge_run_dir(self, tmp_path):
         """Create a minimal run directory for judge tests."""
         root = tmp_path / "run"
-        standup = root / ".standup"
+        standup = root
         tasks_dir = standup / "tasks"
         tasks_dir.mkdir(parents=True)
 
@@ -888,8 +880,8 @@ class TestJudgeRun:
 
     def test_scores_all_tasks(self, judge_run_dir):
         """judge_run scores every task in the run directory."""
-        with patch("scripts.eval._call_llm", return_value=_SAMPLE_JUDGE_JSON), \
-             patch("scripts.eval._get_full_diff", return_value="some diff"):
+        with patch("boss.eval._call_llm", return_value=_SAMPLE_JUDGE_JSON), \
+             patch("boss.eval._get_full_diff", return_value="some diff"):
             results = judge_run(judge_run_dir, reps=1)
 
         assert "T0001" in results["tasks"]
@@ -906,8 +898,8 @@ class TestJudgeRun:
             call_count[0] += 1
             return responses[idx]
 
-        with patch("scripts.eval._call_llm", side_effect=mock_llm), \
-             patch("scripts.eval._get_full_diff", return_value="some diff"):
+        with patch("boss.eval._call_llm", side_effect=mock_llm), \
+             patch("boss.eval._get_full_diff", return_value="some diff"):
             results = judge_run(judge_run_dir, reps=2)
 
         # T0001 should have averaged scores from the two different responses
@@ -917,8 +909,8 @@ class TestJudgeRun:
 
     def test_overall_averages_across_tasks(self, judge_run_dir):
         """Overall scores average across all tasks."""
-        with patch("scripts.eval._call_llm", return_value=_SAMPLE_JUDGE_JSON), \
-             patch("scripts.eval._get_full_diff", return_value="some diff"):
+        with patch("boss.eval._call_llm", return_value=_SAMPLE_JUDGE_JSON), \
+             patch("boss.eval._get_full_diff", return_value="some diff"):
             results = judge_run(judge_run_dir, reps=1)
 
         overall = results["overall"]
@@ -929,7 +921,7 @@ class TestJudgeRun:
     def test_handles_empty_tasks_dir(self, tmp_path):
         """Returns empty results when no tasks exist."""
         root = tmp_path / "run"
-        (root / ".standup" / "tasks").mkdir(parents=True)
+        (root / "tasks").mkdir(parents=True)
 
         results = judge_run(root, reps=1)
         assert results == {"tasks": {}, "overall": {}}
@@ -937,7 +929,7 @@ class TestJudgeRun:
     def test_handles_missing_tasks_dir(self, tmp_path):
         """Returns empty results when tasks dir doesn't exist."""
         root = tmp_path / "run"
-        (root / ".standup").mkdir(parents=True)
+        (root).mkdir(parents=True)
 
         results = judge_run(root, reps=1)
         assert results == {"tasks": {}, "overall": {}}
@@ -952,8 +944,8 @@ class TestJudgeRun:
                 return "bad json"
             return _SAMPLE_JUDGE_JSON
 
-        with patch("scripts.eval._call_llm", side_effect=mock_llm), \
-             patch("scripts.eval._get_full_diff", return_value="diff"):
+        with patch("boss.eval._call_llm", side_effect=mock_llm), \
+             patch("boss.eval._get_full_diff", return_value="diff"):
             results = judge_run(judge_run_dir, reps=2)
 
         assert "T0001" not in results["tasks"]
@@ -966,8 +958,8 @@ class TestJudgeRun:
             call_count[0] += 1
             return _SAMPLE_JUDGE_JSON
 
-        with patch("scripts.eval._call_llm", side_effect=mock_llm), \
-             patch("scripts.eval._get_full_diff", return_value="diff"):
+        with patch("boss.eval._call_llm", side_effect=mock_llm), \
+             patch("boss.eval._get_full_diff", return_value="diff"):
             judge_run(judge_run_dir, reps=3)
 
         # 2 tasks × 3 reps = 6 calls
@@ -1081,9 +1073,9 @@ class TestSeedTasks:
 
     def test_creates_tasks(self, tmp_path, specs_dir):
         """Creates tasks from benchmark specs."""
-        from scripts.bootstrap import bootstrap
+        from boss.bootstrap import bootstrap
         root = tmp_path / "team"
-        bootstrap(root, manager="mgr", director="dir", agents=["alice"])
+        bootstrap(root, team_name="eval", manager="mgr", agents=["alice"])
 
         specs = load_benchmark_specs(specs_dir)
         created = seed_tasks(root, specs)
@@ -1091,13 +1083,12 @@ class TestSeedTasks:
         for task in created:
             assert "id" in task
             assert task["status"] == "open"
-            assert task["project"] == "eval-run"
 
     def test_task_ids_are_unique(self, tmp_path, specs_dir):
         """Each seeded task gets a unique ID."""
-        from scripts.bootstrap import bootstrap
+        from boss.bootstrap import bootstrap
         root = tmp_path / "team"
-        bootstrap(root, manager="mgr", director="dir", agents=["alice"])
+        bootstrap(root, team_name="eval", manager="mgr", agents=["alice"])
 
         specs = load_benchmark_specs(specs_dir)
         created = seed_tasks(root, specs)
@@ -1275,21 +1266,21 @@ class TestRunEvalDryRun:
             suite=specs_dir,
             dry_run=True,
         )
-        run_dir = Path(results["run_dir"])
-        assert (run_dir / ".standup").is_dir()
-        assert (run_dir / ".standup" / "charter").is_dir()
-        assert (run_dir / ".standup" / "roster.md").is_file()
+        hc_home = Path(results["hc_home"])
+        team_dir = hc_home / "teams" / "eval"
+        assert team_dir.is_dir()
+        assert (team_dir / "roster.md").is_file()
 
     def test_dry_run_applies_variant(self, specs_dir):
-        """Dry run applies the charter variant."""
+        """Dry run applies the charter variant override."""
         results = run_eval(
             variant="ship-fast",
             suite=specs_dir,
             dry_run=True,
         )
-        run_dir = Path(results["run_dir"])
-        constitution = (run_dir / ".standup" / "charter" / "constitution.md").read_text()
-        assert "ships fast" in constitution.lower()
+        hc_home = Path(results["hc_home"])
+        override = (hc_home / "teams" / "eval" / "override.md").read_text()
+        assert "ships fast" in override.lower()
 
     def test_dry_run_sets_up_repo_files(self, specs_dir):
         """Dry run creates repo setup files from specs."""
@@ -1328,10 +1319,11 @@ class TestRunEvalDryRun:
             dry_run=True,
             agents=["worker1", "worker2", "worker3"],
         )
-        run_dir = Path(results["run_dir"])
-        assert (run_dir / ".standup" / "team" / "worker1").is_dir()
-        assert (run_dir / ".standup" / "team" / "worker2").is_dir()
-        assert (run_dir / ".standup" / "team" / "worker3").is_dir()
+        hc_home = Path(results["hc_home"])
+        agents_dir = hc_home / "teams" / "eval" / "agents"
+        assert (agents_dir / "worker1").is_dir()
+        assert (agents_dir / "worker2").is_dir()
+        assert (agents_dir / "worker3").is_dir()
 
     def test_dry_run_has_timestamps(self, specs_dir):
         """Dry run includes timing information."""
@@ -1362,11 +1354,11 @@ class TestRunEvalDryRun:
         r1 = run_eval(variant="ship-fast", suite=specs_dir, dry_run=True)
         r2 = run_eval(variant="quality-first", suite=specs_dir, dry_run=True)
 
-        d1 = Path(r1["run_dir"])
-        d2 = Path(r2["run_dir"])
+        h1 = Path(r1["hc_home"])
+        h2 = Path(r2["hc_home"])
 
-        c1 = (d1 / ".standup" / "charter" / "constitution.md").read_text()
-        c2 = (d2 / ".standup" / "charter" / "constitution.md").read_text()
+        c1 = (h1 / "teams" / "eval" / "override.md").read_text()
+        c2 = (h2 / "teams" / "eval" / "override.md").read_text()
         assert c1 != c2
 
 

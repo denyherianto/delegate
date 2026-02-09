@@ -3,15 +3,17 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.task import create_task, change_status, get_task, update_task
-from scripts.web import create_app
-from scripts.mailbox import read_inbox
+from boss.task import create_task, change_status, get_task, update_task, format_task_id
+from boss.web import create_app
+from boss.mailbox import read_inbox
+
+TEAM = "testteam"
 
 
 @pytest.fixture
 def client(tmp_team):
     """Create a FastAPI test client with a bootstrapped team root."""
-    app = create_app(root=tmp_team)
+    app = create_app(hc_home=tmp_team)
     return TestClient(app)
 
 
@@ -83,7 +85,7 @@ class TestApproveEndpoint:
     def test_approve_logs_event(self, client, needs_merge_task, tmp_team):
         client.post(f"/tasks/{needs_merge_task['id']}/approve")
 
-        from scripts.chat import get_messages
+        from boss.chat import get_messages
         events = get_messages(tmp_team, msg_type="event")
         assert any("approved for merge" in e["content"] for e in events)
 
@@ -127,7 +129,7 @@ class TestRejectEndpoint:
         )
 
         # Check manager's inbox for the notification (direct delivery)
-        inbox = read_inbox(tmp_team, "manager", unread_only=True)
+        inbox = read_inbox(tmp_team, TEAM, "manager", unread_only=True)
         assert len(inbox) >= 1
         notification = inbox[0]
         assert notification.recipient == "manager"
@@ -141,9 +143,9 @@ class TestRejectEndpoint:
             json={"reason": "Needs rework"},
         )
 
-        inbox = read_inbox(tmp_team, "manager", unread_only=True)
+        inbox = read_inbox(tmp_team, TEAM, "manager", unread_only=True)
         notification = inbox[0]
-        assert f"T{needs_merge_task['id']:04d}" in notification.body
+        assert f"{format_task_id(needs_merge_task['id'])}" in notification.body
         assert "Feature X" in notification.body
 
     def test_reject_nonexistent_task_404(self, client):
@@ -171,7 +173,7 @@ class TestRejectEndpoint:
             json={"reason": "Fails tests"},
         )
 
-        from scripts.chat import get_messages
+        from boss.chat import get_messages
         events = get_messages(tmp_team, msg_type="event")
         assert any("rejected" in e["content"] and "Fails tests" in e["content"] for e in events)
 

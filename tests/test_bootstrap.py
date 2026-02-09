@@ -1,98 +1,123 @@
-"""Tests for scripts/bootstrap.py."""
+"""Tests for boss/bootstrap.py."""
 
 import sqlite3
 
+import pytest
 import yaml
 
-from scripts.bootstrap import bootstrap, AGENT_SUBDIRS, get_member_by_role
+from boss.bootstrap import bootstrap, AGENT_SUBDIRS, get_member_by_role
+from boss.config import set_boss, get_boss
+from boss.paths import (
+    team_dir, agents_dir, agent_dir, tasks_dir, db_path,
+    roster_path, boss_person_dir, base_charter_dir,
+)
+
+TEAM = "testteam"
 
 
-def test_creates_directory_structure(tmp_team, all_members):
-    """Bootstrap creates all expected directories for every member."""
-    standup = tmp_team / ".standup"
-    assert standup.is_dir()
-    assert (standup / "scripts").is_dir()
-    assert (standup / "tasks").is_dir()
-    assert (standup / "team").is_dir()
+@pytest.fixture
+def hc(tmp_path):
+    """Return an hc_home with the boss name configured."""
+    hc_home = tmp_path / "hc"
+    hc_home.mkdir()
+    set_boss(hc_home, "nikhil")
+    return hc_home
 
-    for name in all_members:
-        member_dir = standup / "team" / name
-        assert member_dir.is_dir(), f"Missing member dir: {name}"
+
+def test_creates_directory_structure(tmp_team):
+    """Bootstrap creates all expected directories for every agent."""
+    hc_home = tmp_team
+    td = team_dir(hc_home, TEAM)
+    assert td.is_dir()
+    assert tasks_dir(hc_home).is_dir()
+    assert agents_dir(hc_home, TEAM).is_dir()
+
+    for name in ["manager", "alice", "bob"]:
+        ad = agent_dir(hc_home, TEAM, name)
+        assert ad.is_dir(), f"Missing agent dir: {name}"
         for subdir in AGENT_SUBDIRS:
-            assert (member_dir / subdir).is_dir(), f"Missing {name}/{subdir}"
+            assert (ad / subdir).is_dir(), f"Missing {name}/{subdir}"
 
 
-def test_creates_starter_files(tmp_team, all_members):
+def test_creates_starter_files(tmp_team):
     """Bootstrap creates all expected files with content."""
-    standup = tmp_team / ".standup"
-    assert (standup / "charter").is_dir()
-    assert (standup / "roster.md").is_file()
-    assert (standup / "db.sqlite").is_file()
+    hc_home = tmp_team
+    assert roster_path(hc_home, TEAM).is_file()
+    assert db_path(hc_home).is_file()
 
-    for name in all_members:
-        member_dir = standup / "team" / name
-        assert (member_dir / "bio.md").is_file()
-        assert (member_dir / "context.md").is_file()
-        assert (member_dir / "state.yaml").is_file()
+    for name in ["manager", "alice", "bob"]:
+        ad = agent_dir(hc_home, TEAM, name)
+        assert (ad / "bio.md").is_file()
+        assert (ad / "context.md").is_file()
+        assert (ad / "state.yaml").is_file()
 
 
-def test_state_yaml_has_role(team_path):
-    """Each member's state.yaml includes the correct role."""
-    state = yaml.safe_load((team_path / "manager" / "state.yaml").read_text())
+def test_state_yaml_has_role(tmp_team):
+    """Each agent's state.yaml includes the correct role."""
+    hc_home = tmp_team
+    state = yaml.safe_load((agent_dir(hc_home, TEAM, "manager") / "state.yaml").read_text())
     assert state["role"] == "manager"
     assert state["pid"] is None
 
-    state = yaml.safe_load((team_path / "director" / "state.yaml").read_text())
-    assert state["role"] == "director"
-
-    state = yaml.safe_load((team_path / "alice" / "state.yaml").read_text())
+    state = yaml.safe_load((agent_dir(hc_home, TEAM, "alice") / "state.yaml").read_text())
     assert state["role"] == "worker"
 
 
-def test_roster_contains_all_members(standup_path, all_members):
+def test_boss_mailbox_created(tmp_team):
+    """The boss's global mailbox directory is created outside any team."""
+    hc_home = tmp_team
+    bd = boss_person_dir(hc_home)
+    assert bd.is_dir()
+    for box in ["inbox", "outbox"]:
+        for sub in ["new", "cur", "tmp"]:
+            assert (bd / box / sub).is_dir()
+
+
+def test_roster_contains_all_members(tmp_team):
     """Roster file lists every team member."""
-    content = (standup_path / "roster.md").read_text()
-    for name in all_members:
+    content = roster_path(tmp_team, TEAM).read_text()
+    for name in ["manager", "alice", "bob", "nikhil"]:
         assert name in content
 
 
-def test_roster_shows_roles(standup_path):
-    """Roster shows role annotations for manager and director."""
-    content = (standup_path / "roster.md").read_text()
+def test_roster_shows_roles(tmp_team):
+    """Roster shows role annotations for manager and boss."""
+    content = roster_path(tmp_team, TEAM).read_text()
     assert "(manager)" in content
-    assert "(director)" in content
+    assert "(boss)" in content
 
 
-def test_charter_directory(standup_path):
-    """Charter directory contains the expected files (copied from scripts/charter/)."""
-    charter_dir = standup_path / "charter"
-    assert charter_dir.is_dir()
+def test_charter_shipped_with_package():
+    """Base charter files are shipped with the package."""
+    cd = base_charter_dir()
+    assert cd.is_dir()
     expected = {"constitution.md", "communication.md", "task-management.md", "code-review.md", "manager.md"}
-    actual = {f.name for f in charter_dir.glob("*.md")}
+    actual = {f.name for f in cd.glob("*.md")}
     assert actual == expected
-    # Each file should have content
-    for f in charter_dir.glob("*.md"):
+    for f in cd.glob("*.md"):
         assert len(f.read_text()) > 0
 
 
-def test_maildir_subdirs_exist(team_path, all_members):
-    """Each member has Maildir-style new/cur/tmp under inbox and outbox."""
-    for name in all_members:
+def test_maildir_subdirs_exist(tmp_team):
+    """Each agent has Maildir-style new/cur/tmp under inbox and outbox."""
+    hc_home = tmp_team
+    for name in ["manager", "alice", "bob"]:
         for box in ["inbox", "outbox"]:
             for sub in ["new", "cur", "tmp"]:
-                path = team_path / name / box / sub
+                path = agent_dir(hc_home, TEAM, name) / box / sub
                 assert path.is_dir(), f"Missing {name}/{box}/{sub}"
 
 
-def test_workspace_exists_per_member(team_path, all_members):
-    """Each team member has a workspace directory."""
-    for name in all_members:
-        assert (team_path / name / "workspace").is_dir()
+def test_workspace_exists_per_agent(tmp_team):
+    """Each team agent has a workspace directory."""
+    hc_home = tmp_team
+    for name in ["manager", "alice", "bob"]:
+        assert (agent_dir(hc_home, TEAM, name) / "workspace").is_dir()
 
 
-def test_db_schema_created(db_path):
+def test_db_schema_created(tmp_team):
     """SQLite database has the messages and sessions tables."""
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path(tmp_team)))
 
     cursor = conn.execute("PRAGMA table_info(messages)")
     msg_columns = {row[1] for row in cursor.fetchall()}
@@ -108,91 +133,80 @@ def test_db_schema_created(db_path):
     conn.close()
 
 
-def test_idempotent_rerun(tmp_path):
+def test_idempotent_rerun(hc):
     """Running bootstrap twice doesn't corrupt existing files."""
-    root = tmp_path / "team"
-    bootstrap(root, manager="mgr", director="dir", agents=["a", "b"])
+    bootstrap(hc, TEAM, manager="mgr", agents=["a", "b"])
+    bootstrap(hc, TEAM, manager="mgr", agents=["a", "b"])
 
-    # Overwrite one charter file to verify idempotency
-    constitution = root / ".standup" / "charter" / "constitution.md"
-    constitution.write_text("# Custom Constitution\n")
-
-    bootstrap(root, manager="mgr", director="dir", agents=["a", "b"])
-
-    assert constitution.read_text() == "# Custom Constitution\n"
-    for name in ["mgr", "dir", "a", "b"]:
-        assert (root / ".standup" / "team" / name / "state.yaml").is_file()
+    for name in ["mgr", "a", "b"]:
+        assert (agent_dir(hc, TEAM, name) / "state.yaml").is_file()
 
 
-def test_bio_default_content(team_path, all_members):
-    """Each member's bio.md has their name as a simple placeholder."""
-    for name in all_members:
-        content = (team_path / name / "bio.md").read_text()
+def test_bio_default_content(tmp_team):
+    """Each agent's bio.md has their name as a simple placeholder."""
+    hc_home = tmp_team
+    for name in ["manager", "alice", "bob"]:
+        content = (agent_dir(hc_home, TEAM, name) / "bio.md").read_text()
         assert name in content
         assert content.strip() == f"# {name}"
 
 
 def test_get_member_by_role(tmp_team):
     """get_member_by_role finds the correct member for each role."""
-    assert get_member_by_role(tmp_team, "manager") == "manager"
-    assert get_member_by_role(tmp_team, "director") == "director"
-    assert get_member_by_role(tmp_team, "nonexistent") is None
+    assert get_member_by_role(tmp_team, TEAM, "manager") == "manager"
+    assert get_member_by_role(tmp_team, TEAM, "nonexistent") is None
 
 
-def test_get_member_by_role_custom_names(tmp_path):
+def test_get_member_by_role_custom_names(hc):
     """get_member_by_role works with custom names."""
-    root = tmp_path / "team"
-    bootstrap(root, manager="edison", director="nikhil", agents=["alice"])
-    assert get_member_by_role(root, "manager") == "edison"
-    assert get_member_by_role(root, "director") == "nikhil"
+    bootstrap(hc, TEAM, manager="edison", agents=["alice"])
+    assert get_member_by_role(hc, TEAM, "manager") == "edison"
 
 
-def test_duplicate_names_raises(tmp_path):
+def test_duplicate_names_raises(hc):
     """Bootstrap rejects duplicate member names."""
-    import pytest
-    root = tmp_path / "team"
     with pytest.raises(ValueError, match="Duplicate"):
-        bootstrap(root, manager="alice", director="bob", agents=["alice"])
+        bootstrap(hc, TEAM, manager="alice", agents=["alice"])
 
 
 def test_interactive_bios(tmp_path, monkeypatch):
     """Interactive mode prompts for bios and writes them."""
-    root = tmp_path / "team"
+    hc_home = tmp_path / "hc"
+    hc_home.mkdir()
+    set_boss(hc_home, "nikhil")
 
     # Order: additional charter prompt first, then bios for each member
     inputs = iter([
         "",                   # no additional charter
         "Great at planning",  # manager bio line 1
         "",                   # end manager bio
-        "Human director",     # director bio line 1
-        "",                   # end director bio
         "Python expert",      # alice bio line 1
         "",                   # end alice bio
     ])
     monkeypatch.setattr("builtins.input", lambda: next(inputs))
 
-    bootstrap(root, manager="mgr", director="dir", agents=["alice"], interactive=True)
+    bootstrap(hc_home, TEAM, manager="mgr", agents=["alice"], interactive=True)
 
-    assert "Great at planning" in (root / ".standup" / "team" / "mgr" / "bio.md").read_text()
-    assert "Human director" in (root / ".standup" / "team" / "dir" / "bio.md").read_text()
-    assert "Python expert" in (root / ".standup" / "team" / "alice" / "bio.md").read_text()
+    assert "Great at planning" in (agent_dir(hc_home, TEAM, "mgr") / "bio.md").read_text()
+    assert "Python expert" in (agent_dir(hc_home, TEAM, "alice") / "bio.md").read_text()
 
 
 def test_interactive_extra_charter(tmp_path, monkeypatch):
     """Interactive mode can add additional charter material."""
-    root = tmp_path / "team"
+    hc_home = tmp_path / "hc"
+    hc_home.mkdir()
+    set_boss(hc_home, "nikhil")
 
     # Order: additional charter prompt first, then bios
     inputs = iter([
         "We use Rust for infrastructure",  # extra charter line 1
         "",                                 # end extra charter
         "",                                 # empty bio for manager
-        "",                                 # empty bio for director
     ])
     monkeypatch.setattr("builtins.input", lambda: next(inputs))
 
-    bootstrap(root, manager="mgr", director="dir", agents=[], interactive=True)
+    bootstrap(hc_home, TEAM, manager="mgr", agents=[], interactive=True)
 
-    extra = root / ".standup" / "charter" / "additional.md"
-    assert extra.exists()
-    assert "Rust for infrastructure" in extra.read_text()
+    override = team_dir(hc_home, TEAM) / "override.md"
+    assert override.exists()
+    assert "Rust for infrastructure" in override.read_text()
