@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from headcount.bootstrap import get_member_by_role
+from headcount.config import get_director
 from headcount.mailbox import Message, deliver
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,16 @@ def _get_manager_name(hc_home: Path, team: str) -> str:
     """Look up the manager agent by role."""
     name = get_member_by_role(hc_home, team, "manager")
     return name or "manager"
+
+
+def _get_sender_name(hc_home: Path) -> str:
+    """Return a valid sender for system notifications.
+
+    Uses the director name since they are the human who triggers
+    rejections, and 'system' has no agent directory which would
+    cause downstream routing failures.
+    """
+    return get_director(hc_home) or "director"
 
 
 def notify_rejection(
@@ -54,6 +65,7 @@ def notify_rejection(
         The delivered message filename, or None if delivery failed.
     """
     manager = _get_manager_name(hc_home, team)
+    sender = _get_sender_name(hc_home)
     task_id = task["id"]
     title = task.get("title", "(untitled)")
     assignee = task.get("assignee", "(unassigned)")
@@ -72,7 +84,7 @@ def notify_rejection(
     )
 
     msg = Message(
-        sender="system",
+        sender=sender,
         recipient=manager,
         time=_now_iso(),
         body=body,
@@ -112,6 +124,7 @@ def notify_conflict(
         The delivered message filename, or None if delivery failed.
     """
     manager = _get_manager_name(hc_home, team)
+    sender = _get_sender_name(hc_home)
     task_id = task["id"]
     title = task.get("title", "(untitled)")
     branch = task.get("branch", "(no branch)")
@@ -131,7 +144,7 @@ def notify_conflict(
     )
 
     msg = Message(
-        sender="system",
+        sender=sender,
         recipient=manager,
         time=_now_iso(),
         body=body,

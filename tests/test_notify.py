@@ -50,7 +50,7 @@ class TestNotifyRejection:
         assert len(inbox) == 1
         msg = inbox[0]
         assert msg.recipient == "edison"
-        assert msg.sender == "system"
+        assert msg.sender == "director"
 
     def test_message_contains_task_details(self, notify_team):
         task = _make_task_at_needs_merge(notify_team)
@@ -118,7 +118,7 @@ class TestNotifyConflict:
         assert len(inbox) == 1
         msg = inbox[0]
         assert msg.recipient == "edison"
-        assert msg.sender == "system"
+        assert msg.sender == "director"
 
     def test_message_contains_task_and_branch(self, notify_team):
         task = _make_task_at_needs_merge(notify_team)
