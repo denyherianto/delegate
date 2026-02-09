@@ -34,7 +34,10 @@
     <button class="tab" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
     <button class="tab" data-tab="agents" onclick="switchTab('agents')">Agents</button>
   </div>
-  <button class="mute-toggle" id="muteToggle" onclick="toggleMute()" title="Toggle notification sounds"></button>
+  <div class="header-actions">
+    <button class="mute-toggle" id="muteToggle" onclick="toggleMute()" title="Toggle notification sounds"></button>
+    <button class="theme-toggle" id="themeToggle" onclick="cycleTheme()" title="Toggle theme"></button>
+  </div>
 </div>
 <div class="content">
   <div id="chat" class="panel active">

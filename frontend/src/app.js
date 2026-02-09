@@ -138,6 +138,49 @@ function playTaskSound() {
 }
 
 // =====================================================================
+// Theme toggle (light/dark/system)
+// =====================================================================
+function initTheme() {
+  const pref = localStorage.getItem("boss-theme"); // "light", "dark", or null (system)
+  applyTheme(pref);
+}
+
+function cycleTheme() {
+  const current = localStorage.getItem("boss-theme");
+  let next;
+  if (current === null) next = "light";
+  else if (current === "light") next = "dark";
+  else next = null; // back to system
+  if (next) localStorage.setItem("boss-theme", next);
+  else localStorage.removeItem("boss-theme");
+  applyTheme(next);
+}
+
+function applyTheme(pref) {
+  const root = document.documentElement;
+  root.classList.remove("light", "dark");
+  if (pref === "light") root.classList.add("light");
+  else if (pref === "dark") root.classList.add("dark");
+  // else: no class = system preference via media query
+  updateThemeIcon(pref);
+}
+
+function updateThemeIcon(pref) {
+  const btn = document.getElementById("themeToggle");
+  if (!btn) return;
+  if (pref === "light") {
+    btn.innerHTML = "<svg width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><circle cx='8' cy='8' r='3'/><line x1='8' y1='1' x2='8' y2='3'/><line x1='8' y1='13' x2='8' y2='15'/><line x1='1' y1='8' x2='3' y2='8'/><line x1='13' y1='8' x2='15' y2='8'/><line x1='3.05' y1='3.05' x2='4.46' y2='4.46'/><line x1='11.54' y1='11.54' x2='12.95' y2='12.95'/><line x1='3.05' y1='12.95' x2='4.46' y2='11.54'/><line x1='11.54' y1='4.46' x2='12.95' y2='3.05'/></svg>";
+    btn.title = "Theme: Light (click to switch)";
+  } else if (pref === "dark") {
+    btn.innerHTML = "<svg width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M14 8.5A6 6 0 0 1 7.5 2 6 6 0 1 0 14 8.5z'/></svg>";
+    btn.title = "Theme: Dark (click to switch)";
+  } else {
+    btn.innerHTML = "<svg width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><rect x='2' y='3' width='12' height='9' rx='1'/><line x1='5' y1='14' x2='11' y2='14'/><line x1='8' y1='12' x2='8' y2='14'/></svg>";
+    btn.title = "Theme: System (click to switch)";
+  }
+}
+
+// =====================================================================
 // Helpers
 // =====================================================================
 function cap(s) {
@@ -1162,6 +1205,7 @@ window.addEventListener("hashchange", () => {
 // =====================================================================
 // Init
 // =====================================================================
+initTheme();
 _updateMuteBtn();
 loadTeams().then(() => {
   initFromHash();
@@ -1175,6 +1219,7 @@ Object.assign(window, {
   switchTab,
   onTeamChange,
   toggleMute,
+  cycleTheme,
   loadChat,
   loadTasks,
   sendMsg,
