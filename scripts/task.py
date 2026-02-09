@@ -74,6 +74,7 @@ def create_task(
     priority: str = "medium",
     reviewer: str = "",
     depends_on: list[int] | None = None,
+    repo: str = "",
 ) -> dict:
     """Create a new task. Returns the task dict with assigned ID."""
     if priority not in VALID_PRIORITIES:
@@ -92,6 +93,7 @@ def create_task(
         "reviewer": reviewer,
         "project": project,
         "priority": priority,
+        "repo": repo,
         "created_at": now,
         "updated_at": now,
         "completed_at": "",
@@ -119,6 +121,7 @@ def get_task(root: Path, task_id: int) -> dict:
         raise FileNotFoundError(f"Task {task_id} not found at {path}")
     task = yaml.safe_load(path.read_text())
     task.setdefault("reviewer", "")
+    task.setdefault("repo", "")
     task.setdefault("branch", "")
     task.setdefault("commits", [])
     task.setdefault("rejection_reason", "")
@@ -322,6 +325,7 @@ def main():
     p_create.add_argument("--project", default="")
     p_create.add_argument("--priority", default="medium", choices=VALID_PRIORITIES)
     p_create.add_argument("--reviewer", default="")
+    p_create.add_argument("--repo", default="", help="Registered repo name for this task")
 
     # list
     p_list = sub.add_parser("list", help="List tasks")
@@ -371,6 +375,7 @@ def main():
             project=args.project,
             priority=args.priority,
             reviewer=args.reviewer,
+            repo=args.repo,
         )
         print(f"Created T{task['id']:04d}: {task['title']}")
 

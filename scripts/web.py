@@ -50,9 +50,10 @@ async def _daemon_loop(
     max_concurrent: int,
     default_token_budget: int | None,
 ) -> None:
-    """Route messages and spawn agents on a fixed interval."""
+    """Route messages, spawn agents, and process merges on a fixed interval."""
     from scripts.router import route_once
     from scripts.orchestrator import orchestrate_once, spawn_agent_subprocess
+    from scripts.merge import merge_once
 
     def _spawn(r: Path, a: str) -> None:
         spawn_agent_subprocess(r, a, token_budget=default_token_budget)
@@ -68,6 +69,10 @@ async def _daemon_loop(
             spawned = orchestrate_once(root, max_concurrent=max_concurrent, spawn_fn=_spawn)
             if spawned:
                 logger.info("Spawned agents: %s", ", ".join(spawned))
+
+            merged = merge_once(root)
+            if merged > 0:
+                logger.info("Merged %d task(s)", merged)
         except Exception:
             logger.exception("Error during daemon cycle")
         await asyncio.sleep(interval)
