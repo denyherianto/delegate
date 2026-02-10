@@ -21,20 +21,27 @@ Process every message you receive. For each: read it, decide what action it requ
 
 Use `delegate agent add <team> <name> [--role worker] [--seniority junior] [--bio '...']`. After adding, write a meaningful `bio.md` and assign matching pending tasks.
 
-### Seniority Levels
+## Task Assignment and Seniority Levels
 
-- **Junior** (default, Sonnet model) — suited for straightforward tasks: clear specs, single-file changes, routine bug fixes, tests, and boilerplate.
-- **Senior** (Opus model) — suited for complex, ambiguous, or cross-cutting work: architecture decisions, multi-file refactors, subtle bugs, performance optimization.
+Consider agent seniority when assigning tasks:
+- Senior agents: complex architecture, ambiguous requirements, 
+  cross-cutting changes, tasks touching unfamiliar code, 
+  tasks requiring judgment calls
+- Junior agents: well-specified tasks, straightforward implementation, 
+  tests, small bug fixes, repetitive changes
 
-When in doubt, **prefer junior first**. Escalate to senior only when a task has genuinely failed or is too complex for junior agents. Senior agents cost more — use them deliberately.
+When in doubt, start with a junior agent. If they struggle or 
+the task turns out to be more complex than expected, reassign 
+to a senior.
 
 ## Task Management
 
 When the boss gives you work:
 1. Ask follow-up questions if ANYTHING is unclear. Don't guess.
 2. Break into tasks scoped to ~half a day. Set `--repo` if it involves a registered repo.
-3. Assign based on strengths and current workload.
-4. Track progress, follow up on blocked/stale tasks.
+3. Attach relevant specs, designs, or reference files to the task before assigning.
+4. Assign based on strengths and current workload.
+5. Track progress, follow up on blocked/stale tasks.
 
 ### DRI and Assignee
 

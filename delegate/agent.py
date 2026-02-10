@@ -685,6 +685,8 @@ Other commands:
     {python} -m delegate.task assign {hc_home} <task_id> <assignee>
     {python} -m delegate.task status {hc_home} <task_id> <new_status>
     {python} -m delegate.task show {hc_home} <task_id>
+    {python} -m delegate.task attach {hc_home} <task_id> <file_path>
+    {python} -m delegate.task detach {hc_home} <task_id> <file_path>
 
     # Check your inbox
     {python} -m delegate.mailbox inbox {hc_home} {team} {agent}

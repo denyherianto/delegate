@@ -865,6 +865,11 @@ body {
 .task-panel-meta-item .task-detail-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 4px; }
 .task-panel-meta-item .task-detail-value { font-size: 13px; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .task-panel-desc { color: var(--text-primary); font-size: 13px; line-height: 1.6; word-break: break-word; padding: 10px 14px 10px 0; border-top: 1px solid var(--border-subtle); }
+.task-attachments { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; }
+.task-attachment { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 10px; background: var(--bg-active); border-radius: 6px; }
+.task-attachment-icon { font-size: 15px; flex-shrink: 0; }
+.task-attachment-name { color: var(--accent); cursor: pointer; word-break: break-all; }
+.task-attachment-name:hover { text-decoration: underline; }
 .task-panel-dates { display: flex; gap: 24px; font-size: 11px; color: var(--text-muted); align-items: center; margin-bottom: 20px; }
 .task-panel-vcs-row { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
 .task-panel-diff-section { margin-top: 20px; }

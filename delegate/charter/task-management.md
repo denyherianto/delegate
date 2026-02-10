@@ -12,6 +12,8 @@ python -m delegate.task list <home> [--status open] [--assignee <name>]
 python -m delegate.task show <home> <task_id>
 python -m delegate.task assign <home> <task_id> <assignee>
 python -m delegate.task status <home> <task_id> <new_status>
+python -m delegate.task attach <home> <task_id> <file_path>
+python -m delegate.task detach <home> <task_id> <file_path>
 ```
 
 Statuses: `open` → `in_progress` → `review` → `needs_merge` → `merged`. Also: `rejected` (→ `in_progress`), `conflict` (→ `in_progress`), `done` (legacy).
@@ -37,6 +39,17 @@ The boss's "Action Queue" in the UI shows tasks where the boss is the current as
 6. Boss approves (manual repos) or auto-merge (auto repos).
 7. Merge worker rebases onto main, runs tests, fast-forward merges.
 8. Task becomes `merged`.
+
+## Attachments
+
+Attach relevant files to tasks — specs, design mockups, screenshots, reference docs. Typically from `shared/` or agent workspace.
+
+```
+python -m delegate.task attach <home> <task_id> <file_path>
+python -m delegate.task detach <home> <task_id> <file_path>
+```
+
+Attach early: specs before work starts, screenshots/previews during review. Attachments are visible in the task detail panel in the UI.
 
 ## Dependencies
 

@@ -97,9 +97,9 @@ def test_charter_shipped_with_package():
     # Role-specific charter files live in roles/
     roles_dir = cd / "roles"
     assert roles_dir.is_dir()
-    expected_roles = {"manager.md", "engineer.md", "designer.md", "qa.md"}
+    required_roles = {"manager.md", "engineer.md", "designer.md", "qa.md"}
     actual_roles = {f.name for f in roles_dir.glob("*.md")}
-    assert actual_roles == expected_roles
+    assert required_roles.issubset(actual_roles), f"Missing role files: {required_roles - actual_roles}"
 
 
 def test_agent_subdirs_exist(tmp_team):

@@ -147,10 +147,15 @@ CREATE INDEX IF NOT EXISTS idx_mailbox_recipient_sender_processed
     ON mailbox(recipient, sender, processed_at)
     WHERE processed_at IS NOT NULL;
 """,
+
+    # --- V5: add attachments column to tasks ---
+    """\
+ALTER TABLE tasks ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]';
+""",
 ]
 
 # Columns that store JSON arrays and need parse/serialize on read/write.
-_JSON_COLUMNS = frozenset({"tags", "depends_on", "commits"})
+_JSON_COLUMNS = frozenset({"tags", "depends_on", "commits", "attachments"})
 
 
 # ---------------------------------------------------------------------------
@@ -303,9 +308,10 @@ def task_row_to_dict(row: sqlite3.Row) -> dict:
     """Convert a tasks table row to a plain dict, deserializing JSON columns.
 
     Enforces element types:
-      depends_on → list[int]   (task IDs)
-      commits    → list[str]   (commit SHAs)
-      tags       → list[str]
+      depends_on  → list[int]   (task IDs)
+      commits     → list[str]   (commit SHAs)
+      tags        → list[str]
+      attachments → list[str]   (file paths)
     """
     d = dict(row)
     for col in _JSON_COLUMNS:
@@ -322,4 +328,6 @@ def task_row_to_dict(row: sqlite3.Row) -> dict:
         d["commits"] = [str(x) for x in d["commits"]]
     if d.get("tags"):
         d["tags"] = [str(x) for x in d["tags"]]
+    if d.get("attachments"):
+        d["attachments"] = [str(x) for x in d["attachments"]]
     return d

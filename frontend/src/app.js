@@ -923,6 +923,24 @@ async function openTaskPanel(taskId) {
       body += '<div class="task-panel-desc md-content">' + linkifyFilePaths(linkifyTaskRefs(renderMarkdown(task.description))) + '</div>';
       body += '</div>';
     }
+    // Attachments
+    if (task.attachments && task.attachments.length) {
+      body += '<div class="task-panel-section"><div class="task-panel-section-label">Attachments</div>';
+      body += '<div class="task-attachments">';
+      task.attachments.forEach(function (fpath) {
+        var fname = fpath.split("/").pop();
+        var isImage = /\.(png|jpe?g|gif|svg|webp)$/i.test(fname);
+        body += '<div class="task-attachment">';
+        if (isImage) {
+          body += '<span class="task-attachment-icon">\uD83D\uDDBC\uFE0F</span>';
+        } else {
+          body += '<span class="task-attachment-icon">\uD83D\uDCCE</span>';
+        }
+        body += '<span class="task-attachment-name clickable-file" onclick="event.stopPropagation();openFilePanel(\'' + esc(fpath).replace(/'/g, "\\'") + '\')">' + esc(fname) + '</span>';
+        body += '</div>';
+      });
+      body += '</div></div>';
+    }
     // Activity section (collapsible, default collapsed)
     body += '<div class="task-activity-section">';
     body += '<div class="task-activity-header" onclick="toggleTaskActivity()">';

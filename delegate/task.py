@@ -48,6 +48,7 @@ _TASK_FIELDS = frozenset({
     "project", "priority", "repo", "tags", "created_at", "updated_at",
     "completed_at", "depends_on", "branch", "base_sha", "commits",
     "rejection_reason", "approval_status", "merge_base", "merge_tip",
+    "attachments",
 })
 
 
@@ -167,6 +168,8 @@ def update_task(hc_home: Path, task_id: int, **updates) -> dict:
         elif key == "commits":
             params.append(json.dumps([str(x) for x in value] if value else []))
         elif key == "tags":
+            params.append(json.dumps([str(x) for x in value] if value else []))
+        elif key == "attachments":
             params.append(json.dumps([str(x) for x in value] if value else []))
         else:
             params.append(value)
@@ -309,6 +312,22 @@ def add_task_commit(hc_home: Path, task_id: int, commit_sha: str) -> dict:
     if commit_sha not in commits:
         commits.append(commit_sha)
     return update_task(hc_home, task_id, commits=commits)
+
+
+def attach_file(hc_home: Path, task_id: int, file_path: str) -> dict:
+    """Attach a file path to the task. Idempotent — duplicates are ignored."""
+    task = get_task(hc_home, task_id)
+    attachments = list(task.get("attachments", []))
+    if file_path not in attachments:
+        attachments.append(file_path)
+    return update_task(hc_home, task_id, attachments=attachments)
+
+
+def detach_file(hc_home: Path, task_id: int, file_path: str) -> dict:
+    """Remove a file path from the task's attachments."""
+    task = get_task(hc_home, task_id)
+    attachments = [a for a in task.get("attachments", []) if a != file_path]
+    return update_task(hc_home, task_id, attachments=attachments)
 
 
 def get_task_diff(hc_home: Path, task_id: int) -> str:
@@ -464,6 +483,18 @@ def main():
     p_show.add_argument("home", type=Path)
     p_show.add_argument("task_id", type=int)
 
+    # attach
+    p_attach = sub.add_parser("attach", help="Attach a file to a task")
+    p_attach.add_argument("home", type=Path)
+    p_attach.add_argument("task_id", type=int)
+    p_attach.add_argument("file", help="Path to the file to attach")
+
+    # detach
+    p_detach = sub.add_parser("detach", help="Detach a file from a task")
+    p_detach.add_argument("home", type=Path)
+    p_detach.add_argument("task_id", type=int)
+    p_detach.add_argument("file", help="Path of the file to detach")
+
     args = parser.parse_args()
 
     if args.command == "create":
@@ -515,6 +546,16 @@ def main():
         task = get_task(args.home, args.task_id)
         import yaml
         print(yaml.dump(task, default_flow_style=False, sort_keys=False))
+
+    elif args.command == "attach":
+        task = attach_file(args.home, args.task_id, args.file)
+        print(f"Attached '{args.file}' to {format_task_id(task['id'])}")
+        for f in task.get("attachments", []):
+            print(f"  - {f}")
+
+    elif args.command == "detach":
+        task = detach_file(args.home, args.task_id, args.file)
+        print(f"Detached '{args.file}' from {format_task_id(task['id'])}")
 
 
 if __name__ == "__main__":
