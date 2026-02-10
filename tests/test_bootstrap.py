@@ -59,7 +59,7 @@ def test_state_yaml_has_role(tmp_team):
     assert state["pid"] is None
 
     state = yaml.safe_load((agent_dir(hc_home, TEAM, "alice") / "state.yaml").read_text())
-    assert state["role"] == "worker"
+    assert state["role"] == "engineer"
 
 
 def test_boss_directory_created(tmp_team):
@@ -81,7 +81,7 @@ def test_roster_shows_roles(tmp_team):
     content = roster_path(tmp_team, TEAM).read_text()
     assert "(manager)" in content
     assert "(boss)" in content
-    assert "(worker)" in content
+    assert "(engineer)" in content
 
 
 def test_charter_shipped_with_package():
@@ -238,12 +238,12 @@ def test_add_agent_creates_starter_files(tmp_team):
 
 
 def test_add_agent_default_role(tmp_team):
-    """add_agent defaults to 'worker' role in state.yaml."""
+    """add_agent defaults to 'engineer' role in state.yaml."""
     add_agent(tmp_team, TEAM, "charlie")
     state = yaml.safe_load(
         (agent_dir(tmp_team, TEAM, "charlie") / "state.yaml").read_text()
     )
-    assert state["role"] == "worker"
+    assert state["role"] == "engineer"
     assert state["pid"] is None
 
 

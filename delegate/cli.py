@@ -165,7 +165,7 @@ def team() -> None:
     "--agents", required=True,
     help="Comma-separated list of agents as name[:role].  "
          "Examples: 'alex:devops,nikhil:designer,john,mark:backend'.  "
-         "Agents without a role default to 'worker'.",
+         "Agents without a role default to 'engineer'.",
 )
 @click.option("--interactive", is_flag=True, help="Prompt for bios and charter overrides.")
 @click.pass_context
@@ -181,7 +181,7 @@ def team_create(
 
     hc_home = _get_home(ctx)
 
-    # Parse "name:role" pairs — role defaults to "worker"
+    # Parse "name:role" pairs — role defaults to "engineer"
     parsed_agents: list[tuple[str, str]] = []
     for token in agents.split(","):
         token = token.strip()
@@ -191,7 +191,7 @@ def team_create(
             agent_name, role = token.split(":", 1)
             parsed_agents.append((agent_name.strip(), role.strip()))
         else:
-            parsed_agents.append((token, "worker"))
+            parsed_agents.append((token, "engineer"))
 
     bootstrap(
         hc_home,
@@ -203,7 +203,7 @@ def team_create(
 
     labels = [manager + " (manager)"]
     for aname, arole in parsed_agents:
-        labels.append(f"{aname} ({arole})" if arole != "worker" else aname)
+        labels.append(f"{aname} ({arole})" if arole != "engineer" else aname)
     click.echo(f"Created team '{name}' with members: {', '.join(labels)}")
 
 
@@ -241,12 +241,12 @@ def agent() -> None:
 @click.argument("team")
 @click.argument("name")
 @click.option(
-    "--role", default="worker",
-    help="Role for the new agent (default: worker).",
+    "--role", default="engineer",
+    help="Role for the new agent (default: engineer).",
 )
 @click.option(
-    "--seniority", default="senior", type=click.Choice(["junior", "senior"]),
-    help="Seniority level: junior (Sonnet) or senior (Opus). Default: senior.",
+    "--seniority", default=None, type=click.Choice(["junior", "senior"]),
+    help="Seniority level: junior (Sonnet) or senior (Opus). Default: junior for most roles, senior for manager.",
 )
 @click.option(
     "--bio", default=None,

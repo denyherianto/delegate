@@ -145,7 +145,7 @@ def _list_team_agents(hc_home: Path, team: str) -> list[dict]:
         unread = _count_unread(hc_home, team, d.name)
         agents.append({
             "name": d.name,
-            "role": state.get("role", "worker"),
+            "role": state.get("role", "engineer"),
             "pid": state.get("pid"),
             "unread_inbox": unread,
             "team": team,

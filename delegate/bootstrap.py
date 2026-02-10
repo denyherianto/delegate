@@ -58,7 +58,14 @@ AGENT_SUBDIRS = [
 ]
 
 
-def _default_state(role: str, seniority: str = "senior") -> dict:
+def _default_seniority(role: str) -> str:
+    """Manager defaults to senior; all other roles default to junior."""
+    return "senior" if role == "manager" else "junior"
+
+
+def _default_state(role: str, seniority: str | None = None) -> dict:
+    if seniority is None:
+        seniority = _default_seniority(role)
     return {"role": role, "seniority": seniority, "pid": None, "token_budget": None}
 
 
@@ -154,7 +161,7 @@ def bootstrap(
         team_name: Name for the new team.
         manager: Name of the manager agent.
         agents: List of ``(name, role)`` tuples **or** plain name strings
-            (which default to role ``"worker"``).
+            (which default to role ``"engineer"``).
         interactive: If True, prompt for bios and charter overrides.
 
     Safe to call multiple times — does not overwrite existing files.
@@ -167,7 +174,7 @@ def bootstrap(
     ]
     for a in raw_agents:
         if isinstance(a, str):
-            members.append((a, "worker"))
+            members.append((a, "engineer"))
         else:
             members.append((a[0], a[1]))
 
@@ -268,8 +275,8 @@ def add_agent(
     hc_home: Path,
     team_name: str,
     agent_name: str,
-    role: str = "worker",
-    seniority: str = "senior",
+    role: str = "engineer",
+    seniority: str | None = None,
     bio: str | None = None,
 ) -> None:
     """Add a new agent to an existing team.
@@ -282,8 +289,9 @@ def add_agent(
         hc_home: Delegate home directory (~/.delegate).
         team_name: Name of the existing team.
         agent_name: Name for the new agent.
-        role: Agent role (default ``"worker"``).
-        seniority: ``"junior"`` (uses Sonnet) or ``"senior"`` (uses Opus).
+        role: Agent role (default ``"engineer"``).
+        seniority: ``"junior"`` or ``"senior"``.  Defaults based on role
+            (manager → senior, others → junior).
         bio: Optional bio text.  If omitted a placeholder is written.
 
     Raises:
@@ -291,6 +299,8 @@ def add_agent(
         ValueError: If the agent name already exists on this team,
             collides with another team's agent, or matches the boss name.
     """
+    if seniority is None:
+        seniority = _default_seniority(role)
     if seniority not in ("junior", "senior"):
         raise ValueError(f"Invalid seniority '{seniority}'. Must be 'junior' or 'senior'.")
     td = _team_dir(hc_home, team_name)

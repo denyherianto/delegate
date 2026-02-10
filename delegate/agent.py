@@ -49,7 +49,7 @@ SENIORITY_MODELS = {
     "senior": "opus",
     "junior": "sonnet",
 }
-DEFAULT_SENIORITY = "senior"
+DEFAULT_SENIORITY = "junior"
 
 
 # ---------------------------------------------------------------------------
@@ -542,7 +542,7 @@ def build_system_prompt(
     from delegate.config import get_boss
 
     state = yaml.safe_load((ad / "state.yaml").read_text()) or {}
-    role = state.get("role", "worker")
+    role = state.get("role", "engineer")
     seniority = state.get("seniority", DEFAULT_SENIORITY)
     boss_name = get_boss(hc_home) or "boss"
     manager_name = get_member_by_role(hc_home, team, "manager") or "manager"
@@ -567,7 +567,7 @@ def build_system_prompt(
     # --- 2. Role-specific charter (e.g. roles/manager.md, roles/engineer.md) ---
     # Map generic roles to their charter filename
     _role_file_map = {
-        "worker": "engineer.md",   # workers default to engineer role charter
+        "worker": "engineer.md",   # legacy: workers map to engineer role charter
     }
     role_charter_name = _role_file_map.get(role, f"{role}.md")
     role_block = ""
