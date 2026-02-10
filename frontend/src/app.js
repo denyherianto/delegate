@@ -41,6 +41,8 @@ let _diffRawText = "";
 let _diffCurrentTab = "files";
 let _taskPanelDiffTab = "files";
 let _taskPanelDiffRaw = "";
+let _taskPanelActiveTab = "details";
+let _taskPanelDiffLoaded = false;
 
 // Voice-to-text state
 let _recognition = null;
@@ -816,6 +818,37 @@ function switchTaskPanelDiffTab(tab) {
 }
 
 // =====================================================================
+// Task panel top-level tabs (Details / Changes)
+// =====================================================================
+function switchTaskTab(tab) {
+  _taskPanelActiveTab = tab;
+  // Update tab buttons
+  document.querySelectorAll("#taskPanelTabs .task-panel-tab").forEach(function (btn) {
+    btn.classList.toggle("active", btn.dataset.tab === tab);
+  });
+  var detailsDiv = document.getElementById("taskPanelDetails");
+  var changesDiv = document.getElementById("taskPanelChanges");
+  if (detailsDiv) detailsDiv.style.display = tab === "details" ? "" : "none";
+  if (changesDiv) changesDiv.style.display = tab === "changes" ? "" : "none";
+  // Lazy-load diff on first visit to Changes tab
+  if (tab === "changes" && !_taskPanelDiffLoaded && _panelTask !== null) {
+    _taskPanelDiffLoaded = true;
+    var diffContent = document.getElementById("taskPanelDiffContent");
+    if (diffContent) diffContent.innerHTML = '<div class="diff-empty">Loading diff...</div>';
+    fetch("/teams/" + _currentTeam + "/tasks/" + _panelTask + "/diff")
+      .then(function (res) { return res.json(); })
+      .then(function (diffData) {
+        _taskPanelDiffRaw = flattenDiffDict(diffData.diff);
+        switchTaskPanelDiffTab("files");
+      })
+      .catch(function () {
+        var dc = document.getElementById("taskPanelDiffContent");
+        if (dc) dc.innerHTML = '<div class="diff-empty">Failed to load diff</div>';
+      });
+  }
+}
+
+// =====================================================================
 // Task activity log
 // =====================================================================
 async function loadTaskActivity(taskId, task) {
@@ -912,34 +945,82 @@ async function openTaskPanel(taskId) {
       task.assignee ? cap(task.assignee) : "";
     document.getElementById("taskPanelPriority").textContent =
       task.priority ? cap(task.priority) : "";
-    // Build body
-    let body = "";
+    // ---- Build Details tab content ----
+    let details = "";
     // Metadata grid
-    body += '<div class="task-panel-meta-grid">';
-    body += '<div class="task-panel-meta-item"><div class="task-detail-label">DRI</div><div class="task-detail-value">' + (task.dri ? cap(task.dri) : "\u2014") + '</div></div>';
-    body += '<div class="task-panel-meta-item"><div class="task-detail-label">Assignee</div><div class="task-detail-value">' + (task.assignee ? cap(task.assignee) : "\u2014") + '</div></div>';
-    body += '<div class="task-panel-meta-item"><div class="task-detail-label">Priority</div><div class="task-detail-value">' + cap(task.priority) + '</div></div>';
-    body += '<div class="task-panel-meta-item"><div class="task-detail-label">Time</div><div class="task-detail-value">' + (stats ? fmtElapsed(stats.elapsed_seconds) : "\u2014") + '</div></div>';
-    body += '</div>';
+    details += '<div class="task-panel-meta-grid">';
+    details += '<div class="task-panel-meta-item"><div class="task-detail-label">DRI</div><div class="task-detail-value">' + (task.dri ? cap(task.dri) : "\u2014") + '</div></div>';
+    details += '<div class="task-panel-meta-item"><div class="task-detail-label">Assignee</div><div class="task-detail-value">' + (task.assignee ? cap(task.assignee) : "\u2014") + '</div></div>';
+    details += '<div class="task-panel-meta-item"><div class="task-detail-label">Priority</div><div class="task-detail-value">' + cap(task.priority) + '</div></div>';
+    details += '<div class="task-panel-meta-item"><div class="task-detail-label">Time</div><div class="task-detail-value">' + (stats ? fmtElapsed(stats.elapsed_seconds) : "\u2014") + '</div></div>';
+    details += '</div>';
     // Stats row
     if (stats) {
-      body += '<div class="task-panel-meta-grid">';
-      body += '<div class="task-panel-meta-item"><div class="task-detail-label">Tokens (in/out)</div><div class="task-detail-value">' + fmtTokens(stats.total_tokens_in, stats.total_tokens_out) + '</div></div>';
-      body += '<div class="task-panel-meta-item"><div class="task-detail-label">Cost</div><div class="task-detail-value">' + fmtCost(stats.total_cost_usd) + '</div></div>';
-      body += '</div>';
+      details += '<div class="task-panel-meta-grid">';
+      details += '<div class="task-panel-meta-item"><div class="task-detail-label">Tokens (in/out)</div><div class="task-detail-value">' + fmtTokens(stats.total_tokens_in, stats.total_tokens_out) + '</div></div>';
+      details += '<div class="task-panel-meta-item"><div class="task-detail-label">Cost</div><div class="task-detail-value">' + fmtCost(stats.total_cost_usd) + '</div></div>';
+      details += '</div>';
     }
     // Dates
-    body += '<div class="task-panel-dates">';
-    body += '<span>Created: <span class="ts" data-ts="' + (task.created_at || "") + '">' + fmtTimestamp(task.created_at) + '</span></span>';
-    body += '<span>Updated: <span class="ts" data-ts="' + (task.updated_at || "") + '">' + fmtTimestamp(task.updated_at) + '</span></span>';
+    details += '<div class="task-panel-dates">';
+    details += '<span>Created: <span class="ts" data-ts="' + (task.created_at || "") + '">' + fmtTimestamp(task.created_at) + '</span></span>';
+    details += '<span>Updated: <span class="ts" data-ts="' + (task.updated_at || "") + '">' + fmtTimestamp(task.updated_at) + '</span></span>';
     if (task.completed_at) {
-      body += '<span>Completed: <span class="ts" data-ts="' + task.completed_at + '">' + fmtTimestamp(task.completed_at) + '</span></span>';
+      details += '<span>Completed: <span class="ts" data-ts="' + task.completed_at + '">' + fmtTimestamp(task.completed_at) + '</span></span>';
     }
-    body += '</div>';
-    // VCS info
+    details += '</div>';
+    // Dependencies
+    if (task.depends_on && task.depends_on.length) {
+      details += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Depends on: ';
+      task.depends_on.forEach(function (d) {
+        const depStatus = (task._dep_statuses && task._dep_statuses[d]) || "todo";
+        details += '<span class="task-link" data-task-id="' + d + '" onclick="event.stopPropagation();openTaskPanel(' + d + ')"><span class="badge badge-' + depStatus + '" style="font-size:11px;margin-right:4px;cursor:pointer">T' + String(d).padStart(4, "0") + '</span></span>';
+      });
+      details += '</div>';
+    }
+    // Description
+    if (task.description) {
+      details += '<div class="task-panel-section"><div class="task-panel-section-label">Description</div>';
+      details += '<div class="task-panel-desc md-content">' + linkifyFilePaths(linkifyTaskRefs(renderMarkdown(task.description))) + '</div>';
+      details += '</div>';
+    }
+    // Attachments
+    if (task.attachments && task.attachments.length) {
+      details += '<div class="task-panel-section"><div class="task-panel-section-label">Attachments</div>';
+      details += '<div class="task-attachments">';
+      task.attachments.forEach(function (fpath) {
+        var fname = fpath.split("/").pop();
+        var isImage = /\.(png|jpe?g|gif|svg|webp)$/i.test(fname);
+        details += '<div class="task-attachment">';
+        if (isImage) {
+          details += '<span class="task-attachment-icon">\uD83D\uDDBC\uFE0F</span>';
+        } else {
+          details += '<span class="task-attachment-icon">\uD83D\uDCCE</span>';
+        }
+        details += '<span class="task-attachment-name clickable-file" onclick="event.stopPropagation();openFilePanel(\'' + esc(fpath).replace(/'/g, "\\'") + '\')">' + esc(fname) + '</span>';
+        details += '</div>';
+      });
+      details += '</div></div>';
+    }
+    // Activity section (collapsible, default collapsed)
+    details += '<div class="task-activity-section">';
+    details += '<div class="task-activity-header" onclick="toggleTaskActivity()">';
+    details += '<span class="task-activity-arrow" id="taskActivityArrow">\u25B6</span>';
+    details += '<span class="task-panel-section-label" style="margin-bottom:0">Activity</span>';
+    details += '</div>';
+    details += '<div class="task-activity-list" id="taskActivityList">';
+    details += '<div class="diff-empty">Loading activity...</div>';
+    details += '</div>';
+    details += '</div>';
+    // Approval actions (shown in Details so boss can act without switching tabs)
+    details += renderTaskApproval(task);
+
+    // ---- Build Changes tab content ----
+    let changes = "";
+    // VCS info (branch + commits summary)
     if (stats && stats.branch) {
-      body += '<div class="task-panel-vcs-row">';
-      body += '<span class="task-branch" title="' + esc(stats.branch) + '">' + esc(stats.branch) + '</span>';
+      changes += '<div class="task-panel-vcs-row">';
+      changes += '<span class="task-branch" title="' + esc(stats.branch) + '">' + esc(stats.branch) + '</span>';
       if (stats.commits && typeof stats.commits === 'object') {
         var allCommits = [];
         if (Array.isArray(stats.commits)) {
@@ -950,78 +1031,48 @@ async function openTaskPanel(taskId) {
           });
         }
         allCommits.forEach(function (c) {
-          body += '<span class="diff-panel-commit">' + esc(String(c).substring(0, 7)) + '</span>';
+          changes += '<span class="diff-panel-commit">' + esc(String(c).substring(0, 7)) + '</span>';
         });
       }
-      body += '</div>';
+      changes += '</div>';
     }
     // Base SHA
     if (task.base_sha && typeof task.base_sha === 'object') {
       var baseShas = Object.entries(task.base_sha);
       if (baseShas.length) {
-        body += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Base SHA: ';
+        changes += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Base SHA: ';
         baseShas.forEach(function (entry) {
-          body += '<code style="font-family:SF Mono,Fira Code,monospace;background:var(--bg-active);padding:2px 6px;border-radius:3px;margin-right:6px">';
-          if (baseShas.length > 1) body += esc(entry[0]) + ': ';
-          body += esc(String(entry[1]).substring(0, 10)) + '</code>';
+          changes += '<code style="font-family:SF Mono,Fira Code,monospace;background:var(--bg-active);padding:2px 6px;border-radius:3px;margin-right:6px">';
+          if (baseShas.length > 1) changes += esc(entry[0]) + ': ';
+          changes += esc(String(entry[1]).substring(0, 10)) + '</code>';
         });
-        body += '</div>';
+        changes += '</div>';
       }
     } else if (task.base_sha && typeof task.base_sha === 'string') {
-      body += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Base SHA: <code style="font-family:SF Mono,Fira Code,monospace;background:var(--bg-active);padding:2px 6px;border-radius:3px">' + esc(task.base_sha.substring(0, 10)) + '</code></div>';
+      changes += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Base SHA: <code style="font-family:SF Mono,Fira Code,monospace;background:var(--bg-active);padding:2px 6px;border-radius:3px">' + esc(task.base_sha.substring(0, 10)) + '</code></div>';
     }
-    // Dependencies
-    if (task.depends_on && task.depends_on.length) {
-      body += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Depends on: ';
-      task.depends_on.forEach(function (d) {
-        const depStatus = (task._dep_statuses && task._dep_statuses[d]) || "todo";
-        body += '<span class="task-link" data-task-id="' + d + '" onclick="event.stopPropagation();openTaskPanel(' + d + ')"><span class="badge badge-' + depStatus + '" style="font-size:11px;margin-right:4px;cursor:pointer">T' + String(d).padStart(4, "0") + '</span></span>';
-      });
-      body += '</div>';
-    }
-    // Description
-    if (task.description) {
-      body += '<div class="task-panel-section"><div class="task-panel-section-label">Description</div>';
-      body += '<div class="task-panel-desc md-content">' + linkifyFilePaths(linkifyTaskRefs(renderMarkdown(task.description))) + '</div>';
-      body += '</div>';
-    }
-    // Attachments
-    if (task.attachments && task.attachments.length) {
-      body += '<div class="task-panel-section"><div class="task-panel-section-label">Attachments</div>';
-      body += '<div class="task-attachments">';
-      task.attachments.forEach(function (fpath) {
-        var fname = fpath.split("/").pop();
-        var isImage = /\.(png|jpe?g|gif|svg|webp)$/i.test(fname);
-        body += '<div class="task-attachment">';
-        if (isImage) {
-          body += '<span class="task-attachment-icon">\uD83D\uDDBC\uFE0F</span>';
-        } else {
-          body += '<span class="task-attachment-icon">\uD83D\uDCCE</span>';
-        }
-        body += '<span class="task-attachment-name clickable-file" onclick="event.stopPropagation();openFilePanel(\'' + esc(fpath).replace(/'/g, "\\'") + '\')">' + esc(fname) + '</span>';
-        body += '</div>';
-      });
-      body += '</div></div>';
-    }
-    // Activity section (collapsible, default collapsed)
-    body += '<div class="task-activity-section">';
-    body += '<div class="task-activity-header" onclick="toggleTaskActivity()">';
-    body += '<span class="task-activity-arrow" id="taskActivityArrow">\u25B6</span>';
-    body += '<span class="task-panel-section-label" style="margin-bottom:0">Activity</span>';
-    body += '</div>';
-    body += '<div class="task-activity-list" id="taskActivityList">';
-    body += '<div class="diff-empty">Loading activity...</div>';
-    body += '</div>';
-    body += '</div>';
-    // Approval actions
-    body += renderTaskApproval(task);
-    // Diff section placeholder
-    body += '<div class="task-panel-diff-section" id="taskPanelDiffSection">';
-    body += '<div class="task-panel-section-label">Changes</div>';
-    body += '<div class="task-panel-diff-tabs"><button class="diff-tab active" data-dtab="files" onclick="switchTaskPanelDiffTab(\'files\')">Files Changed</button><button class="diff-tab" data-dtab="diff" onclick="switchTaskPanelDiffTab(\'diff\')">Full Diff</button></div>';
-    body += '<div id="taskPanelDiffContent"><div class="diff-empty">Loading diff...</div></div>';
-    body += '</div>';
+    // Diff section (loaded lazily when this tab is first activated)
+    changes += '<div class="task-panel-diff-section" id="taskPanelDiffSection">';
+    changes += '<div class="task-panel-diff-tabs"><button class="diff-tab active" data-dtab="files" onclick="switchTaskPanelDiffTab(\'files\')">Files Changed</button><button class="diff-tab" data-dtab="diff" onclick="switchTaskPanelDiffTab(\'diff\')">Full Diff</button></div>';
+    changes += '<div id="taskPanelDiffContent"><div class="diff-empty">Click this tab to load diff</div></div>';
+    changes += '</div>';
+
+    // ---- Assemble body with both tab panes ----
+    let body = '<div id="taskPanelDetails">' + details + '</div>';
+    body += '<div id="taskPanelChanges" style="display:none">' + changes + '</div>';
     document.getElementById("taskPanelBody").innerHTML = body;
+
+    // Reset tab state
+    _taskPanelActiveTab = "details";
+    _taskPanelDiffLoaded = false;
+    _taskPanelDiffRaw = "";
+    _taskPanelDiffTab = "files";
+
+    // Ensure tab buttons reflect initial state
+    document.querySelectorAll("#taskPanelTabs .task-panel-tab").forEach(function (btn) {
+      btn.classList.toggle("active", btn.dataset.tab === "details");
+    });
+
     // Load activity asynchronously
     loadTaskActivity(taskId, task).then(function (events) {
       const actList = document.getElementById("taskActivityList");
@@ -1030,18 +1081,6 @@ async function openTaskPanel(taskId) {
       const actList = document.getElementById("taskActivityList");
       if (actList) actList.innerHTML = '<div class="diff-empty">Failed to load activity</div>';
     });
-    // Load diff asynchronously
-    _taskPanelDiffRaw = "";
-    _taskPanelDiffTab = "files";
-    try {
-      const diffRes = await fetch("/teams/" + _currentTeam + "/tasks/" + taskId + "/diff");
-      const diffData = await diffRes.json();
-      _taskPanelDiffRaw = flattenDiffDict(diffData.diff);
-      switchTaskPanelDiffTab("files");
-    } catch (e) {
-      const dc = document.getElementById("taskPanelDiffContent");
-      if (dc) dc.innerHTML = '<div class="diff-empty">Failed to load diff</div>';
-    }
   } catch (e) {
     document.getElementById("taskPanelBody").innerHTML =
       '<div class="diff-empty">Failed to load task</div>';
@@ -1053,6 +1092,8 @@ function closeTaskPanel() {
   document.getElementById("taskBackdrop").classList.remove("open");
   _panelTask = null;
   _taskPanelDiffRaw = "";
+  _taskPanelDiffLoaded = false;
+  _taskPanelActiveTab = "details";
 }
 
 // =====================================================================

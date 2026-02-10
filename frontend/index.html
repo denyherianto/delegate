@@ -191,6 +191,10 @@
     </div>
     <button class="task-panel-close" onclick="closeTaskPanel()">&times;</button>
   </div>
+  <div class="task-panel-tabs" id="taskPanelTabs">
+    <button class="task-panel-tab active" data-tab="details" onclick="switchTaskTab('details')">Details</button>
+    <button class="task-panel-tab" data-tab="changes" onclick="switchTaskTab('changes')">Changes</button>
+  </div>
   <div class="task-panel-body" id="taskPanelBody"></div>
 </div>
 <div id="taskBackdrop" class="task-backdrop" onclick="closeTaskPanel()"></div>

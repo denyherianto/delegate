@@ -849,6 +849,10 @@ body {
 .task-panel-priority { font-size: 12px; color: var(--text-muted); }
 .task-panel-close { position: absolute; top: 14px; right: 16px; background: none; border: none; color: var(--text-muted); font-size: 22px; cursor: pointer; line-height: 1; padding: 8px; }
 .task-panel-close:hover { color: var(--text-primary); }
+.task-panel-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border-subtle); padding: 0 20px; flex-shrink: 0; background: var(--bg-panel); }
+.task-panel-tab { background: none; border: none; color: var(--text-muted); font-size: 13px; font-weight: 500; padding: 8px 16px; cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; }
+.task-panel-tab:hover { color: var(--text-heading); }
+.task-panel-tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
 .task-panel-body { flex: 1; overflow-y: auto; padding: 16px 20px; background: var(--bg-panel-body); }
 .task-panel-section { margin-bottom: 20px; }
 .task-panel-section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 6px; }
