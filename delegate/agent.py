@@ -554,19 +554,35 @@ def build_system_prompt(
         if content:
             override_block = f"\n\n---\n\n# Team Overrides\n\n{content}"
 
-    # --- 6. Reflections (inline if present) ---
-    reflections_block = ""
+    # --- 6. Reflections & feedback (inline if present) ---
+    inlined_notes_block = ""
+
+    # Reflections — lessons learned from past work
     reflections_path = ad / "notes" / "reflections.md"
     if reflections_path.is_file():
         content = reflections_path.read_text().strip()
         if content:
-            reflections_block = (
+            inlined_notes_block += (
                 "\n\n=== YOUR REFLECTIONS ===\n"
                 "(Lessons learned from past work — apply these going forward.)\n\n"
                 f"{content}"
             )
 
+    # Feedback — received from teammates and reviews
+    feedback_path = ad / "notes" / "feedback.md"
+    if feedback_path.is_file():
+        content = feedback_path.read_text().strip()
+        if content:
+            inlined_notes_block += (
+                "\n\n=== FEEDBACK YOU'VE RECEIVED ===\n"
+                "(From teammates and reviews — use this to improve.)\n\n"
+                f"{content}"
+            )
+
     # --- 7. Reference files (pointers for dynamic/large content) ---
+    # Files that are inlined above are excluded from pointers.
+    _inlined_notes = {"reflections.md", "feedback.md"}
+
     roster = hc_home / "teams" / team / "roster.md"
     agents_root = agents_dir(hc_home, team)
     shared = hc_home / "teams" / team / "shared"
@@ -585,8 +601,8 @@ def build_system_prompt(
         )
     if notes_dir.is_dir():
         for note_file in sorted(notes_dir.glob("*.md")):
-            if note_file.name == "reflections.md":
-                continue  # already inlined
+            if note_file.name in _inlined_notes:
+                continue  # already inlined above
             file_pointers.append(
                 f"  {note_file}  — {note_file.stem.replace('-', ' ')}"
             )
@@ -649,7 +665,7 @@ Other commands:
 
     # Check your inbox
     {python} -m delegate.mailbox inbox {hc_home} {team} {agent}
-{reflections_block}
+{inlined_notes_block}
 
 REFERENCE FILES (read as needed):
 {files_block}
