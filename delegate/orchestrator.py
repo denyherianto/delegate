@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 
 from delegate.paths import agents_dir as _agents_dir, agent_dir as _agent_dir
-from delegate.mailbox import read_inbox
+from delegate.mailbox import has_unread
 from delegate.chat import log_event
 
 logger = logging.getLogger(__name__)
@@ -134,14 +134,10 @@ def get_agents_needing_spawn(hc_home: Path, team: str, max_concurrent: int = 3) 
             currently_running += 1
             continue
 
-        # Check for unread messages
-        unread = read_inbox(hc_home, team, agent, unread_only=True)
-        if unread:
+        # Check for unread messages (fast DB check — no file I/O)
+        if has_unread(hc_home, agent):
             needs_spawn.append(agent)
-            logger.debug(
-                "Agent needs spawn | agent=%s | unread_messages=%d",
-                agent, len(unread),
-            )
+            logger.debug("Agent needs spawn | agent=%s", agent)
 
     # Respect concurrency limit
     available_slots = max(0, max_concurrent - currently_running)

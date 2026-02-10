@@ -1,4 +1,4 @@
-"""Tests for delegate/mailbox.py."""
+"""Tests for delegate/mailbox.py — SQLite-backed message system."""
 
 import pytest
 
@@ -8,8 +8,13 @@ from delegate.mailbox import (
     read_inbox,
     read_outbox,
     mark_inbox_read,
-    mark_outbox_routed,
+    mark_seen,
+    mark_seen_batch,
+    mark_processed,
+    mark_processed_batch,
     deliver,
+    has_unread,
+    count_unread,
 )
 
 TEAM = "testteam"
@@ -55,40 +60,33 @@ class TestMessageSerialization:
 
 
 class TestSend:
-    def test_send_creates_outbox_file(self, tmp_team):
-        fname = send(tmp_team, TEAM, "alice", "bob", "Hello")
-        outbox_new = tmp_team / "teams" / TEAM / "agents" / "alice" / "outbox" / "new"
-        assert (outbox_new / fname).is_file()
+    def test_send_returns_id(self, tmp_team):
+        msg_id = send(tmp_team, TEAM, "alice", "bob", "Hello")
+        assert msg_id.isdigit()
 
-    def test_send_file_content(self, tmp_team):
-        fname = send(tmp_team, TEAM, "alice", "bob", "Hello Bob!")
-        outbox_new = tmp_team / "teams" / TEAM / "agents" / "alice" / "outbox" / "new"
-        msg = Message.deserialize((outbox_new / fname).read_text())
-        assert msg.sender == "alice"
-        assert msg.recipient == "bob"
-        assert msg.body == "Hello Bob!"
+    def test_send_delivers_immediately(self, tmp_team):
+        """Messages are delivered on send — visible in recipient inbox."""
+        send(tmp_team, TEAM, "alice", "bob", "Hello Bob!")
+        inbox = read_inbox(tmp_team, TEAM, "bob", unread_only=True)
+        assert len(inbox) == 1
+        assert inbox[0].sender == "alice"
+        assert inbox[0].body == "Hello Bob!"
+        assert inbox[0].delivered_at is not None
 
     def test_send_multiple_messages(self, tmp_team):
-        f1 = send(tmp_team, TEAM, "alice", "bob", "First")
-        f2 = send(tmp_team, TEAM, "alice", "bob", "Second")
-        assert f1 != f2
-        outbox_new = tmp_team / "teams" / TEAM / "agents" / "alice" / "outbox" / "new"
-        assert len(list(outbox_new.iterdir())) == 2
+        id1 = send(tmp_team, TEAM, "alice", "bob", "First")
+        id2 = send(tmp_team, TEAM, "alice", "bob", "Second")
+        assert id1 != id2
+        inbox = read_inbox(tmp_team, TEAM, "bob")
+        assert len(inbox) == 2
 
-    def test_send_unknown_agent_raises(self, tmp_team):
-        with pytest.raises(ValueError, match="not found"):
-            send(tmp_team, TEAM, "nonexistent", "bob", "Hello")
-
-    def test_send_from_boss_creates_outbox_file(self, tmp_team):
-        """Boss has a Maildir like everyone else — send() writes to outbox."""
-        fname = send(tmp_team, TEAM, "nikhil", "manager", "Please start the project")
-        outbox_new = tmp_team / "boss" / "outbox" / "new"
-        assert (outbox_new / fname).is_file()
-
-        msg = Message.deserialize((outbox_new / fname).read_text())
-        assert msg.sender == "nikhil"
-        assert msg.recipient == "manager"
-        assert msg.body == "Please start the project"
+    def test_send_logs_to_chat(self, tmp_team):
+        """send() also writes to the chat messages table."""
+        from delegate.chat import get_messages
+        send(tmp_team, TEAM, "alice", "bob", "Logged msg")
+        msgs = get_messages(tmp_team, msg_type="chat")
+        assert len(msgs) == 1
+        assert msgs[0]["sender"] == "alice"
 
 
 class TestReadInbox:
@@ -97,27 +95,15 @@ class TestReadInbox:
         assert messages == []
 
     def test_read_inbox_returns_delivered_messages(self, tmp_team):
-        msg = Message(
-            sender="alice",
-            recipient="bob",
-            time="2026-02-08T12:00:00.000000Z",
-            body="Hello!",
-        )
-        deliver(tmp_team, TEAM, msg)
+        send(tmp_team, TEAM, "alice", "bob", "Hello!")
         messages = read_inbox(tmp_team, TEAM, "bob")
         assert len(messages) == 1
         assert messages[0].sender == "alice"
         assert messages[0].body == "Hello!"
 
     def test_read_inbox_unread_only(self, tmp_team):
-        msg = Message(
-            sender="alice",
-            recipient="bob",
-            time="2026-02-08T12:00:00.000000Z",
-            body="Hello!",
-        )
-        fname = deliver(tmp_team, TEAM, msg)
-        mark_inbox_read(tmp_team, TEAM, "bob", fname)
+        msg_id = send(tmp_team, TEAM, "alice", "bob", "Hello!")
+        mark_inbox_read(tmp_team, TEAM, "bob", msg_id)
 
         # Unread only should return nothing
         assert read_inbox(tmp_team, TEAM, "bob", unread_only=True) == []
@@ -125,57 +111,91 @@ class TestReadInbox:
         all_msgs = read_inbox(tmp_team, TEAM, "bob", unread_only=False)
         assert len(all_msgs) == 1
 
-    def test_read_inbox_unknown_agent(self, tmp_team):
-        with pytest.raises(ValueError, match="not found"):
-            read_inbox(tmp_team, TEAM, "nonexistent")
-
 
 class TestReadOutbox:
-    def test_read_outbox_pending(self, tmp_team):
+    def test_read_outbox_sent(self, tmp_team):
+        """With immediate delivery, sent messages appear in outbox (not pending)."""
         send(tmp_team, TEAM, "alice", "bob", "Hello")
-        messages = read_outbox(tmp_team, TEAM, "alice", pending_only=True)
-        assert len(messages) == 1
-        assert messages[0].body == "Hello"
-
-    def test_read_outbox_after_routing(self, tmp_team):
-        fname = send(tmp_team, TEAM, "alice", "bob", "Hello")
-        mark_outbox_routed(tmp_team, TEAM, "alice", fname)
-
-        # Pending only should return nothing
-        assert read_outbox(tmp_team, TEAM, "alice", pending_only=True) == []
-        # All should return the message
+        # Already delivered, so pending_only returns nothing
+        pending = read_outbox(tmp_team, TEAM, "alice", pending_only=True)
+        assert len(pending) == 0
+        # All shows the message
         all_msgs = read_outbox(tmp_team, TEAM, "alice", pending_only=False)
         assert len(all_msgs) == 1
+        assert all_msgs[0].body == "Hello"
 
 
 class TestMarkRead:
-    def test_mark_inbox_read_moves_file(self, tmp_team):
-        msg = Message(
-            sender="alice",
-            recipient="bob",
-            time="2026-02-08T12:00:00.000000Z",
-            body="Hello!",
-        )
-        fname = deliver(tmp_team, TEAM, msg)
-        bob_dir = tmp_team / "teams" / TEAM / "agents" / "bob"
+    def test_mark_inbox_read(self, tmp_team):
+        msg_id = send(tmp_team, TEAM, "alice", "bob", "Hello!")
+        assert len(read_inbox(tmp_team, TEAM, "bob", unread_only=True)) == 1
 
-        assert (bob_dir / "inbox" / "new" / fname).exists()
-        mark_inbox_read(tmp_team, TEAM, "bob", fname)
-        assert not (bob_dir / "inbox" / "new" / fname).exists()
-        assert (bob_dir / "inbox" / "cur" / fname).exists()
+        mark_inbox_read(tmp_team, TEAM, "bob", msg_id)
+        assert len(read_inbox(tmp_team, TEAM, "bob", unread_only=True)) == 0
+        # Message still exists when reading all
+        all_msgs = read_inbox(tmp_team, TEAM, "bob", unread_only=False)
+        assert len(all_msgs) == 1
+        assert all_msgs[0].read_at is not None
 
-    def test_mark_inbox_read_nonexistent_raises(self, tmp_team):
-        with pytest.raises(FileNotFoundError):
-            mark_inbox_read(tmp_team, TEAM, "bob", "nonexistent.msg")
 
-    def test_mark_outbox_routed_moves_file(self, tmp_team):
-        fname = send(tmp_team, TEAM, "alice", "bob", "Hello")
-        alice_dir = tmp_team / "teams" / TEAM / "agents" / "alice"
+class TestSeenAndProcessed:
+    """Test the seen_at / processed_at lifecycle columns."""
 
-        assert (alice_dir / "outbox" / "new" / fname).exists()
-        mark_outbox_routed(tmp_team, TEAM, "alice", fname)
-        assert not (alice_dir / "outbox" / "new" / fname).exists()
-        assert (alice_dir / "outbox" / "cur" / fname).exists()
+    def test_mark_seen(self, tmp_team):
+        msg_id = send(tmp_team, TEAM, "alice", "bob", "Hello")
+        mark_seen(tmp_team, msg_id)
+
+        inbox = read_inbox(tmp_team, TEAM, "bob")
+        assert inbox[0].seen_at is not None
+        assert inbox[0].processed_at is None
+
+    def test_mark_seen_batch(self, tmp_team):
+        id1 = send(tmp_team, TEAM, "alice", "bob", "First")
+        id2 = send(tmp_team, TEAM, "alice", "bob", "Second")
+        mark_seen_batch(tmp_team, [id1, id2])
+
+        inbox = read_inbox(tmp_team, TEAM, "bob")
+        assert all(m.seen_at is not None for m in inbox)
+
+    def test_mark_processed(self, tmp_team):
+        msg_id = send(tmp_team, TEAM, "alice", "bob", "Hello")
+        mark_seen(tmp_team, msg_id)
+        mark_processed(tmp_team, msg_id)
+
+        inbox = read_inbox(tmp_team, TEAM, "bob")
+        assert inbox[0].seen_at is not None
+        assert inbox[0].processed_at is not None
+
+    def test_mark_processed_batch(self, tmp_team):
+        id1 = send(tmp_team, TEAM, "alice", "bob", "First")
+        id2 = send(tmp_team, TEAM, "alice", "bob", "Second")
+        mark_processed_batch(tmp_team, [id1, id2])
+
+        inbox = read_inbox(tmp_team, TEAM, "bob")
+        assert all(m.processed_at is not None for m in inbox)
+
+    def test_full_lifecycle(self, tmp_team):
+        """Message goes through delivered → seen → processed → read."""
+        msg_id = send(tmp_team, TEAM, "alice", "bob", "Hello")
+
+        msg = read_inbox(tmp_team, TEAM, "bob")[0]
+        assert msg.delivered_at is not None
+        assert msg.seen_at is None
+        assert msg.processed_at is None
+        assert msg.read_at is None
+
+        mark_seen(tmp_team, msg_id)
+        msg = read_inbox(tmp_team, TEAM, "bob")[0]
+        assert msg.seen_at is not None
+
+        mark_processed(tmp_team, msg_id)
+        msg = read_inbox(tmp_team, TEAM, "bob")[0]
+        assert msg.processed_at is not None
+
+        mark_inbox_read(tmp_team, TEAM, "bob", msg_id)
+        assert read_inbox(tmp_team, TEAM, "bob", unread_only=True) == []
+        msg = read_inbox(tmp_team, TEAM, "bob", unread_only=False)[0]
+        assert msg.read_at is not None
 
 
 class TestDeliver:
@@ -186,41 +206,55 @@ class TestDeliver:
             time="2026-02-08T12:00:00.000000Z",
             body="Delivered!",
         )
-        fname = deliver(tmp_team, TEAM, msg)
-        inbox_new = tmp_team / "teams" / TEAM / "agents" / "bob" / "inbox" / "new"
-        assert (inbox_new / fname).is_file()
+        msg_id = deliver(tmp_team, TEAM, msg)
+        assert msg_id.isdigit()
 
-        parsed = Message.deserialize((inbox_new / fname).read_text())
-        assert parsed.body == "Delivered!"
+        inbox = read_inbox(tmp_team, TEAM, "bob")
+        assert len(inbox) == 1
+        assert inbox[0].body == "Delivered!"
 
-    def test_deliver_unknown_recipient_raises(self, tmp_team):
-        msg = Message(
-            sender="alice",
-            recipient="nobody",
-            time="2026-02-08T12:00:00.000000Z",
-            body="Hello?",
-        )
-        with pytest.raises(ValueError, match="not found"):
-            deliver(tmp_team, TEAM, msg)
+
+class TestHasUnread:
+    def test_no_unread(self, tmp_team):
+        assert not has_unread(tmp_team, "bob")
+
+    def test_has_unread(self, tmp_team):
+        send(tmp_team, TEAM, "alice", "bob", "Hey")
+        assert has_unread(tmp_team, "bob")
+
+    def test_no_unread_after_read(self, tmp_team):
+        msg_id = send(tmp_team, TEAM, "alice", "bob", "Hey")
+        mark_inbox_read(tmp_team, TEAM, "bob", msg_id)
+        assert not has_unread(tmp_team, "bob")
+
+
+class TestCountUnread:
+    def test_count_zero(self, tmp_team):
+        assert count_unread(tmp_team, "bob") == 0
+
+    def test_count_matches(self, tmp_team):
+        send(tmp_team, TEAM, "alice", "bob", "First")
+        send(tmp_team, TEAM, "alice", "bob", "Second")
+        assert count_unread(tmp_team, "bob") == 2
 
 
 class TestMessageEscaping:
     def test_commas_in_body(self, tmp_team):
         send(tmp_team, TEAM, "alice", "bob", "one, two, three")
-        msgs = read_outbox(tmp_team, TEAM, "alice")
+        msgs = read_inbox(tmp_team, TEAM, "bob")
         assert msgs[0].body == "one, two, three"
 
     def test_quotes_in_body(self, tmp_team):
         send(tmp_team, TEAM, "alice", "bob", 'She said "hi"')
-        msgs = read_outbox(tmp_team, TEAM, "alice")
+        msgs = read_inbox(tmp_team, TEAM, "bob")
         assert msgs[0].body == 'She said "hi"'
 
     def test_newlines_in_body(self, tmp_team):
         send(tmp_team, TEAM, "alice", "bob", "line1\nline2\nline3")
-        msgs = read_outbox(tmp_team, TEAM, "alice")
+        msgs = read_inbox(tmp_team, TEAM, "bob")
         assert msgs[0].body == "line1\nline2\nline3"
 
     def test_unicode_in_body(self, tmp_team):
         send(tmp_team, TEAM, "alice", "bob", "Hello 🌍 — über cool")
-        msgs = read_outbox(tmp_team, TEAM, "alice")
+        msgs = read_inbox(tmp_team, TEAM, "bob")
         assert msgs[0].body == "Hello 🌍 — über cool"

@@ -1,32 +1,28 @@
-"""Maildir-based mailbox system for agent communication.
+"""SQLite-backed mailbox system for agent communication.
 
-Each agent has an inbox/ and outbox/ with Maildir-style subbossies:
-    new/  — unprocessed messages
-    cur/  — processed messages
-    tmp/  — in-flight writes (atomicity)
+Each message is a row in the ``mailbox`` table with lifecycle columns:
+    created_at   — when the sender wrote the message
+    delivered_at — when it was made available to the recipient
+    seen_at      — when the agent's control loop picked it up (turn start)
+    processed_at — when the agent finished the turn that handled it
+    read_at      — when the message was marked read (conceptually "done")
 
-Message file format:
-    sender: <name>
-    recipient: <name>
-    time: <ISO 8601>
-    ---
-    <message body>
+``send()`` inserts with ``delivered_at = NOW`` (immediate delivery).
+The router is no longer required for delivery — it only handles
+supplementary tasks like logging to the chat table.
 
 Usage:
     python -m delegate.mailbox send <home> <team> <sender> <recipient> <message>
-    python -m delegate.mailbox inbox <home> <team> <agent> [--unread]
-    python -m delegate.mailbox outbox <home> <team> <agent> [--pending]
+    python -m delegate.mailbox inbox <home> <team> <agent> [--all]
+    python -m delegate.mailbox outbox <home> <team> <agent> [--all]
 """
 
 import argparse
-import os
-import time
-import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from delegate.paths import agent_dir as _resolve_agent_dir
+from delegate.db import get_connection
 
 
 @dataclass
@@ -35,15 +31,21 @@ class Message:
     recipient: str
     time: str
     body: str
+    id: int | None = None
+    # Legacy compat: some call sites still reference .filename
     filename: str | None = None
+    delivered_at: str | None = None
+    seen_at: str | None = None
+    processed_at: str | None = None
+    read_at: str | None = None
 
     def serialize(self) -> str:
-        """Serialize message to the file format."""
+        """Serialize message to the legacy file format (used in tests/logs)."""
         return f"sender: {self.sender}\nrecipient: {self.recipient}\ntime: {self.time}\n---\n{self.body}"
 
     @classmethod
     def deserialize(cls, text: str, filename: str | None = None) -> "Message":
-        """Parse a message file's text content."""
+        """Parse a message from the legacy file format."""
         header, _, body = text.partition("\n---\n")
         fields = {}
         for line in header.strip().splitlines():
@@ -58,143 +60,271 @@ class Message:
         )
 
 
-def _agent_dir(hc_home: Path, team: str, agent: str) -> Path:
-    """Return the mailbox directory for an agent (or the boss).
-
-    If *agent* matches the org-wide boss name, the global boss
-    mailbox at ``~/.delegate/boss/`` is returned instead of a
-    team-scoped agent directory.
-    """
-    from delegate.config import get_boss
-    from delegate.paths import boss_person_dir as _boss_person_dir
-
-    boss = get_boss(hc_home)
-    if boss and agent == boss:
-        dd = _boss_person_dir(hc_home)
-        if not dd.is_dir():
-            raise ValueError(f"Boss '{agent}' mailbox not found at {dd}")
-        return dd
-
-    d = _resolve_agent_dir(hc_home, team, agent)
-    if not d.is_dir():
-        raise ValueError(f"Agent '{agent}' not found at {d}")
-    return d
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-def _unique_filename() -> str:
-    """Generate a unique filename for a message (Maildir convention)."""
-    timestamp = int(time.time() * 1_000_000)
-    unique = uuid.uuid4().hex[:8]
-    pid = os.getpid()
-    return f"{timestamp}.{pid}.{unique}"
+def _row_to_message(row) -> Message:
+    """Convert a mailbox DB row to a Message dataclass."""
+    return Message(
+        sender=row["sender"],
+        recipient=row["recipient"],
+        time=row["created_at"],
+        body=row["body"],
+        id=row["id"],
+        filename=str(row["id"]),  # backwards compat for code using .filename
+        delivered_at=row["delivered_at"],
+        seen_at=row["seen_at"],
+        processed_at=row["processed_at"],
+        read_at=row["read_at"],
+    )
 
 
-def _write_atomic(directory: Path, content: str) -> str:
-    """Write content to a file atomically using Maildir tmp->new pattern.
-
-    Returns the filename of the written message.
-    """
-    filename = _unique_filename()
-    tmp_path = directory.parent / "tmp" / filename
-    new_path = directory / filename
-
-    # Write to tmp first
-    tmp_path.write_text(content)
-    # Atomic rename to new
-    tmp_path.rename(new_path)
-
-    return filename
-
+# ---------------------------------------------------------------------------
+# Core operations
+# ---------------------------------------------------------------------------
 
 def send(hc_home: Path, team: str, sender: str, recipient: str, message: str) -> str:
-    """Send a message by writing it to the sender's outbox/new/.
+    """Send a message by inserting into the mailbox table.
 
-    The daemon router will pick it up, deliver it to the recipient's inbox,
-    and log it to the chat database.
+    Messages are delivered immediately (``delivered_at`` set on insert).
+    Also logs the message to the chat event stream.
 
-    Returns the filename of the written message.
+    Returns the message id as a string (for backward compatibility with
+    code that expects a filename).
     """
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-    msg = Message(sender=sender, recipient=recipient, time=now, body=message)
+    now = _now()
+    conn = get_connection(hc_home)
+    try:
+        cursor = conn.execute(
+            """\
+            INSERT INTO mailbox (sender, recipient, body, created_at, delivered_at)
+            VALUES (?, ?, ?, ?, ?)""",
+            (sender, recipient, message, now, now),
+        )
+        conn.commit()
+        msg_id = cursor.lastrowid
+    finally:
+        conn.close()
 
-    ad = _agent_dir(hc_home, team, sender)
-    outbox_new = ad / "outbox" / "new"
-    return _write_atomic(outbox_new, msg.serialize())
+    # Log to the chat event stream
+    from delegate.chat import log_message
+    log_message(hc_home, sender, recipient, message)
+
+    return str(msg_id)
 
 
-def read_inbox(hc_home: Path, team: str, agent: str, unread_only: bool = True) -> list[Message]:
-    """Read messages from an agent's inbox.
+def read_inbox(
+    hc_home: Path, team: str, agent: str, unread_only: bool = True,
+) -> list[Message]:
+    """Read messages from an agent's inbox (messages addressed to them).
 
-    If unread_only=True, only reads from new/.
-    If unread_only=False, reads from both new/ and cur/.
+    If *unread_only* is True, returns only unread (``read_at IS NULL``) messages.
+    Messages must be delivered (``delivered_at IS NOT NULL``) to be visible.
     """
-    ad = _agent_dir(hc_home, team, agent)
-    messages = []
+    conn = get_connection(hc_home)
+    try:
+        if unread_only:
+            rows = conn.execute(
+                "SELECT * FROM mailbox WHERE recipient = ? AND delivered_at IS NOT NULL AND read_at IS NULL ORDER BY id ASC",
+                (agent,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM mailbox WHERE recipient = ? AND delivered_at IS NOT NULL ORDER BY id ASC",
+                (agent,),
+            ).fetchall()
+    finally:
+        conn.close()
+    return [_row_to_message(r) for r in rows]
 
-    dirs = [ad / "inbox" / "new"]
-    if not unread_only:
-        dirs.append(ad / "inbox" / "cur")
 
-    for d in dirs:
-        for f in sorted(d.iterdir()):
-            if f.is_file():
-                msg = Message.deserialize(f.read_text(), filename=f.name)
-                messages.append(msg)
+def read_outbox(
+    hc_home: Path, team: str, agent: str, pending_only: bool = True,
+) -> list[Message]:
+    """Read messages from an agent's outbox (messages sent by them).
 
-    return messages
-
-
-def read_outbox(hc_home: Path, team: str, agent: str, pending_only: bool = True) -> list[Message]:
-    """Read messages from an agent's outbox.
-
-    If pending_only=True, only reads from new/ (not yet routed).
-    If pending_only=False, reads from both new/ and cur/.
+    If *pending_only* is True, returns only undelivered messages
+    (``delivered_at IS NULL``).
     """
-    ad = _agent_dir(hc_home, team, agent)
-    messages = []
-
-    dirs = [ad / "outbox" / "new"]
-    if not pending_only:
-        dirs.append(ad / "outbox" / "cur")
-
-    for d in dirs:
-        for f in sorted(d.iterdir()):
-            if f.is_file():
-                msg = Message.deserialize(f.read_text(), filename=f.name)
-                messages.append(msg)
-
-    return messages
-
-
-def mark_inbox_read(hc_home: Path, team: str, agent: str, filename: str) -> None:
-    """Move a message from inbox/new/ to inbox/cur/."""
-    ad = _agent_dir(hc_home, team, agent)
-    src = ad / "inbox" / "new" / filename
-    dst = ad / "inbox" / "cur" / filename
-    if not src.exists():
-        raise FileNotFoundError(f"Inbox message not found: {src}")
-    src.rename(dst)
+    conn = get_connection(hc_home)
+    try:
+        if pending_only:
+            rows = conn.execute(
+                "SELECT * FROM mailbox WHERE sender = ? AND delivered_at IS NULL ORDER BY id ASC",
+                (agent,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM mailbox WHERE sender = ? ORDER BY id ASC",
+                (agent,),
+            ).fetchall()
+    finally:
+        conn.close()
+    return [_row_to_message(r) for r in rows]
 
 
-def mark_outbox_routed(hc_home: Path, team: str, agent: str, filename: str) -> None:
-    """Move a message from outbox/new/ to outbox/cur/."""
-    ad = _agent_dir(hc_home, team, agent)
-    src = ad / "outbox" / "new" / filename
-    dst = ad / "outbox" / "cur" / filename
-    if not src.exists():
-        raise FileNotFoundError(f"Outbox message not found: {src}")
-    src.rename(dst)
+def mark_inbox_read(
+    hc_home: Path, team: str, agent: str, msg_identifier: str,
+) -> None:
+    """Mark a message as read.
+
+    *msg_identifier* is the message id (as a string, for backward compat).
+    """
+    msg_id = int(msg_identifier)
+    conn = get_connection(hc_home)
+    try:
+        conn.execute(
+            "UPDATE mailbox SET read_at = ? WHERE id = ? AND read_at IS NULL",
+            (_now(), msg_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_seen(hc_home: Path, msg_identifier: str) -> None:
+    """Mark a message as seen (agent control loop picked it up at turn start).
+
+    *msg_identifier* is the message id as a string.
+    """
+    msg_id = int(msg_identifier)
+    conn = get_connection(hc_home)
+    try:
+        conn.execute(
+            "UPDATE mailbox SET seen_at = ? WHERE id = ? AND seen_at IS NULL",
+            (_now(), msg_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_seen_batch(hc_home: Path, msg_ids: list[str]) -> None:
+    """Mark multiple messages as seen in a single transaction."""
+    if not msg_ids:
+        return
+    now = _now()
+    conn = get_connection(hc_home)
+    try:
+        conn.executemany(
+            "UPDATE mailbox SET seen_at = ? WHERE id = ? AND seen_at IS NULL",
+            [(now, int(mid)) for mid in msg_ids],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_processed(hc_home: Path, msg_identifier: str) -> None:
+    """Mark a message as processed (agent finished the turn).
+
+    *msg_identifier* is the message id as a string.
+    """
+    msg_id = int(msg_identifier)
+    conn = get_connection(hc_home)
+    try:
+        conn.execute(
+            "UPDATE mailbox SET processed_at = ? WHERE id = ? AND processed_at IS NULL",
+            (_now(), msg_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_processed_batch(hc_home: Path, msg_ids: list[str]) -> None:
+    """Mark multiple messages as processed in a single transaction."""
+    if not msg_ids:
+        return
+    now = _now()
+    conn = get_connection(hc_home)
+    try:
+        conn.executemany(
+            "UPDATE mailbox SET processed_at = ? WHERE id = ? AND processed_at IS NULL",
+            [(now, int(mid)) for mid in msg_ids],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_outbox_routed(
+    hc_home: Path, team: str, agent: str, msg_identifier: str,
+) -> None:
+    """Mark a message as delivered/routed (set delivered_at).
+
+    With immediate delivery in ``send()``, this is typically a no-op.
+    Kept for backward compatibility.
+    """
+    msg_id = int(msg_identifier)
+    conn = get_connection(hc_home)
+    try:
+        conn.execute(
+            "UPDATE mailbox SET delivered_at = ? WHERE id = ? AND delivered_at IS NULL",
+            (_now(), msg_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def deliver(hc_home: Path, team: str, message: Message) -> str:
-    """Deliver a message to the recipient's inbox/new/.
+    """Deliver a message directly to the recipient's inbox.
 
-    Returns the filename of the delivered message.
+    Equivalent to ``send()`` but takes a pre-built Message object.
+    Used by notification helpers that construct Messages themselves.
+
+    Returns the message id as a string.
     """
-    ad = _agent_dir(hc_home, team, message.recipient)
-    inbox_new = ad / "inbox" / "new"
-    return _write_atomic(inbox_new, message.serialize())
+    now = _now()
+    conn = get_connection(hc_home)
+    try:
+        cursor = conn.execute(
+            """\
+            INSERT INTO mailbox (sender, recipient, body, created_at, delivered_at)
+            VALUES (?, ?, ?, ?, ?)""",
+            (message.sender, message.recipient, message.body, message.time or now, now),
+        )
+        conn.commit()
+        msg_id = cursor.lastrowid
+    finally:
+        conn.close()
+    return str(msg_id)
 
+
+def has_unread(hc_home: Path, agent: str) -> bool:
+    """Check if an agent has any unread delivered messages.
+
+    Fast path for the orchestrator — avoids fetching full message content.
+    """
+    conn = get_connection(hc_home)
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM mailbox WHERE recipient = ? AND delivered_at IS NOT NULL AND read_at IS NULL LIMIT 1",
+            (agent,),
+        ).fetchone()
+    finally:
+        conn.close()
+    return row is not None
+
+
+def count_unread(hc_home: Path, agent: str) -> int:
+    """Count unread delivered messages for an agent."""
+    conn = get_connection(hc_home)
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM mailbox WHERE recipient = ? AND delivered_at IS NOT NULL AND read_at IS NULL",
+            (agent,),
+        ).fetchone()
+    finally:
+        conn.close()
+    return row[0] if row else 0
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="Mailbox management")
@@ -220,13 +350,13 @@ def main():
     p_outbox.add_argument("home", type=Path)
     p_outbox.add_argument("team")
     p_outbox.add_argument("agent", help="Agent name")
-    p_outbox.add_argument("--all", action="store_true", help="Include routed messages")
+    p_outbox.add_argument("--all", action="store_true", help="Include all messages")
 
     args = parser.parse_args()
 
     if args.command == "send":
-        fname = send(args.home, args.team, args.sender, args.recipient, args.message)
-        print(f"Message sent: {fname}")
+        msg_id = send(args.home, args.team, args.sender, args.recipient, args.message)
+        print(f"Message sent: {msg_id}")
 
     elif args.command == "inbox":
         messages = read_inbox(args.home, args.team, args.agent, unread_only=not args.all)

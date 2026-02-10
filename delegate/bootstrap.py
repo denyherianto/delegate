@@ -25,16 +25,7 @@ from delegate.paths import (
 from delegate.config import get_boss
 
 
-MAILDIR_SUBDIRS = [
-    "inbox/new",
-    "inbox/cur",
-    "inbox/tmp",
-    "outbox/new",
-    "outbox/cur",
-    "outbox/tmp",
-]
-
-AGENT_SUBDIRS = MAILDIR_SUBDIRS + [
+AGENT_SUBDIRS = [
     "journals",
     "notes",
     "feedback",
@@ -213,7 +204,7 @@ def bootstrap(
         member_dir = agents_root / name
         member_dir.mkdir(exist_ok=True)
 
-        # All subdirs (Maildir + journals/logs/workspace/worktrees/etc.)
+        # All subdirs (journals/logs/workspace/worktrees/etc.)
         for subdir in AGENT_SUBDIRS:
             (member_dir / subdir).mkdir(parents=True, exist_ok=True)
 
@@ -248,8 +239,6 @@ def bootstrap(
 
     dd = _boss_person_dir(hc_home)
     dd.mkdir(parents=True, exist_ok=True)
-    for subdir in MAILDIR_SUBDIRS:
-        (dd / subdir).mkdir(parents=True, exist_ok=True)
 
 
 def add_agent(

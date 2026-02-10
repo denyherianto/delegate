@@ -32,7 +32,7 @@ from typing import Any
 import yaml
 
 from delegate.paths import agent_dir as _resolve_agent_dir, agents_dir, base_charter_dir
-from delegate.mailbox import read_inbox, mark_inbox_read
+from delegate.mailbox import read_inbox, mark_inbox_read, mark_seen_batch, mark_processed, has_unread
 from delegate.task import format_task_id
 
 logger = logging.getLogger(__name__)
@@ -784,29 +784,21 @@ async def wait_for_inbox(
     team: str,
     agent: str,
     timeout: float,
+    poll_interval: float = 0.5,
 ) -> bool:
-    """Block until a new file appears in inbox/new/ or *timeout* seconds elapse."""
-    from watchfiles import awatch, Change
-
-    inbox_new = _resolve_agent_dir(hc_home, team, agent) / "inbox" / "new"
-
+    """Poll the DB until an unread message appears or *timeout* seconds elapse."""
     # If there are already unread messages, return immediately
-    if any(inbox_new.iterdir()):
+    if has_unread(hc_home, agent):
         return True
 
-    stop_event = asyncio.Event()
+    elapsed = 0.0
+    while elapsed < timeout:
+        await asyncio.sleep(poll_interval)
+        elapsed += poll_interval
+        if has_unread(hc_home, agent):
+            return True
 
-    async def _watch() -> bool:
-        async for changes in awatch(inbox_new, stop_event=stop_event):
-            if any(c[0] == Change.added for c in changes):
-                return True
-        return False
-
-    try:
-        return await asyncio.wait_for(_watch(), timeout=timeout)
-    except asyncio.TimeoutError:
-        stop_event.set()
-        return False
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -1090,11 +1082,13 @@ def _finish_turn(
         cost_usd=ctx.total_cost_usd,
     )
 
-    # Mark only the first unread message as read (one-at-a-time processing)
+    # Mark the first unread message as processed + read (one-at-a-time)
     _first = read_inbox(ctx.hc_home, ctx.team, ctx.agent, unread_only=True)
     if _first and _first[0].filename:
-        ctx.alog.mail_marked_read(_first[0].filename)
-        mark_inbox_read(ctx.hc_home, ctx.team, ctx.agent, _first[0].filename)
+        msg_id = _first[0].filename
+        mark_processed(ctx.hc_home, msg_id)
+        mark_inbox_read(ctx.hc_home, ctx.team, ctx.agent, msg_id)
+        ctx.alog.mail_marked_read(msg_id)
 
     # Re-check task association (may set up worktree if task acquired a repo)
     if ctx.current_task_id is None:
@@ -1162,8 +1156,11 @@ async def run_agent_loop(
             user_msg = build_user_message(hc_home, team, agent, include_context=True)
             ctx.worklog_lines.append(f"\n## Turn {turn}\n{user_msg}")
 
-            # Log incoming messages from this turn
+            # Log incoming messages and mark them as seen
             messages = read_inbox(hc_home, team, agent, unread_only=True)
+            seen_ids = [m.filename for m in messages if m.filename]
+            if seen_ids:
+                mark_seen_batch(hc_home, seen_ids)
             for inbox_msg in messages:
                 ctx.alog.message_received(inbox_msg.sender, len(inbox_msg.body))
 
@@ -1198,8 +1195,11 @@ async def run_agent_loop(
                 user_msg = build_user_message(hc_home, team, agent, include_context=True)
                 ctx.worklog_lines.append(f"\n## Turn {turn}\n{user_msg}")
 
-                # Log incoming messages
+                # Log incoming messages and mark them as seen
                 messages = read_inbox(hc_home, team, agent, unread_only=True)
+                seen_ids = [m.filename for m in messages if m.filename]
+                if seen_ids:
+                    mark_seen_batch(hc_home, seen_ids)
                 for inbox_msg in messages:
                     ctx.alog.message_received(inbox_msg.sender, len(inbox_msg.body))
 

@@ -265,12 +265,11 @@ class TestProcessInbox:
             llm_query=mock_llm_fixed,
         )
 
-        # The response should be in boss's outbox (pending routing)
-        from delegate.mailbox import read_outbox
-        outbox = read_outbox(team_root, TEAM, BOSS_NAME, pending_only=True)
-        assert len(outbox) == 1
-        assert outbox[0].recipient == "manager"
-        assert outbox[0].sender == BOSS_NAME
+        # With immediate delivery, response is already delivered to manager's inbox
+        from delegate.mailbox import read_inbox
+        inbox = read_inbox(team_root, TEAM, "manager", unread_only=True)
+        assert len(inbox) == 1
+        assert inbox[0].sender == BOSS_NAME
 
     @pytest.mark.asyncio
     async def test_handles_empty_inbox(self, team_root):
@@ -312,10 +311,11 @@ class TestProcessInbox:
             llm_query=mock_llm_echo,
         )
 
-        from delegate.mailbox import read_outbox
-        outbox = read_outbox(team_root, TEAM, BOSS_NAME, pending_only=True)
-        assert len(outbox) == 1
-        assert "don't have any task specs" in outbox[0].body
+        # With immediate delivery, response is already in manager's inbox
+        from delegate.mailbox import read_inbox as _ri
+        inbox = _ri(team_root, TEAM, "manager", unread_only=True)
+        assert len(inbox) == 1
+        assert "don't have any task specs" in inbox[0].body
 
 
 # ---------------------------------------------------------------------------
@@ -373,9 +373,9 @@ class TestRunSimBoss:
         remaining = read_inbox(team_root, TEAM, BOSS_NAME, unread_only=True)
         assert len(remaining) == 0
 
-        # Response should be in outbox
+        # Response should have been delivered to the sender's inbox
         from delegate.mailbox import read_outbox
-        outbox = read_outbox(team_root, TEAM, BOSS_NAME, pending_only=True)
+        outbox = read_outbox(team_root, TEAM, BOSS_NAME, pending_only=False)
         assert len(outbox) >= 1
 
 

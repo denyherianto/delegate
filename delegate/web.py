@@ -45,7 +45,7 @@ from delegate.paths import (
 from delegate.config import get_boss
 from delegate.task import list_tasks as _list_tasks, get_task as _get_task, get_task_diff as _get_task_diff, update_task as _update_task, change_status as _change_status, VALID_STATUSES, format_task_id
 from delegate.chat import get_messages as _get_messages, get_task_stats as _get_task_stats, get_agent_stats as _get_agent_stats, log_event as _log_event
-from delegate.mailbox import send as _send, read_inbox as _read_inbox, read_outbox as _read_outbox
+from delegate.mailbox import send as _send, read_inbox as _read_inbox, read_outbox as _read_outbox, count_unread as _count_unread
 logger = logging.getLogger(__name__)
 
 
@@ -135,8 +135,7 @@ def _list_team_agents(hc_home: Path, team: str) -> list[dict]:
         state = yaml.safe_load(state_file.read_text()) or {}
         if state.get("role") == "boss":
             continue
-        inbox_new = d / "inbox" / "new"
-        unread = len(list(inbox_new.iterdir())) if inbox_new.is_dir() else 0
+        unread = _count_unread(hc_home, d.name)
         agents.append({
             "name": d.name,
             "role": state.get("role", "worker"),
@@ -475,24 +474,19 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
     @app.get("/teams/{team}/agents/{name}/inbox")
     def get_agent_inbox(team: str, name: str):
-        """Return all messages in the agent's inbox with read/unread status."""
-        ad = _agent_dir(hc_home, team, name)
-        if not ad.is_dir():
-            raise HTTPException(status_code=404, detail=f"Agent '{name}' not found in team '{team}'")
-
-        # Get unread filenames for comparison
-        unread_msgs = _read_inbox(hc_home, team, name, unread_only=True)
-        unread_filenames = {m.filename for m in unread_msgs}
-
-        # Get all messages (read + unread)
+        """Return all messages in the agent's inbox with lifecycle status."""
         all_msgs = _read_inbox(hc_home, team, name, unread_only=False)
-
         result = [
             {
+                "id": m.id,
                 "sender": m.sender,
                 "time": m.time,
                 "body": m.body,
-                "read": m.filename not in unread_filenames,
+                "delivered_at": m.delivered_at,
+                "seen_at": m.seen_at,
+                "processed_at": m.processed_at,
+                "read_at": m.read_at,
+                "read": m.read_at is not None,
             }
             for m in all_msgs
         ]
@@ -501,22 +495,18 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
     @app.get("/teams/{team}/agents/{name}/outbox")
     def get_agent_outbox(team: str, name: str):
-        """Return all messages in the agent's outbox with routed/pending status."""
-        ad = _agent_dir(hc_home, team, name)
-        if not ad.is_dir():
-            raise HTTPException(status_code=404, detail=f"Agent '{name}' not found in team '{team}'")
-
-        pending_msgs = _read_outbox(hc_home, team, name, pending_only=True)
-        pending_filenames = {m.filename for m in pending_msgs}
-
+        """Return all messages sent by the agent with delivery status."""
         all_msgs = _read_outbox(hc_home, team, name, pending_only=False)
-
         result = [
             {
+                "id": m.id,
                 "recipient": m.recipient,
                 "time": m.time,
                 "body": m.body,
-                "routed": m.filename not in pending_filenames,
+                "delivered_at": m.delivered_at,
+                "seen_at": m.seen_at,
+                "processed_at": m.processed_at,
+                "read_at": m.read_at,
             }
             for m in all_msgs
         ]

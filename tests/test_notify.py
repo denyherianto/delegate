@@ -92,15 +92,14 @@ class TestNotifyRejection:
         body = inbox[0].body
         assert "(no reason provided)" in body
 
-    def test_returns_none_on_delivery_failure(self, notify_team):
+    def test_returns_id_string(self, notify_team):
+        """notify_rejection returns the message id as a string."""
         task = _make_task_at_needs_merge(notify_team)
         change_status(notify_team, task["id"], "rejected")
 
-        # Use a bad team name to trigger delivery failure
-        result = notify_rejection(
-            notify_team, "nonexistent_team", task, reason="Test"
-        )
-        assert result is None
+        result = notify_rejection(notify_team, TEAM, task, reason="Test")
+        assert result is not None
+        assert result.isdigit()
 
 
 class TestNotifyConflict:
@@ -163,11 +162,11 @@ class TestNotifyConflict:
         body = inbox[0].body
         assert "(no details available)" in body
 
-    def test_returns_none_on_delivery_failure(self, notify_team):
+    def test_returns_id_string(self, notify_team):
+        """notify_conflict returns the message id as a string."""
         task = _make_task_at_needs_merge(notify_team)
         change_status(notify_team, task["id"], "conflict")
 
-        result = notify_conflict(
-            notify_team, "nonexistent_team", task, conflict_details="Test"
-        )
-        assert result is None
+        result = notify_conflict(notify_team, TEAM, task, conflict_details="Test")
+        assert result is not None
+        assert result.isdigit()

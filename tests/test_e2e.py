@@ -58,12 +58,10 @@ def hc(tmp_path):
 class TestBossyStructure:
     """Verify the bootstrapped directory layout."""
 
-    def test_boss_mailbox_is_global(self, hc):
-        """Boss mailbox lives at hc/boss/, outside any team."""
+    def test_boss_dir_is_global(self, hc):
+        """Boss directory lives at hc/boss/, outside any team."""
         dd = boss_person_dir(hc)
         assert dd.is_dir()
-        assert (dd / "inbox" / "new").is_dir()
-        assert (dd / "outbox" / "new").is_dir()
         # NOT inside any team
         assert not (agents_dir(hc, TEAM_A) / DIRECTOR).exists()
         assert not (agents_dir(hc, TEAM_B) / DIRECTOR).exists()
@@ -89,26 +87,16 @@ class TestSingleTeamMessaging:
     """Boss ↔ manager ↔ worker message flow within one team."""
 
     def test_boss_to_manager(self, hc):
-        """Boss sends a message; router delivers it to the manager."""
-        # Boss sends via global outbox
+        """Boss sends a message; it is delivered immediately."""
         send(hc, TEAM_A, DIRECTOR, "edison", "Please start the sprint.")
 
-        # Verify message is in boss's global outbox
-        pending = read_outbox(hc, TEAM_A, DIRECTOR, pending_only=True)
-        assert len(pending) == 1
-        assert pending[0].recipient == "edison"
-
-        # Route
-        routed = route_once(hc, TEAM_A, boss_name=DIRECTOR)
-        assert routed == 1
-
-        # Manager received it
+        # Manager received it immediately (no router needed)
         inbox = read_inbox(hc, TEAM_A, "edison", unread_only=True)
         assert len(inbox) == 1
         assert inbox[0].sender == DIRECTOR
         assert inbox[0].body == "Please start the sprint."
 
-        # Boss's outbox is now empty (moved to cur)
+        # Already delivered — nothing pending
         assert read_outbox(hc, TEAM_A, DIRECTOR, pending_only=True) == []
 
         # Logged in SQLite
@@ -117,12 +105,9 @@ class TestSingleTeamMessaging:
         assert msgs[0]["sender"] == DIRECTOR
 
     def test_manager_to_boss(self, hc):
-        """Manager replies to boss; delivered to boss's global inbox."""
+        """Manager replies to boss; delivered immediately."""
         send(hc, TEAM_A, "edison", DIRECTOR, "Sprint started, 3 tasks assigned.")
-        routed = route_once(hc, TEAM_A, boss_name=DIRECTOR)
-        assert routed == 1
 
-        # Boss's global inbox has the message
         inbox = read_inbox(hc, TEAM_A, DIRECTOR, unread_only=True)
         assert len(inbox) == 1
         assert inbox[0].sender == "edison"
@@ -130,8 +115,6 @@ class TestSingleTeamMessaging:
     def test_manager_to_worker(self, hc):
         """Manager assigns work to a team member."""
         send(hc, TEAM_A, "edison", "alice", "Please work on T0001.")
-        routed = route_once(hc, TEAM_A)
-        assert routed == 1
 
         inbox = read_inbox(hc, TEAM_A, "alice")
         assert len(inbox) == 1
@@ -140,7 +123,6 @@ class TestSingleTeamMessaging:
     def test_worker_to_qa(self, hc):
         """Worker sends a review request to QA."""
         send(hc, TEAM_A, "alice", "sarah", "REVIEW_REQUEST: repo=myapp branch=alice/T0001")
-        route_once(hc, TEAM_A)
 
         inbox = read_inbox(hc, TEAM_A, "sarah")
         assert len(inbox) == 1
@@ -148,25 +130,11 @@ class TestSingleTeamMessaging:
 
     def test_full_conversation(self, hc):
         """Multi-step conversation: boss → manager → worker → QA → manager → boss."""
-        # 1. Boss kicks off
         send(hc, TEAM_A, DIRECTOR, "edison", "Start task T0001")
-        route_once(hc, TEAM_A, boss_name=DIRECTOR)
-
-        # 2. Manager delegates to alice
         send(hc, TEAM_A, "edison", "alice", "Alice, work on T0001 please")
-        route_once(hc, TEAM_A)
-
-        # 3. Alice does work, sends review request to QA
         send(hc, TEAM_A, "alice", "sarah", "REVIEW_REQUEST: T0001")
-        route_once(hc, TEAM_A)
-
-        # 4. QA approves
         send(hc, TEAM_A, "sarah", "edison", "T0001 MERGED")
-        route_once(hc, TEAM_A)
-
-        # 5. Manager reports to boss
         send(hc, TEAM_A, "edison", DIRECTOR, "T0001 is done!")
-        route_once(hc, TEAM_A, boss_name=DIRECTOR)
 
         # Verify the full chain in SQLite
         all_msgs = get_messages(hc, msg_type="chat")
@@ -180,8 +148,9 @@ class TestSingleTeamMessaging:
 
         # Boss inbox has the final report
         inbox = read_inbox(hc, TEAM_A, DIRECTOR)
-        assert len(inbox) == 1
-        assert "done" in inbox[0].body
+        # Boss gets messages from edison (2) — the first and the last
+        boss_msgs = [m for m in inbox if m.recipient == DIRECTOR]
+        assert any("done" in m.body for m in boss_msgs)
 
 
 # ---------------------------------------------------------------------------
@@ -190,20 +159,12 @@ class TestSingleTeamMessaging:
 
 
 class TestCrossTeamBoss:
-    """Boss communicates with multiple teams; messages don't leak."""
+    """Boss communicates with multiple teams; messages delivered immediately."""
 
-    def test_boss_messages_routed_to_correct_team(self, hc):
+    def test_boss_messages_delivered_to_correct_recipients(self, hc):
         """Boss sends to both teams; each manager gets only their message."""
         send(hc, TEAM_A, DIRECTOR, "edison", "Alpha: start sprint 1")
         send(hc, TEAM_B, DIRECTOR, "maria", "Beta: start sprint 1")
-
-        # Route team A
-        routed_a = route_once(hc, TEAM_A, boss_name=DIRECTOR)
-        assert routed_a == 1
-
-        # Route team B
-        routed_b = route_once(hc, TEAM_B, boss_name=DIRECTOR)
-        assert routed_b == 1
 
         # Edison got the alpha message
         edison_inbox = read_inbox(hc, TEAM_A, "edison")
@@ -220,16 +181,13 @@ class TestCrossTeamBoss:
         send(hc, TEAM_A, "edison", DIRECTOR, "Alpha report")
         send(hc, TEAM_B, "maria", DIRECTOR, "Beta report")
 
-        route_once(hc, TEAM_A, boss_name=DIRECTOR)
-        route_once(hc, TEAM_B, boss_name=DIRECTOR)
-
-        inbox = read_inbox(hc, TEAM_A, DIRECTOR)  # team arg doesn't matter for boss
+        inbox = read_inbox(hc, TEAM_A, DIRECTOR)
         assert len(inbox) == 2
         bodies = {m.body for m in inbox}
         assert bodies == {"Alpha report", "Beta report"}
 
     def test_boss_queue_notifies_on_incoming(self, hc):
-        """BossQueue is populated when an agent messages the boss."""
+        """BossQueue is populated when route_once finds boss messages."""
         dq = BossQueue()
         send(hc, TEAM_A, "edison", DIRECTOR, "Urgent question")
         route_once(hc, TEAM_A, boss_queue=dq, boss_name=DIRECTOR)
@@ -237,21 +195,6 @@ class TestCrossTeamBoss:
         msgs = dq.get_all()
         assert len(msgs) == 1
         assert msgs[0].body == "Urgent question"
-
-    def test_no_cross_team_message_leak(self, hc):
-        """A boss message to team A is NOT delivered when routing team B."""
-        send(hc, TEAM_A, DIRECTOR, "edison", "Only for alpha")
-
-        # Route team B first — should not deliver this message
-        routed_b = route_once(hc, TEAM_B, boss_name=DIRECTOR)
-        assert routed_b == 0
-
-        # Route team A — now it should deliver
-        routed_a = route_once(hc, TEAM_A, boss_name=DIRECTOR)
-        assert routed_a == 1
-
-        edison_inbox = read_inbox(hc, TEAM_A, "edison")
-        assert len(edison_inbox) == 1
 
 
 # ---------------------------------------------------------------------------

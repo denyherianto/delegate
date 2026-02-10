@@ -63,14 +63,11 @@ def test_state_yaml_has_role(tmp_team):
     assert state["role"] == "worker"
 
 
-def test_boss_mailbox_created(tmp_team):
-    """The boss's global mailbox directory is created outside any team."""
+def test_boss_directory_created(tmp_team):
+    """The boss's global directory is created outside any team."""
     hc_home = tmp_team
     bd = boss_person_dir(hc_home)
     assert bd.is_dir()
-    for box in ["inbox", "outbox"]:
-        for sub in ["new", "cur", "tmp"]:
-            assert (bd / box / sub).is_dir()
 
 
 def test_roster_contains_all_members(tmp_team):
@@ -98,14 +95,13 @@ def test_charter_shipped_with_package():
         assert len(f.read_text()) > 0
 
 
-def test_maildir_subdirs_exist(tmp_team):
-    """Each agent has Maildir-style new/cur/tmp under inbox and outbox."""
+def test_agent_subdirs_exist(tmp_team):
+    """Each agent has journals/notes/workspace/worktrees subdirectories."""
     hc_home = tmp_team
     for name in ["manager", "alice", "bob"]:
-        for box in ["inbox", "outbox"]:
-            for sub in ["new", "cur", "tmp"]:
-                path = agent_dir(hc_home, TEAM, name) / box / sub
-                assert path.is_dir(), f"Missing {name}/{box}/{sub}"
+        for subdir in ["journals", "notes", "workspace", "worktrees"]:
+            path = agent_dir(hc_home, TEAM, name) / subdir
+            assert path.is_dir(), f"Missing {name}/{subdir}"
 
 
 def test_workspace_exists_per_agent(tmp_team):

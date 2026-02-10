@@ -30,7 +30,6 @@ from delegate.paths import (
     roster_path,
     boss_person_dir,
 )
-from delegate.bootstrap import MAILDIR_SUBDIRS
 from delegate.config import set_boss
 
 logger = logging.getLogger(__name__)
@@ -160,12 +159,10 @@ def migrate(
         report["boss_name"] = boss_name
         logger.info("Set boss to: %s", boss_name)
 
-        # Create boss's global mailbox at ~/.delegate/boss/
+        # Create boss's global directory at ~/.delegate/boss/
         dd = boss_person_dir(hc_home)
         dd.mkdir(parents=True, exist_ok=True)
-        for subdir in MAILDIR_SUBDIRS:
-            (dd / subdir).mkdir(parents=True, exist_ok=True)
-        logger.info("Created boss mailbox at %s", dd)
+        logger.info("Created boss directory at %s", dd)
 
     # --- 8. Update state.yaml files ---
     if new_agents.is_dir():

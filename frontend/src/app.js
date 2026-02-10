@@ -1600,6 +1600,19 @@ function closePanel() {
 // =====================================================================
 // Agent panel (re-uses the diff slide-over)
 // =====================================================================
+/**
+ * Return a WhatsApp-style delivery indicator:
+ *   \u2713        single grey check  = delivered
+ *   \u2713\u2713       double grey checks = seen by agent
+ *   \u2713\u2713 blue  double blue checks = processed (agent finished turn)
+ */
+function msgStatusIcon(m) {
+  if (m.processed_at) return '<span class="msg-status msg-processed" title="Processed">\u2713\u2713</span>';
+  if (m.seen_at)      return '<span class="msg-status msg-seen" title="Seen">\u2713\u2713</span>';
+  if (m.delivered_at) return '<span class="msg-status msg-delivered" title="Delivered">\u2713</span>';
+  return '<span class="msg-status msg-pending" title="Sending\u2026">\u23F3</span>';
+}
+
 function renderAgentInbox(msgs) {
   if (!msgs || !msgs.length)
     return '<div class="diff-empty">No messages</div>';
@@ -1612,6 +1625,7 @@ function renderAgentInbox(msgs) {
         esc(cap(m.sender)) +
         '</span><span class="agent-msg-time">' +
         fmtTimestamp(m.time) +
+        " " + msgStatusIcon(m) +
         '</span></div><div class="agent-msg-body collapsed" onclick="this.classList.toggle(\'collapsed\')">' +
         esc(m.body) +
         "</div></div>"
@@ -1625,12 +1639,11 @@ function renderAgentOutbox(msgs) {
   return msgs
     .map(
       (m) =>
-        '<div class="agent-msg' +
-        (m.routed ? "" : " pending") +
-        '"><div class="agent-msg-header"><span class="agent-msg-sender">\u2192 ' +
+        '<div class="agent-msg"><div class="agent-msg-header"><span class="agent-msg-sender">\u2192 ' +
         esc(cap(m.recipient)) +
         '</span><span class="agent-msg-time">' +
         fmtTimestamp(m.time) +
+        " " + msgStatusIcon(m) +
         '</span></div><div class="agent-msg-body collapsed" onclick="this.classList.toggle(\'collapsed\')">' +
         esc(m.body) +
         "</div></div>"

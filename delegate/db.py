@@ -110,6 +110,35 @@ CREATE INDEX IF NOT EXISTS idx_tasks_branch
 CREATE INDEX IF NOT EXISTS idx_tasks_project
     ON tasks(project);
 """,
+
+    # --- V3: mailbox table (replaces Maildir filesystem) ---
+    # Lifecycle: created → delivered → seen → processed → read
+    #   delivered_at  — router/send marked it ready for recipient
+    #   seen_at       — agent control loop picked it up at turn start
+    #   processed_at  — agent finished the turn that handled this message
+    #   read_at       — marked read (moved to "cur" conceptually)
+    """\
+CREATE TABLE IF NOT EXISTS mailbox (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender         TEXT    NOT NULL,
+    recipient      TEXT    NOT NULL,
+    body           TEXT    NOT NULL,
+    created_at     TEXT    NOT NULL,
+    delivered_at   TEXT,
+    seen_at        TEXT,
+    processed_at   TEXT,
+    read_at        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_mailbox_recipient_unread
+    ON mailbox(recipient, delivered_at)
+    WHERE read_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_mailbox_sender
+    ON mailbox(sender);
+CREATE INDEX IF NOT EXISTS idx_mailbox_undelivered
+    ON mailbox(id)
+    WHERE delivered_at IS NULL;
+""",
 ]
 
 # Columns that store JSON arrays and need parse/serialize on read/write.

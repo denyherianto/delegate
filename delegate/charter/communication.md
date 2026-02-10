@@ -4,7 +4,7 @@ All agents communicate exclusively via messages. No agent directly modifies anot
 
 ## Messaging
 
-Each member has Maildir-style inbox/outbox (`inbox/new/`, `inbox/cur/`, `outbox/new/`, `outbox/cur/`). The daemon routes messages from outboxes to inboxes.
+Messages are stored in a shared SQLite database. The daemon delivers messages and tracks their lifecycle (delivered → seen → processed → read).
 
 Your conversational text is NOT delivered to anyone — it only goes to an internal log. The ONLY way to communicate is the mailbox send command:
 
