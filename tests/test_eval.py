@@ -63,22 +63,22 @@ class TestLoadVariant:
     """Tests for load_variant()."""
 
     def test_loads_ship_fast(self):
-        """ship-fast variant loads and overrides constitution."""
+        """ship-fast variant loads and overrides values."""
         charter = load_variant("ship-fast")
-        assert "constitution.md" in charter
-        # ship-fast has its own constitution — should differ from default
-        assert "ships fast" in charter["constitution.md"].lower()
+        assert "values.md" in charter
+        # ship-fast has its own values — should differ from default
+        assert "ships fast" in charter["values.md"].lower()
 
     def test_loads_quality_first(self):
-        """quality-first variant loads and overrides constitution."""
+        """quality-first variant loads and overrides values."""
         charter = load_variant("quality-first")
-        assert "constitution.md" in charter
-        assert "quality" in charter["constitution.md"].lower()
+        assert "values.md" in charter
+        assert "quality" in charter["values.md"].lower()
 
     def test_falls_back_to_defaults(self):
         """Files not overridden by the variant come from the default charter."""
         charter = load_variant("ship-fast")
-        # ship-fast only overrides constitution.md and code-review.md
+        # ship-fast only overrides values.md and code-review.md
         # communication.md should come from default
         assert "communication.md" in charter
         assert "task-management.md" in charter
@@ -87,7 +87,7 @@ class TestLoadVariant:
         """Every default charter file is present in the loaded variant."""
         charter = load_variant("ship-fast")
         expected = {
-            "constitution.md",
+            "values.md",
             "communication.md",
             "task-management.md",
             "code-review.md",
@@ -99,8 +99,8 @@ class TestLoadVariant:
         """Variant files should actually differ from the defaults."""
         ship = load_variant("ship-fast")
         quality = load_variant("quality-first")
-        # The two variants should have different constitutions
-        assert ship["constitution.md"] != quality["constitution.md"]
+        # The two variants should have different valuess
+        assert ship["values.md"] != quality["values.md"]
         # And different code-review docs
         assert ship["code-review.md"] != quality["code-review.md"]
 
@@ -219,7 +219,7 @@ class TestBootstrapWithVariant:
             agents=["alice"],
         )
         charter_dir = base_charter_dir()
-        expected = {"constitution.md", "communication.md", "task-management.md",
+        expected = {"values.md", "communication.md", "task-management.md",
                     "code-review.md", "continuous-improvement.md"}
         actual = {f.name for f in charter_dir.glob("*.md")}
         assert expected.issubset(actual)

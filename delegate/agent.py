@@ -542,7 +542,7 @@ def build_system_prompt(
     # --- 1. Universal charter (shared across ALL agents) ---
     charter_dir = base_charter_dir()
     universal_charter_files = [
-        "constitution.md",
+        "values.md",
         "communication.md",
         "task-management.md",
         "code-review.md",

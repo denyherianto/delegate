@@ -45,7 +45,7 @@ VARIANTS_DIR = base_charter_dir() / "variants"
 
 # Default charter filenames (the ones shipped in boss/charter/)
 DEFAULT_CHARTER_FILES = [
-    "constitution.md",
+    "values.md",
     "communication.md",
     "task-management.md",
     "code-review.md",
@@ -86,7 +86,7 @@ def load_variant(variant_name: str) -> dict[str, str]:
         variant_name: Name of the variant directory under boss/charter/variants/.
 
     Returns:
-        Dict mapping filename (e.g. "constitution.md") to file content.
+        Dict mapping filename (e.g. "values.md") to file content.
         Includes all default charter files — overridden by the variant where
         the variant provides its own version.
 
