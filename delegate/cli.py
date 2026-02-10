@@ -5,7 +5,7 @@ Commands:
     delegate start [--port N]                        — start daemon (web UI + agents)
     delegate stop                                    — stop running daemon
     delegate status                                  — check if daemon is running
-    delegate team create <name> --manager M --agents a:role,b  — create a new team
+    delegate team create <name> --manager M --agents a:role,b --repo /path  — create a new team
     delegate team list                               — list existing teams
     delegate agent add <team> <name>                 — add an agent to a team
     delegate config set boss <name>                  — set org-wide boss name
@@ -167,6 +167,11 @@ def team() -> None:
          "Examples: 'alex:devops,nikhil:designer,john,mark:backend'.  "
          "Agents without a role default to 'engineer'.",
 )
+@click.option(
+    "--repo", "repos", required=True, multiple=True,
+    type=click.Path(exists=True, file_okay=False, resolve_path=True),
+    help="Local repo path(s) for the team.  Repeat for multiple repos: --repo /path/a --repo /path/b",
+)
 @click.option("--interactive", is_flag=True, help="Prompt for bios and charter overrides.")
 @click.pass_context
 def team_create(
@@ -174,10 +179,12 @@ def team_create(
     name: str,
     manager: str,
     agents: str,
+    repos: tuple[str, ...],
     interactive: bool,
 ) -> None:
     """Create a new team."""
     from delegate.bootstrap import bootstrap
+    from delegate.repo import register_repo
 
     hc_home = _get_home(ctx)
 
@@ -201,10 +208,21 @@ def team_create(
         interactive=interactive,
     )
 
+    # Register repos
+    registered: list[str] = []
+    for repo_path in repos:
+        try:
+            repo_name = register_repo(hc_home, name, repo_path)
+            registered.append(repo_name)
+        except (FileNotFoundError, ValueError) as exc:
+            click.echo(f"Warning: could not register repo '{repo_path}': {exc}", err=True)
+
     labels = [manager + " (manager)"]
     for aname, arole in parsed_agents:
         labels.append(f"{aname} ({arole})" if arole != "engineer" else aname)
     click.echo(f"Created team '{name}' with members: {', '.join(labels)}")
+    if registered:
+        click.echo(f"Repos: {', '.join(registered)}")
 
 
 @team.command("list")
