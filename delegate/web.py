@@ -363,14 +363,15 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             task = _get_task(hc_home, team, task_id)
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-        diff_text = _get_task_diff(hc_home, team, task_id)
+        diff_dict = _get_task_diff(hc_home, team, task_id)
         return {
             "task_id": task_id,
             "branch": task.get("branch", ""),
-            "commits": task.get("commits", []),
-            "diff": diff_text,
-            "merge_base": task.get("merge_base", ""),
-            "merge_tip": task.get("merge_tip", ""),
+            "repo": task.get("repo", []),
+            "commits": task.get("commits", {}),
+            "diff": diff_dict,
+            "merge_base": task.get("merge_base", {}),
+            "merge_tip": task.get("merge_tip", {}),
         }
 
     # --- Task approval endpoints (team-scoped) ---
@@ -488,8 +489,8 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         for t in _list_teams(hc_home):
             try:
                 task = _get_task(hc_home, t, task_id)
-                diff_text = _get_task_diff(hc_home, t, task_id)
-                return {"task_id": task_id, "branch": task.get("branch", ""), "commits": task.get("commits", []), "diff": diff_text, "merge_base": task.get("merge_base", ""), "merge_tip": task.get("merge_tip", "")}
+                diff_dict = _get_task_diff(hc_home, t, task_id)
+                return {"task_id": task_id, "branch": task.get("branch", ""), "repo": task.get("repo", []), "commits": task.get("commits", {}), "diff": diff_dict, "merge_base": task.get("merge_base", {}), "merge_tip": task.get("merge_tip", {})}
             except (FileNotFoundError, Exception):
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")

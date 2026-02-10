@@ -315,7 +315,7 @@ class TestBranchAndCommits:
     def test_create_task_has_branch_and_commits(self, tmp_team):
         task = create_task(tmp_team, TEAM, title="Feature X")
         assert task["branch"] == ""
-        assert task["commits"] == []
+        assert task["commits"] == {}  # dict keyed by repo name
 
     def test_set_task_branch(self, tmp_team):
         task = create_task(tmp_team, TEAM, title="Feature X")
@@ -328,19 +328,19 @@ class TestBranchAndCommits:
     def test_add_task_commit(self, tmp_team):
         task = create_task(tmp_team, TEAM, title="Feature X")
         updated = add_task_commit(tmp_team, TEAM, task["id"], "abc123")
-        assert updated["commits"] == ["abc123"]
+        assert updated["commits"] == {"_default": ["abc123"]}
         # Add another
         updated = add_task_commit(tmp_team, TEAM, task["id"], "def456")
-        assert updated["commits"] == ["abc123", "def456"]
+        assert updated["commits"] == {"_default": ["abc123", "def456"]}
         # Verify persisted
         loaded = get_task(tmp_team, TEAM, task["id"])
-        assert loaded["commits"] == ["abc123", "def456"]
+        assert loaded["commits"] == {"_default": ["abc123", "def456"]}
 
     def test_add_task_commit_no_duplicates(self, tmp_team):
         task = create_task(tmp_team, TEAM, title="Feature X")
         add_task_commit(tmp_team, TEAM, task["id"], "abc123")
         updated = add_task_commit(tmp_team, TEAM, task["id"], "abc123")
-        assert updated["commits"] == ["abc123"]
+        assert updated["commits"] == {"_default": ["abc123"]}
 
     def test_branch_survives_status_update(self, tmp_team):
         task = create_task(tmp_team, TEAM, title="Feature X")
@@ -349,12 +349,12 @@ class TestBranchAndCommits:
         # Change status
         updated = change_status(tmp_team, TEAM, task["id"], "in_progress")
         assert updated["branch"] == "alice/backend/0001-feature-x"
-        assert updated["commits"] == ["abc123"]
+        assert updated["commits"] == {"_default": ["abc123"]}
 
     def test_get_task_diff_no_branch(self, tmp_team):
         task = create_task(tmp_team, TEAM, title="Feature X")
         result = get_task_diff(tmp_team, TEAM, task["id"])
-        assert result == "(no branch set)"
+        assert result == {"_default": "(no branch set)"}
 
     @patch("delegate.task.subprocess.run")
     def test_get_task_diff_with_branch(self, mock_run, tmp_team):
@@ -368,7 +368,7 @@ class TestBranchAndCommits:
         mock_run.return_value = mock_result
 
         diff = get_task_diff(tmp_team, TEAM, task["id"])
-        assert "diff --git" in diff
+        assert "diff --git" in diff["_default"]
         mock_run.assert_called_once()
         call_args = mock_run.call_args
         assert call_args[0][0] == ["git", "diff", "main...alice/backend/0001-feature-x"]
@@ -386,7 +386,7 @@ class TestBranchAndCommits:
         mock_run.side_effect = [fail_result]
 
         diff = get_task_diff(tmp_team, TEAM, task["id"])
-        assert diff == "(no diff available)"
+        assert diff["_default"] == "(no diff available)"
 
     @patch("delegate.task.subprocess.run")
     def test_get_task_diff_no_diff_available(self, mock_run, tmp_team):
@@ -400,14 +400,14 @@ class TestBranchAndCommits:
         mock_run.return_value = fail_result
 
         diff = get_task_diff(tmp_team, TEAM, task["id"])
-        assert diff == "(no diff available)"
+        assert diff["_default"] == "(no diff available)"
 
     def test_new_fields_in_create_task_output(self, tmp_team):
         task = create_task(tmp_team, TEAM, title="Test Fields")
         assert "branch" in task
         assert "commits" in task
         assert isinstance(task["branch"], str)
-        assert isinstance(task["commits"], list)
+        assert isinstance(task["commits"], dict)
 
 
 class TestMergeQueueFields:
@@ -486,19 +486,19 @@ class TestBranchMetadataBackfill:
         mock_run.return_value = mock_result
 
         updated = change_status(tmp_team, TEAM, task["id"], "in_review")
-        assert updated["base_sha"] == "abc123def456789012345678901234567890"
+        assert updated["base_sha"] == {"myrepo": "abc123def456789012345678901234567890"}
 
     def test_in_review_does_not_overwrite_existing_branch(self, tmp_team):
         """If branch is already set, in_review transition should not overwrite it."""
         task = create_task(tmp_team, TEAM, title="Feature X", repo="myrepo")
         assign_task(tmp_team, TEAM, task["id"], "alice")
         set_task_branch(tmp_team, TEAM, task["id"], "alice/custom-branch")
-        update_task(tmp_team, TEAM, task["id"], base_sha="existing_sha")
+        update_task(tmp_team, TEAM, task["id"], base_sha={"myrepo": "existing_sha"})
         change_status(tmp_team, TEAM, task["id"], "in_progress")
 
         updated = change_status(tmp_team, TEAM, task["id"], "in_review")
         assert updated["branch"] == "alice/custom-branch"
-        assert updated["base_sha"] == "existing_sha"
+        assert updated["base_sha"] == {"myrepo": "existing_sha"}
 
     def test_no_backfill_without_repo(self, tmp_team):
         """Tasks without a repo should not attempt backfill."""
@@ -507,7 +507,7 @@ class TestBranchMetadataBackfill:
         change_status(tmp_team, TEAM, task["id"], "in_progress")
         updated = change_status(tmp_team, TEAM, task["id"], "in_review")
         assert updated["branch"] == ""
-        assert updated["base_sha"] == ""
+        assert updated["base_sha"] == {}
 
     @patch("delegate.task.subprocess.run")
     def test_in_approval_backfills_branch(self, mock_run, tmp_team):

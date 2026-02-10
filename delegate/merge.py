@@ -227,6 +227,10 @@ def merge_task(
 ) -> MergeResult:
     """Execute the full merge sequence for a task.
 
+    For multi-repo tasks, each repo is rebased, tested, and merged
+    independently.  If any repo fails, the entire task is marked as
+    ``conflict`` and the merge is aborted.
+
     Args:
         hc_home: Delegate home directory.
         team: Team name.
@@ -238,99 +242,97 @@ def merge_task(
     """
     task = get_task(hc_home, team, task_id)
     branch = task.get("branch", "")
-    repo_name = task.get("repo", "")
+    repos: list[str] = task.get("repo", [])
 
     if not branch:
         return MergeResult(task_id, False, "No branch set on task")
 
-    if not repo_name:
+    if not repos:
         return MergeResult(task_id, False, "No repo set on task")
 
-    # Resolve the repo via symlink
-    repo_dir = get_repo_path(hc_home, team, repo_name)
-    real_repo = repo_dir.resolve()
-    if not real_repo.is_dir():
-        return MergeResult(task_id, False, f"Repo not found: {real_repo}")
-
-    repo_str = str(real_repo)
+    # Resolve all repos and verify they exist
+    repo_dirs: dict[str, str] = {}
+    for repo_name in repos:
+        repo_dir = get_repo_path(hc_home, team, repo_name)
+        real_repo = repo_dir.resolve()
+        if not real_repo.is_dir():
+            return MergeResult(task_id, False, f"repo not found: {real_repo}")
+        repo_dirs[repo_name] = str(real_repo)
 
     log_event(hc_home, team, f"{format_task_id(task_id)} merge started ({branch})")
 
-    # Step 0: Remove agent worktree if branch is still checked out there.
-    # The worktree is no longer needed once the task is in needs_merge status,
-    # and git refuses to rebase/checkout a branch that is checked out elsewhere.
-    # Use DRI (not current assignee) since the worktree lives under the DRI's dir.
+    # Step 0: Remove agent worktrees in all repos.
     dri = task.get("dri", "") or task.get("assignee", "")
     if dri:
-        try:
-            remove_agent_worktree(hc_home, team, repo_name, dri, task_id)
-            logger.info("Removed worktree for %s before merge", format_task_id(task_id))
-        except Exception as exc:
-            logger.warning("Could not remove worktree for %s before merge: %s", format_task_id(task_id), exc)
+        for repo_name in repos:
+            try:
+                remove_agent_worktree(hc_home, team, repo_name, dri, task_id)
+                logger.info("Removed worktree for %s (%s) before merge", format_task_id(task_id), repo_name)
+            except Exception as exc:
+                logger.warning("Could not remove worktree for %s (%s) before merge: %s", format_task_id(task_id), repo_name, exc)
 
-    # Step 1: Rebase onto main
-    base_sha = task.get("base_sha", "")
-    ok, output = _rebase_branch(repo_str, branch, base_sha=base_sha)
-    if not ok:
-        change_status(hc_home, team, task_id, "conflict")
-        notify_conflict(hc_home, team, task, conflict_details=output[:500])
-        log_event(hc_home, team, f"{format_task_id(task_id)} merge conflict during rebase")
-        return MergeResult(task_id, False, f"Rebase conflict: {output[:200]}")
+    base_sha_dict: dict = task.get("base_sha", {})
+    merge_base_dict: dict[str, str] = {}
+    merge_tip_dict: dict[str, str] = {}
 
-    # Step 2: Run pre-merge script / tests (optional)
-    if not skip_tests:
-        ok, output = _run_pre_merge(repo_str, branch, hc_home=hc_home, team=team, repo_name=repo_name)
+    for repo_name in repos:
+        repo_str = repo_dirs[repo_name]
+
+        # Step 1: Rebase onto main
+        base_sha = base_sha_dict.get(repo_name, "")
+        ok, output = _rebase_branch(repo_str, branch, base_sha=base_sha)
         if not ok:
             change_status(hc_home, team, task_id, "conflict")
-            notify_conflict(hc_home, team, task, conflict_details=f"Pre-merge checks failed:\n{output[:500]}")
-            log_event(hc_home, team, f"{format_task_id(task_id)} merge blocked \u2014 pre-merge checks failed")
-            return MergeResult(task_id, False, f"Pre-merge checks failed: {output[:200]}")
+            notify_conflict(hc_home, team, task, conflict_details=f"[{repo_name}] {output[:500]}")
+            log_event(hc_home, team, f"{format_task_id(task_id)} merge conflict during rebase ({repo_name})")
+            return MergeResult(task_id, False, f"Rebase conflict in {repo_name}: {output[:200]}")
 
-    # Step 3: Fast-forward merge
-    # Capture HEAD of main before the merge (merge_base).
-    # Ensure we read main's HEAD, not the current branch.
-    pre_merge = _run_git(["rev-parse", "main"], cwd=repo_str)
-    merge_base_sha = pre_merge.stdout.strip() if pre_merge.returncode == 0 else ""
+        # Step 2: Run pre-merge script / tests (optional)
+        if not skip_tests:
+            ok, output = _run_pre_merge(repo_str, branch, hc_home=hc_home, team=team, repo_name=repo_name)
+            if not ok:
+                change_status(hc_home, team, task_id, "conflict")
+                notify_conflict(hc_home, team, task, conflict_details=f"[{repo_name}] Pre-merge checks failed:\n{output[:500]}")
+                log_event(hc_home, team, f"{format_task_id(task_id)} merge blocked — pre-merge checks failed ({repo_name})")
+                return MergeResult(task_id, False, f"Pre-merge checks failed in {repo_name}: {output[:200]}")
 
-    ok, output = _ff_merge(repo_str, branch)
-    if not ok:
-        change_status(hc_home, team, task_id, "conflict")
-        notify_conflict(hc_home, team, task, conflict_details=output[:500])
-        log_event(hc_home, team, f"{format_task_id(task_id)} merge failed (fast-forward)")
-        return MergeResult(task_id, False, f"Merge failed: {output[:200]}")
+        # Step 3: Fast-forward merge
+        pre_merge = _run_git(["rev-parse", "main"], cwd=repo_str)
+        merge_base_dict[repo_name] = pre_merge.stdout.strip() if pre_merge.returncode == 0 else ""
 
-    # Capture HEAD of main after the merge (merge_tip)
-    post_merge = _run_git(["rev-parse", "main"], cwd=repo_str)
-    merge_tip_sha = post_merge.stdout.strip() if post_merge.returncode == 0 else ""
+        ok, output = _ff_merge(repo_str, branch)
+        if not ok:
+            change_status(hc_home, team, task_id, "conflict")
+            notify_conflict(hc_home, team, task, conflict_details=f"[{repo_name}] {output[:500]}")
+            log_event(hc_home, team, f"{format_task_id(task_id)} merge failed ({repo_name})")
+            return MergeResult(task_id, False, f"Merge failed in {repo_name}: {output[:200]}")
 
-    # Step 4: Record merge_base and merge_tip, then mark as done
-    update_task(hc_home, team, task_id, merge_base=merge_base_sha, merge_tip=merge_tip_sha)
+        post_merge = _run_git(["rev-parse", "main"], cwd=repo_str)
+        merge_tip_dict[repo_name] = post_merge.stdout.strip() if post_merge.returncode == 0 else ""
+
+    # Step 4: Record per-repo merge_base and merge_tip, then mark as done
+    update_task(hc_home, team, task_id, merge_base=merge_base_dict, merge_tip=merge_tip_dict)
     change_status(hc_home, team, task_id, "done")
-    log_event(hc_home, team, f"{format_task_id(task_id)} merged to main \u2713")
+    log_event(hc_home, team, f"{format_task_id(task_id)} merged to main ✓")
 
-    # Step 5: Clean up branch (best effort).
-    # Only delete the branch if no other unmerged tasks still reference it.
-    if _other_unmerged_tasks_on_branch(hc_home, team, branch, exclude_task_id=task_id):
+    # Step 5: Clean up branches (best effort).
+    shared = _other_unmerged_tasks_on_branch(hc_home, team, branch, exclude_task_id=task_id)
+    if shared:
         logger.info(
             "Skipping branch deletion for %s — other unmerged tasks share branch %s",
             format_task_id(task_id), branch,
         )
     else:
-        _cleanup_branch(repo_str, branch)
+        for repo_name in repos:
+            _cleanup_branch(repo_dirs[repo_name], branch)
 
-    # Step 6: Clean up the agent's worktree (best effort, may already be removed in Step 0).
-    # Same guard: skip if other unmerged tasks share the branch (they may need the worktree).
-    if dri:
-        if _other_unmerged_tasks_on_branch(hc_home, team, branch, exclude_task_id=task_id):
-            logger.info(
-                "Skipping worktree removal for %s — other unmerged tasks share branch %s",
-                format_task_id(task_id), branch,
-            )
-        else:
+    # Step 6: Clean up worktrees (best effort).
+    if dri and not shared:
+        for repo_name in repos:
             try:
                 remove_agent_worktree(hc_home, team, repo_name, dri, task_id)
             except Exception as exc:
-                logger.warning("Could not remove worktree for %s: %s", task_id, exc)
+                logger.warning("Could not remove worktree for %s (%s): %s", task_id, repo_name, exc)
 
     return MergeResult(task_id, True, "Merged successfully")
 
@@ -350,14 +352,14 @@ def merge_once(hc_home: Path, team: str) -> list[MergeResult]:
 
     for task in tasks:
         task_id = task["id"]
-        repo_name = task.get("repo", "")
+        repos: list[str] = task.get("repo", [])
 
-        if not repo_name:
+        if not repos:
             # No repo — can't auto-merge, just skip
             continue
 
-        # Check approval mode
-        approval_mode = get_repo_approval(hc_home, team, repo_name)
+        # Check approval mode — use the first repo's setting (most common case)
+        approval_mode = get_repo_approval(hc_home, team, repos[0])
 
         if approval_mode == "auto":
             # Auto-merge: no boss approval needed
@@ -375,8 +377,8 @@ def merge_once(hc_home: Path, team: str) -> list[MergeResult]:
                 )
         else:
             logger.warning(
-                "%s: unknown approval mode '%s' for repo '%s'",
-                task_id, approval_mode, repo_name,
+                "%s: unknown approval mode '%s' for repos %s",
+                task_id, approval_mode, repos,
             )
 
     return results

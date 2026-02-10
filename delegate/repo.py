@@ -254,10 +254,12 @@ def create_agent_worktree(
         try:
             from delegate.task import get_task as _get_task, update_task as _update_task
             task = _get_task(hc_home, team, task_id)
-            if not task.get("base_sha"):
-                base_sha = _get_main_head(real_repo)
-                _update_task(hc_home, team, task_id, base_sha=base_sha)
-                logger.info("Backfilled base_sha=%s for existing worktree %s", base_sha[:8], task_id)
+            existing_base: dict = task.get("base_sha", {})
+            if not existing_base or repo_name not in existing_base:
+                sha = _get_main_head(real_repo)
+                new_base = {**existing_base, repo_name: sha}
+                _update_task(hc_home, team, task_id, base_sha=new_base)
+                logger.info("Backfilled base_sha[%s]=%s for existing worktree %s", repo_name, sha[:8], task_id)
         except Exception as exc:
             logger.warning("Could not backfill base_sha for %s: %s", task_id, exc)
         logger.info("Worktree already exists at %s", wt_path)
@@ -271,12 +273,15 @@ def create_agent_worktree(
         check=False,  # Don't fail if fetch fails (offline, no remote)
     )
 
-    # Record base SHA (current main HEAD) on the task
+    # Record base SHA (current main HEAD) on the task (per-repo dict)
     try:
-        base_sha = _get_main_head(real_repo)
-        from delegate.task import update_task
-        update_task(hc_home, team, task_id, base_sha=base_sha)
-        logger.info("Recorded base_sha=%s for %s", base_sha[:8], task_id)
+        sha = _get_main_head(real_repo)
+        from delegate.task import get_task as _gt, update_task as _ut
+        existing_task = _gt(hc_home, team, task_id)
+        existing_base: dict = existing_task.get("base_sha", {})
+        new_base = {**existing_base, repo_name: sha}
+        _ut(hc_home, team, task_id, base_sha=new_base)
+        logger.info("Recorded base_sha[%s]=%s for %s", repo_name, sha[:8], task_id)
     except Exception as exc:
         logger.warning("Could not record base_sha for %s: %s", task_id, exc)
 

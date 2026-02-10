@@ -326,60 +326,67 @@ def setup_task_worktree(
     agent: str,
     task: dict,
 ) -> Path | None:
-    """Set up a git worktree for the agent's current task if it has a repo.
+    """Set up git worktrees for the agent's current task repos.
 
-    Creates the worktree, sets the task's ``branch`` field, and returns the
-    worktree path.  The branch name is derived from the task's DRI (not the
-    current agent), keeping it stable across reassignments.  Returns *None*
-    if the task has no repo or the repo isn't registered.
+    For multi-repo tasks, creates a worktree in each repo using the same
+    branch name.  Returns the path to the **first** repo's worktree (primary
+    workspace).  Returns *None* if the task has no repos.
     """
-    repo_name = task.get("repo", "")
-    if not repo_name:
+    repos: list[str] = task.get("repo", [])
+    if not repos:
         return None
 
     task_id = task["id"]
     title = task.get("title", "")
     branch = _branch_name(team, task_id, title)
+    primary_wt: Path | None = None
 
-    try:
-        from delegate.repo import create_agent_worktree
-        wt_path = create_agent_worktree(
-            hc_home, team, repo_name, agent, task_id, branch=branch,
-        )
-    except (FileNotFoundError, Exception) as exc:
-        logger.warning(
-            "Could not create worktree for task %s (repo=%s): %s",
-            task_id, repo_name, exc,
-        )
-        return None
+    from delegate.repo import create_agent_worktree
+
+    for repo_name in repos:
+        try:
+            wt_path = create_agent_worktree(
+                hc_home, team, repo_name, agent, task_id, branch=branch,
+            )
+            if primary_wt is None:
+                primary_wt = wt_path
+            logger.info(
+                "Worktree ready for %s on %s in %s: %s (branch %s)",
+                agent, task_id, repo_name, wt_path, branch,
+            )
+        except (FileNotFoundError, Exception) as exc:
+            logger.warning(
+                "Could not create worktree for task %s (repo=%s): %s",
+                task_id, repo_name, exc,
+            )
 
     # Record the branch on the task
-    from delegate.task import set_task_branch
-    set_task_branch(hc_home, team, task_id, branch)
+    if primary_wt is not None:
+        from delegate.task import set_task_branch
+        set_task_branch(hc_home, team, task_id, branch)
 
-    logger.info(
-        "Worktree ready for %s on %s: %s (branch %s)",
-        agent, task_id, wt_path, branch,
-    )
-    return wt_path
+    return primary_wt
 
 
 def push_task_branch(hc_home: Path, team: str, task: dict) -> bool:
-    """Push the task's branch to origin.
+    """Push the task's branch to origin in all repos.
 
-    Returns True on success, False otherwise.
+    Returns True if at least one push succeeded, False otherwise.
     """
-    repo_name = task.get("repo", "")
+    repos: list[str] = task.get("repo", [])
     branch = task.get("branch", "")
-    if not repo_name or not branch:
+    if not repos or not branch:
         return False
 
-    try:
-        from delegate.repo import push_branch
-        return push_branch(hc_home, team, repo_name, branch)
-    except Exception as exc:
-        logger.warning("Failed to push branch %s: %s", branch, exc)
-        return False
+    any_ok = False
+    from delegate.repo import push_branch
+    for repo_name in repos:
+        try:
+            if push_branch(hc_home, team, repo_name, branch):
+                any_ok = True
+        except Exception as exc:
+            logger.warning("Failed to push branch %s in repo %s: %s", branch, repo_name, exc)
+    return any_ok
 
 
 def cleanup_task_worktree(
@@ -388,9 +395,9 @@ def cleanup_task_worktree(
     agent: str,
     task: dict,
 ) -> None:
-    """Push the branch and remove the agent's worktree for a completed task."""
-    repo_name = task.get("repo", "")
-    if not repo_name:
+    """Push the branch and remove the agent's worktrees for a completed task."""
+    repos: list[str] = task.get("repo", [])
+    if not repos:
         return
 
     task_id = task["id"]
@@ -398,14 +405,15 @@ def cleanup_task_worktree(
     # Push first
     push_task_branch(hc_home, team, task)
 
-    # Then remove worktree
-    try:
-        from delegate.repo import remove_agent_worktree
-        remove_agent_worktree(hc_home, team, repo_name, agent, task_id)
-    except Exception as exc:
-        logger.warning(
-            "Could not remove worktree for %s: %s", task_id, exc,
-        )
+    # Then remove worktrees in all repos
+    from delegate.repo import remove_agent_worktree
+    for repo_name in repos:
+        try:
+            remove_agent_worktree(hc_home, team, repo_name, agent, task_id)
+        except Exception as exc:
+            logger.warning(
+                "Could not remove worktree for %s in repo %s: %s", task_id, repo_name, exc,
+            )
 
 
 def _ensure_task_branch_metadata(
@@ -418,7 +426,7 @@ def _ensure_task_branch_metadata(
     """Backfill branch and base_sha on a task when already-existing worktree is reused.
 
     When an agent restarts or a worktree was created before the metadata-saving
-    logic existed, the task YAML may have empty ``branch`` and ``base_sha``
+    logic existed, the task may have empty ``branch`` and ``base_sha``
     fields.  This function detects that and fills them in so downstream diff
     and merge tooling can work.
     """
@@ -433,28 +441,30 @@ def _ensure_task_branch_metadata(
         needs_update = True
         logger.info("Backfilling branch=%s on task %s", branch, task_id)
 
-    # Backfill base_sha from main HEAD in the repo
-    if not task.get("base_sha"):
-        try:
-            from delegate.repo import get_repo_path
-            repo_name = task.get("repo", "")
-            repo_dir = get_repo_path(hc_home, team, repo_name)
-            real_repo = repo_dir.resolve()
-            import subprocess
-            result = subprocess.run(
-                ["git", "merge-base", "main", "HEAD"],
-                cwd=str(wt_path),
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            base_sha = result.stdout.strip()
-            if base_sha:
-                updates["base_sha"] = base_sha
-                needs_update = True
-                logger.info("Backfilling base_sha=%s on task %s", base_sha[:8], task_id)
-        except Exception as exc:
-            logger.warning("Could not backfill base_sha for task %s: %s", task_id, exc)
+    # Backfill base_sha (per-repo dict) from main HEAD in the worktree
+    existing_base_sha: dict = task.get("base_sha", {})
+    repos: list[str] = task.get("repo", [])
+    if not existing_base_sha and repos:
+        import subprocess as _sp
+        base_sha_dict: dict[str, str] = {}
+        for repo_name in repos:
+            try:
+                result = _sp.run(
+                    ["git", "merge-base", "main", "HEAD"],
+                    cwd=str(wt_path),
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                sha = result.stdout.strip()
+                if sha:
+                    base_sha_dict[repo_name] = sha
+                    logger.info("Backfilling base_sha[%s]=%s on task %s", repo_name, sha[:8], task_id)
+            except Exception as exc:
+                logger.warning("Could not backfill base_sha for task %s repo %s: %s", task_id, repo_name, exc)
+        if base_sha_dict:
+            updates["base_sha"] = base_sha_dict
+            needs_update = True
 
     if needs_update:
         from delegate.task import update_task
@@ -483,18 +493,19 @@ def get_task_workspace(
     if task is None:
         return default_workspace
 
-    repo_name = task.get("repo", "")
-    if not repo_name:
+    repos: list[str] = task.get("repo", [])
+    if not repos:
         return default_workspace
 
-    # Check if worktree already exists
+    # Use first repo as primary workspace
+    first_repo = repos[0]
     from delegate.repo import get_worktree_path
-    wt_path = get_worktree_path(hc_home, team, repo_name, agent, task["id"])
+    wt_path = get_worktree_path(hc_home, team, first_repo, agent, task["id"])
     if wt_path.is_dir():
         _ensure_task_branch_metadata(hc_home, team, agent, task, wt_path)
         return wt_path
 
-    # Create it
+    # Create worktrees in all repos, return the first
     created = setup_task_worktree(hc_home, team, agent, task)
     return created if created else default_workspace
 
@@ -639,18 +650,20 @@ def build_system_prompt(
     ws = workspace_path or (ad / "workspace")
     worktree_block = ""
     if current_task and current_task.get("repo"):
-        repo_name = current_task["repo"]
+        repos: list[str] = current_task["repo"]
         branch = current_task.get("branch", "")
         task_id = current_task["id"]
+        repos_str = ", ".join(repos)
         worktree_block = f"""
 GIT WORKTREE:
-    You are working in a git worktree for task {format_task_id(task_id)} (repo: {repo_name}).
+    You are working in git worktrees for task {format_task_id(task_id)}.
+    Repos: {repos_str}
     Your branch: {branch}
-    Worktree path: {ws}
+    Primary worktree path: {ws}
 
     - Commit your changes frequently with clear messages.
     - Do NOT switch branches — stay on {branch}.
-    - When the task is done, push your branch:
+    - When the task is done, push your branch in each repo:
         git push origin {branch}
     - Other agents have their own worktrees and cannot interfere with your work.
 """

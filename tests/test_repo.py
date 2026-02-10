@@ -140,8 +140,10 @@ class TestWorktree:
         )
 
         updated = get_task(hc_home, TEAM, task["id"])
-        assert updated["base_sha"] != ""
-        assert len(updated["base_sha"]) == 40  # Full SHA
+        assert updated["base_sha"] != {}
+        assert isinstance(updated["base_sha"], dict)
+        sha = updated["base_sha"][repo_name]
+        assert len(sha) == 40  # Full SHA
 
     def test_remove_worktree(self, hc_home, local_repo):
         register_repo(hc_home, TEAM, str(local_repo))
@@ -181,17 +183,18 @@ class TestWorktree:
             hc_home, TEAM, repo_name, "alice", task_id=task["id"], branch="alice/T0001",
         )
         t1 = get_task(hc_home, TEAM, task["id"])
-        assert t1["base_sha"] != ""
+        assert isinstance(t1["base_sha"], dict)
+        assert repo_name in t1["base_sha"]
 
         # Clear base_sha to simulate the bug
-        update_task(hc_home, TEAM, task["id"], base_sha="")
+        update_task(hc_home, TEAM, task["id"], base_sha={})
         t_cleared = get_task(hc_home, TEAM, task["id"])
-        assert t_cleared["base_sha"] == ""
+        assert t_cleared["base_sha"] == {}
 
         # Second call should backfill base_sha even though worktree exists
         create_agent_worktree(
             hc_home, TEAM, repo_name, "alice", task_id=task["id"], branch="alice/T0001",
         )
         t2 = get_task(hc_home, TEAM, task["id"])
-        assert t2["base_sha"] != ""
-        assert len(t2["base_sha"]) == 40
+        assert isinstance(t2["base_sha"], dict)
+        assert len(t2["base_sha"][repo_name]) == 40

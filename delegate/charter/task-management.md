@@ -18,7 +18,7 @@ python -m delegate.task detach <home> <task_id> <file_path>
 
 Statuses: `todo` → `in_progress` → `in_review` → `in_approval` → `done`. Also: `rejected` (→ `in_progress`), `conflict` (→ `in_progress`).
 
-Tasks are stored per-team in SQLite. Associate with a repo using `--repo`.
+Tasks are stored per-team in SQLite. Associate with one or more repos using `--repo` (repeatable for multi-repo tasks).
 
 ## DRI and Assignee
 
@@ -32,12 +32,12 @@ The boss's "Action Queue" in the UI shows tasks where the boss is the current as
 ## Workflow
 
 1. Manager creates and assigns task. First assignment sets the DRI.
-2. Agent sets `in_progress`. If task has a repo, workspace auto-sets to a git worktree with `base_sha` recorded.
+2. Agent sets `in_progress`. If task has repos, a git worktree is created in each repo with `base_sha` recorded per-repo.
 3. Agent completes → sets `in_review`. Manager reassigns to the reviewer.
 4. Reviewer reviews diff (base_sha → branch tip), runs tests, checks quality.
 5. Reviewer approves → `in_approval`. Manager reassigns to boss. Reviewer rejects → back to `in_progress`, manager reassigns to DRI with feedback.
 6. Boss approves (manual repos) or auto-merge (auto repos).
-7. Merge worker rebases onto main, runs tests, fast-forward merges.
+7. Merge worker rebases onto main in each repo, runs pre-merge script, fast-forward merges.
 8. Task becomes `done`.
 
 ## Attachments

@@ -77,16 +77,25 @@ def create_task(
     project: str = "",
     priority: str = "medium",
     depends_on: list[int] | None = None,
-    repo: str = "",
+    repo: str | list[str] = "",
     tags: list[str] | None = None,
 ) -> dict:
     """Create a new task. Returns the task dict with assigned ID.
+
+    *repo* can be a single repo name string or a list of repo names for
+    multi-repo tasks.  Stored as a JSON array internally.
 
     *tags* is an optional free-form list of string labels (e.g.
     ``["bugfix", "frontend"]``).
     """
     if priority not in VALID_PRIORITIES:
         raise ValueError(f"Invalid priority '{priority}'. Must be one of: {VALID_PRIORITIES}")
+
+    # Normalize repo to a JSON list
+    if isinstance(repo, str):
+        repo_list = [repo] if repo else []
+    else:
+        repo_list = list(repo)
 
     now = _now()
     conn = get_connection(hc_home, team)
@@ -103,12 +112,13 @@ def create_task(
                 ?, ?, 'todo', '', '',
                 ?, ?, ?, ?,
                 ?, ?, '',
-                ?, '', '', '[]',
-                '', '', '', ''
+                ?, '', '{}', '{}',
+                '', '', '{}', '{}'
             )""",
             (
                 title, description,
-                project, priority, repo,
+                project, priority,
+                json.dumps(repo_list),
                 json.dumps([str(t) for t in tags] if tags else []),
                 now, now,
                 json.dumps([int(d) for d in depends_on] if depends_on else []),
@@ -166,12 +176,22 @@ def update_task(hc_home: Path, team: str, task_id: int, **updates) -> dict:
         set_parts.append(f"{key} = ?")
         if key == "depends_on":
             params.append(json.dumps([int(x) for x in value] if value else []))
-        elif key == "commits":
-            params.append(json.dumps([str(x) for x in value] if value else []))
+        elif key == "repo":
+            # Accept str or list[str]
+            if isinstance(value, str):
+                params.append(json.dumps([value] if value else []))
+            else:
+                params.append(json.dumps([str(x) for x in value] if value else []))
         elif key == "tags":
             params.append(json.dumps([str(x) for x in value] if value else []))
         elif key == "attachments":
             params.append(json.dumps([str(x) for x in value] if value else []))
+        elif key in ("commits", "base_sha", "merge_base", "merge_tip"):
+            # Dict columns keyed by repo name
+            if isinstance(value, dict):
+                params.append(json.dumps(value))
+            else:
+                params.append(json.dumps(value) if value else "{}")
         else:
             params.append(value)
     params.append(task_id)
@@ -213,17 +233,17 @@ def assign_task(hc_home: Path, team: str, task_id: int, assignee: str) -> dict:
 def _backfill_branch_metadata(hc_home: Path, team: str, task: dict, updates: dict) -> None:
     """Try to fill in missing branch and base_sha on a task.
 
-    Called as a safety net when a task enters ``review`` or ``needs_merge``
+    Called as a safety net when a task enters ``in_review`` or ``in_approval``
     status.  If the task already has both fields populated, this is a no-op.
 
     For ``branch``, derives the name from the team and task ID.
-    For ``base_sha``, computes ``git merge-base main <branch>`` in the repo.
+    For ``base_sha``, computes ``git merge-base main <branch>`` per repo.
     """
     import logging
     _log = logging.getLogger(__name__)
 
-    repo_name = task.get("repo", "")
-    if not repo_name:
+    repos = task.get("repo", [])
+    if not repos:
         return
 
     task_id = task["id"]
@@ -234,27 +254,32 @@ def _backfill_branch_metadata(hc_home: Path, team: str, task: dict, updates: dic
         updates["branch"] = branch
         _log.info("Backfilling branch=%s on task %s during status change", branch, task_id)
 
-    # Backfill base_sha
+    # Backfill base_sha (per-repo dict)
     branch = updates.get("branch") or task.get("branch", "")
-    if not task.get("base_sha") and "base_sha" not in updates and branch:
-        try:
-            from delegate.paths import repo_path as _repo_path
-            git_cwd = str(_repo_path(hc_home, team, repo_name))
-            result = subprocess.run(
-                ["git", "merge-base", "main", branch],
-                cwd=git_cwd,
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                updates["base_sha"] = result.stdout.strip()
-                _log.info(
-                    "Backfilling base_sha=%s on task %s during status change",
-                    updates["base_sha"][:8], task_id,
+    existing_base_sha: dict = task.get("base_sha", {})
+    if not existing_base_sha and "base_sha" not in updates and branch:
+        base_sha_dict: dict[str, str] = {}
+        for repo_name in repos:
+            try:
+                from delegate.paths import repo_path as _repo_path
+                git_cwd = str(_repo_path(hc_home, team, repo_name))
+                result = subprocess.run(
+                    ["git", "merge-base", "main", branch],
+                    cwd=git_cwd,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
-        except Exception as exc:
-            _log.warning("Could not backfill base_sha for task %s: %s", task_id, exc)
+                if result.returncode == 0 and result.stdout.strip():
+                    base_sha_dict[repo_name] = result.stdout.strip()
+                    _log.info(
+                        "Backfilling base_sha[%s]=%s on task %s",
+                        repo_name, base_sha_dict[repo_name][:8], task_id,
+                    )
+            except Exception as exc:
+                _log.warning("Could not backfill base_sha for task %s repo %s: %s", task_id, repo_name, exc)
+        if base_sha_dict:
+            updates["base_sha"] = base_sha_dict
 
 
 def change_status(hc_home: Path, team: str, task_id: int, status: str) -> dict:
@@ -304,12 +329,14 @@ def set_task_branch(hc_home: Path, team: str, task_id: int, branch_name: str) ->
     return update_task(hc_home, team, task_id, branch=branch_name)
 
 
-def add_task_commit(hc_home: Path, team: str, task_id: int, commit_sha: str) -> dict:
-    """Append a commit SHA to the task's commits list."""
+def add_task_commit(hc_home: Path, team: str, task_id: int, commit_sha: str, repo_name: str = "_default") -> dict:
+    """Append a commit SHA to the task's commits dict under *repo_name*."""
     task = get_task(hc_home, team, task_id)
-    commits = list(task.get("commits", []))
-    if commit_sha not in commits:
-        commits.append(commit_sha)
+    commits: dict = dict(task.get("commits", {}))
+    repo_commits = list(commits.get(repo_name, []))
+    if commit_sha not in repo_commits:
+        repo_commits.append(commit_sha)
+    commits[repo_name] = repo_commits
     return update_task(hc_home, team, task_id, commits=commits)
 
 
@@ -329,33 +356,47 @@ def detach_file(hc_home: Path, team: str, task_id: int, file_path: str) -> dict:
     return update_task(hc_home, team, task_id, attachments=attachments)
 
 
-def get_task_diff(hc_home: Path, team: str, task_id: int) -> str:
-    """Return the git diff for the task's branch.
+def get_task_diff(hc_home: Path, team: str, task_id: int) -> dict[str, str]:
+    """Return the git diff for the task's branch, keyed by repo name.
 
-    If the task has a ``repo`` field, diffs are run against the repo
-    (via symlink in ``~/.delegate/teams/<team>/repos/<repo>/``).
-    Otherwise falls back to ``hc_home`` as the git working directory.
+    For multi-repo tasks, returns ``{repo_name: diff_text, ...}``.
+    For tasks with no repos, returns ``{"_default": diff_text}``.
 
-    If ``base_sha`` is set on the task, uses ``base_sha...branch`` (three-dot
+    If ``base_sha`` is set per-repo, uses ``base_sha...branch`` (three-dot
     merge-base diff) for a precise diff showing only the agent's changes.
     Otherwise falls back to ``main...branch``.
     """
     task = get_task(hc_home, team, task_id)
     branch = task.get("branch", "")
     if not branch:
-        return "(no branch set)"
+        return {"_default": "(no branch set)"}
 
-    # Determine git cwd — prefer the repo (symlink) if set
-    repo_name = task.get("repo", "")
-    if repo_name:
-        from delegate.paths import repo_path as _repo_path
-        git_cwd = str(_repo_path(hc_home, team, repo_name))
-    else:
-        git_cwd = str(hc_home)
+    repos = task.get("repo", [])
+    if not repos:
+        # No repos — try diff from hc_home
+        diff = _diff_for_one_repo(str(hc_home), branch, task, "_default")
+        return {"_default": diff}
 
+    from delegate.paths import repo_path as _repo_path
+    diffs: dict[str, str] = {}
+    for repo_name in repos:
+        try:
+            git_cwd = str(_repo_path(hc_home, team, repo_name))
+        except FileNotFoundError:
+            diffs[repo_name] = f"(repo '{repo_name}' not found)"
+            continue
+        diffs[repo_name] = _diff_for_one_repo(git_cwd, branch, task, repo_name)
+    return diffs
+
+
+def _diff_for_one_repo(git_cwd: str, branch: str, task: dict, repo_key: str) -> str:
+    """Compute the diff for a single repo within a task."""
     # Prefer merge_base..merge_tip for merged tasks (exact diff that landed)
-    merge_base = task.get("merge_base", "")
-    merge_tip = task.get("merge_tip", "")
+    merge_base_dict: dict = task.get("merge_base", {})
+    merge_tip_dict: dict = task.get("merge_tip", {})
+    merge_base = merge_base_dict.get(repo_key, "")
+    merge_tip = merge_tip_dict.get(repo_key, "")
+
     if merge_base and merge_tip:
         try:
             result = subprocess.run(
@@ -371,7 +412,8 @@ def get_task_diff(hc_home: Path, team: str, task_id: int) -> str:
             pass
 
     # Fall back to base_sha...branch (pre-merge or older tasks)
-    base_sha = task.get("base_sha", "")
+    base_sha_dict: dict = task.get("base_sha", {})
+    base_sha = base_sha_dict.get(repo_key, "")
     diff_base = base_sha if base_sha else "main"
 
     try:

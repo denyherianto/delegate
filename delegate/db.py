@@ -141,7 +141,13 @@ CREATE INDEX IF NOT EXISTS idx_mailbox_recipient_sender_processed
 ]
 
 # Columns that store JSON arrays and need parse/serialize on read/write.
-_JSON_COLUMNS = frozenset({"tags", "depends_on", "commits", "attachments"})
+_JSON_LIST_COLUMNS = frozenset({"tags", "depends_on", "attachments", "repo"})
+
+# Columns that store JSON dicts (keyed by repo name for multi-repo).
+_JSON_DICT_COLUMNS = frozenset({"commits", "base_sha", "merge_base", "merge_tip"})
+
+# Union of both — kept for external callers.
+_JSON_COLUMNS = _JSON_LIST_COLUMNS | _JSON_DICT_COLUMNS
 
 
 # ---------------------------------------------------------------------------
@@ -213,26 +219,77 @@ def task_row_to_dict(row: sqlite3.Row) -> dict:
     """Convert a tasks table row to a plain dict, deserializing JSON columns.
 
     Enforces element types:
+      repo        → list[str]   (repo names, multi-repo)
       depends_on  → list[int]   (task IDs)
-      commits     → list[str]   (commit SHAs)
       tags        → list[str]
       attachments → list[str]   (file paths)
+      commits     → dict[str, list[str]]  (repo → commit SHAs)
+      base_sha    → dict[str, str]        (repo → base SHA)
+      merge_base  → dict[str, str]        (repo → merge base)
+      merge_tip   → dict[str, str]        (repo → merge tip)
     """
     d = dict(row)
-    for col in _JSON_COLUMNS:
+
+    # --- JSON list columns ---
+    for col in _JSON_LIST_COLUMNS:
         raw = d.get(col, "[]")
         if isinstance(raw, str):
             try:
-                d[col] = json.loads(raw)
+                parsed = json.loads(raw)
+                # Backward compat: if a plain string was stored (e.g. old repo field),
+                # wrap it in a list.
+                if isinstance(parsed, str):
+                    d[col] = [parsed] if parsed else []
+                elif isinstance(parsed, list):
+                    d[col] = parsed
+                else:
+                    d[col] = []
             except (json.JSONDecodeError, TypeError):
-                d[col] = []
+                # Non-JSON plain string (legacy repo = "myrepo")
+                if raw and raw != "[]":
+                    d[col] = [raw]
+                else:
+                    d[col] = []
+
+    # --- JSON dict columns (multi-repo keyed by repo name) ---
+    for col in _JSON_DICT_COLUMNS:
+        raw = d.get(col, "{}")
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    d[col] = parsed
+                elif isinstance(parsed, list):
+                    # Backward compat: old commits were a flat list.
+                    repos = d.get("repo", [])
+                    first_repo = repos[0] if repos else "_default"
+                    d[col] = {first_repo: parsed} if parsed else {}
+                elif isinstance(parsed, str) and parsed:
+                    # Backward compat: plain string SHA (legacy base_sha = "abc123")
+                    repos = d.get("repo", [])
+                    first_repo = repos[0] if repos else "_default"
+                    d[col] = {first_repo: parsed}
+                else:
+                    d[col] = {}
+            except (json.JSONDecodeError, TypeError):
+                # Non-JSON plain string (legacy base_sha = "abc123")
+                if raw and raw != "{}" and raw != "[]" and raw != "":
+                    repos = d.get("repo", [])
+                    first_repo = repos[0] if repos else "_default"
+                    d[col] = {first_repo: raw}
+                else:
+                    d[col] = {}
+
     # Coerce element types
     if d.get("depends_on"):
         d["depends_on"] = [int(x) for x in d["depends_on"]]
-    if d.get("commits"):
-        d["commits"] = [str(x) for x in d["commits"]]
     if d.get("tags"):
         d["tags"] = [str(x) for x in d["tags"]]
     if d.get("attachments"):
         d["attachments"] = [str(x) for x in d["attachments"]]
+    if d.get("repo"):
+        d["repo"] = [str(x) for x in d["repo"]]
+    # commits values are lists of strings keyed by repo
+    if d.get("commits"):
+        d["commits"] = {str(k): [str(v) for v in vs] for k, vs in d["commits"].items()}
     return d

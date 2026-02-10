@@ -57,6 +57,42 @@ let _taskSearchTimer = null;
 let _chatFilterDirection = "one-way";
 
 // =====================================================================
+// Multi-repo diff helpers
+// =====================================================================
+
+/**
+ * Flatten a diff dict {repo: diffText, ...} into a single string.
+ * If the input is already a string, return as-is (backward compat).
+ */
+function flattenDiffDict(diff) {
+  if (!diff) return "";
+  if (typeof diff === "string") return diff;
+  if (typeof diff !== "object") return "";
+  var keys = Object.keys(diff);
+  if (keys.length === 0) return "";
+  if (keys.length === 1) return diff[keys[0]] || "";
+  // Multi-repo: prepend a header per repo
+  return keys.map(function (repo) {
+    return "# ── " + repo + " ──\n" + (diff[repo] || "(no diff)");
+  }).join("\n\n");
+}
+
+/**
+ * Flatten a commits dict {repo: [sha, ...], ...} into a flat array.
+ * If the input is already an array, return as-is (backward compat).
+ */
+function flattenCommitsDict(commits) {
+  if (!commits) return [];
+  if (Array.isArray(commits)) return commits;
+  if (typeof commits !== "object") return [];
+  var all = [];
+  Object.keys(commits).forEach(function (repo) {
+    (commits[repo] || []).forEach(function (c) { all.push(c); });
+  });
+  return all;
+}
+
+// =====================================================================
 // Filter persistence (sessionStorage)
 // =====================================================================
 function _saveChatFilters() {
@@ -621,7 +657,10 @@ async function loadTasks() {
   const repos = new Set();
   for (const t of allTasks) {
     if (t.assignee) assignees.add(t.assignee);
-    if (t.repo) repos.add(t.repo);
+    if (t.repo) {
+      var taskRepos = Array.isArray(t.repo) ? t.repo : [t.repo];
+      taskRepos.forEach(function (r) { if (r) repos.add(r); });
+    }
   }
   const assigneeSel = document.getElementById("taskFilterAssignee");
   const prevAssignee = assigneeSel.value;
@@ -654,7 +693,10 @@ async function loadTasks() {
   if (filterAssignee)
     tasks = tasks.filter((t) => t.assignee === filterAssignee);
   if (filterRepo)
-    tasks = tasks.filter((t) => t.repo === filterRepo);
+    tasks = tasks.filter((t) => {
+      var repos = Array.isArray(t.repo) ? t.repo : [t.repo];
+      return repos.indexOf(filterRepo) !== -1;
+    });
   if (searchQuery)
     tasks = tasks.filter((t) => {
       const title = (t.title || "").toLowerCase();
@@ -898,15 +940,34 @@ async function openTaskPanel(taskId) {
     if (stats && stats.branch) {
       body += '<div class="task-panel-vcs-row">';
       body += '<span class="task-branch" title="' + esc(stats.branch) + '">' + esc(stats.branch) + '</span>';
-      if (stats.commits && stats.commits.length) {
-        stats.commits.forEach(function (c) {
+      if (stats.commits && typeof stats.commits === 'object') {
+        var allCommits = [];
+        if (Array.isArray(stats.commits)) {
+          allCommits = stats.commits;
+        } else {
+          Object.keys(stats.commits).forEach(function (repo) {
+            (stats.commits[repo] || []).forEach(function (c) { allCommits.push(c); });
+          });
+        }
+        allCommits.forEach(function (c) {
           body += '<span class="diff-panel-commit">' + esc(String(c).substring(0, 7)) + '</span>';
         });
       }
       body += '</div>';
     }
     // Base SHA
-    if (task.base_sha) {
+    if (task.base_sha && typeof task.base_sha === 'object') {
+      var baseShas = Object.entries(task.base_sha);
+      if (baseShas.length) {
+        body += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Base SHA: ';
+        baseShas.forEach(function (entry) {
+          body += '<code style="font-family:SF Mono,Fira Code,monospace;background:var(--bg-active);padding:2px 6px;border-radius:3px;margin-right:6px">';
+          if (baseShas.length > 1) body += esc(entry[0]) + ': ';
+          body += esc(String(entry[1]).substring(0, 10)) + '</code>';
+        });
+        body += '</div>';
+      }
+    } else if (task.base_sha && typeof task.base_sha === 'string') {
       body += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Base SHA: <code style="font-family:SF Mono,Fira Code,monospace;background:var(--bg-active);padding:2px 6px;border-radius:3px">' + esc(task.base_sha.substring(0, 10)) + '</code></div>';
     }
     // Dependencies
@@ -975,7 +1036,7 @@ async function openTaskPanel(taskId) {
     try {
       const diffRes = await fetch("/teams/" + _currentTeam + "/tasks/" + taskId + "/diff");
       const diffData = await diffRes.json();
-      _taskPanelDiffRaw = diffData.diff || "";
+      _taskPanelDiffRaw = flattenDiffDict(diffData.diff);
       switchTaskPanelDiffTab("files");
     } catch (e) {
       const dc = document.getElementById("taskPanelDiffContent");
@@ -1571,16 +1632,11 @@ async function openDiffPanel(taskId) {
   try {
     const res = await fetch("/teams/" + _currentTeam + "/tasks/" + taskId + "/diff");
     const data = await res.json();
-    // Show merge_base..merge_tip range if available, otherwise branch name
-    if (data.merge_base && data.merge_tip) {
-      document.getElementById("diffPanelBranch").textContent =
-        data.merge_base.substring(0, 7) + ".." + data.merge_tip.substring(0, 7);
-    } else {
-      document.getElementById("diffPanelBranch").textContent =
-        data.branch || "no branch";
-    }
-    document.getElementById("diffPanelCommits").innerHTML = (
-      data.commits || []
+    // Show branch name (merge_base/merge_tip are now dicts)
+    document.getElementById("diffPanelBranch").textContent =
+      data.branch || "no branch";
+    document.getElementById("diffPanelCommits").innerHTML = flattenCommitsDict(
+      data.commits
     )
       .map(
         (c) =>
@@ -1589,7 +1645,7 @@ async function openDiffPanel(taskId) {
           "</span>"
       )
       .join("");
-    _diffRawText = data.diff || "";
+    _diffRawText = flattenDiffDict(data.diff);
     _diffCurrentTab = "files";
     document
       .querySelectorAll(".diff-tab")

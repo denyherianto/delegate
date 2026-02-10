@@ -360,10 +360,10 @@ class TestMergeBaseAndTip:
     """Tests for merge_base and merge_tip fields."""
 
     def test_empty_on_task_creation(self, hc_home):
-        """merge_base and merge_tip should be empty strings on new tasks."""
+        """merge_base and merge_tip should be empty dicts on new tasks."""
         task = create_task(hc_home, SAMPLE_TEAM, title="New task")
-        assert task["merge_base"] == ""
-        assert task["merge_tip"] == ""
+        assert task["merge_base"] == {}
+        assert task["merge_tip"] == {}
 
     def test_set_after_successful_merge(self, hc_home, tmp_path):
         """merge_base and merge_tip should be set after a successful merge."""
@@ -386,16 +386,17 @@ class TestMergeBaseAndTip:
         assert result.success is True
 
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
-        assert updated["merge_base"] == expected_base
-        assert updated["merge_tip"] != ""
-        assert updated["merge_tip"] != updated["merge_base"]
+        # merge_base and merge_tip are now dicts keyed by repo
+        assert updated["merge_base"]["myrepo"] == expected_base
+        assert updated["merge_tip"]["myrepo"] != ""
+        assert updated["merge_tip"]["myrepo"] != updated["merge_base"]["myrepo"]
 
         # merge_tip should be the current HEAD of main
         post_merge = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=str(repo),
             capture_output=True, text=True, check=True,
         )
-        assert updated["merge_tip"] == post_merge.stdout.strip()
+        assert updated["merge_tip"]["myrepo"] == post_merge.stdout.strip()
 
     def test_merge_base_tip_give_correct_diff(self, hc_home, tmp_path):
         """git diff merge_base..merge_tip should show exactly the merged changes."""
@@ -411,8 +412,10 @@ class TestMergeBaseAndTip:
         assert result.success is True
 
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
+        mb = updated["merge_base"]["myrepo"]
+        mt = updated["merge_tip"]["myrepo"]
         diff_result = subprocess.run(
-            ["git", "diff", f"{updated['merge_base']}..{updated['merge_tip']}"],
+            ["git", "diff", f"{mb}..{mt}"],
             cwd=str(repo), capture_output=True, text=True, check=True,
         )
         assert "new_feature.py" in diff_result.stdout
@@ -438,8 +441,8 @@ class TestMergeBaseAndTip:
 
         assert result.success is False
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
-        assert updated["merge_base"] == ""
-        assert updated["merge_tip"] == ""
+        assert updated["merge_base"] == {}
+        assert updated["merge_tip"] == {}
 
 
 class TestMergeOnce:
