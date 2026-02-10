@@ -440,6 +440,7 @@ body {
 .sidebar-agent-name { color: var(--text-primary); font-weight: 500; white-space: nowrap; width: 60px; min-width: 60px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-agent-activity { color: var(--text-secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .sidebar-agent-offline { color: var(--text-faint); }
+.sidebar-agent-idle { color: var(--text-muted); }
 .sidebar-agent-task-sep { color: var(--text-muted); margin: 0 2px; }
 .sidebar-agent-activity .sidebar-task-id { margin-right: 2px; }
 /* Agent last-active time (replaces cost in sidebar) */
@@ -448,7 +449,7 @@ body {
 .sidebar-task-row { display: flex; align-items: center; gap: 8px; height: 28px; min-height: 28px; font-size: 12px; padding: 0 4px; border-radius: 4px; transition: background 0.15s; cursor: pointer; }
 .sidebar-task-row:hover { background: var(--bg-hover); }
 .sidebar-task-id { color: var(--text-muted); font-family: 'SF Mono', 'Fira Code', monospace; font-variant-numeric: tabular-nums; flex-shrink: 0; min-width: 42px; font-size: 11px; }
-.sidebar-task-name { color: var(--text-primary); font-size: 11px; font-weight: 500; flex-shrink: 0; width: 60px; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-task-name { color: var(--text-primary); font-weight: 500; flex-shrink: 0; width: 60px; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-task-title { color: var(--text-secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-see-all { color: var(--accent-blue); font-size: 11px; cursor: pointer; text-decoration: none; text-transform: none; letter-spacing: normal; }
 .sidebar-see-all:hover { text-decoration: underline; }

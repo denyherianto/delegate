@@ -1262,7 +1262,7 @@ async function loadAgents() {
       // Map sidebar dot class to agent-card dot class
       const dotClass = "agent-card-" + sidebarDot;
       const dotTooltip = getAgentDotTooltip(sidebarDot, a, tasks);
-      const statusLabel = sidebarDot === "dot-offline" ? "Offline" : sidebarDot.replace("dot-", "");
+      const statusLabel = sidebarDot === "dot-offline" ? "Offline" : (currentTask ? sidebarDot.replace("dot-", "") : "Idle");
 
       // Row 1: Identity
       const taskLink = currentTask
@@ -1274,7 +1274,7 @@ async function loadAgents() {
       if (a.pid && currentTask) {
         activityText = "Working on " + esc(currentTask.title);
       } else if (a.pid) {
-        activityText = "Working...";
+        activityText = "Idle";
       } else if (a.unread_inbox > 0) {
         activityText = a.unread_inbox + " message" + (a.unread_inbox !== 1 ? "s" : "") + " waiting";
       }
@@ -1406,8 +1406,15 @@ async function loadSidebar() {
       }
       if (actionListEl) actionListEl.innerHTML = actionHtml;
     }
+    // Sort agents: online (any non-offline dot) above offline, alphabetical within each group
+    var sortedAgents = (agents || []).slice().sort(function (a, b) {
+      var aOnline = a.pid ? 0 : 1;
+      var bOnline = b.pid ? 0 : 1;
+      if (aOnline !== bOnline) return aOnline - bOnline;
+      return (a.name || "").localeCompare(b.name || "");
+    });
     let agentHtml = "";
-    for (const a of agents || []) {
+    for (const a of sortedAgents) {
       // Activity-based dot classification
       var dotClass = getAgentDotClass(a, tasks, statsMap[a.name]);
       var dotTooltip = getAgentDotTooltip(dotClass, a, tasks);
@@ -1422,6 +1429,8 @@ async function loadSidebar() {
           '<span class="sidebar-task-id">' + tid + '</span>' +
           '<span class="sidebar-agent-task-sep">\u2014</span> ' +
           esc(currentTask.title);
+      } else if (a.pid) {
+        taskDisplay = '<span class="sidebar-agent-idle">Idle</span>';
       } else {
         taskDisplay = '<span class="sidebar-agent-offline">Offline</span>';
       }
