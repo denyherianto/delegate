@@ -428,27 +428,6 @@ def repo_pipeline_remove(ctx: click.Context, team_name: str, repo_name: str, ste
 
 
 # ──────────────────────────────────────────────────────────────
-# delegate migrate
-# ──────────────────────────────────────────────────────────────
-
-@main.command()
-@click.argument("old_root", type=click.Path(exists=True, path_type=Path))
-@click.argument("team_name")
-@click.pass_context
-def migrate(ctx: click.Context, old_root: Path, team_name: str) -> None:
-    """Migrate old .standup state to the new ~/.delegate structure.
-
-    OLD_ROOT is the directory containing .standup/ (e.g. /path/to/myteam).
-    TEAM_NAME is the name for the team in the new structure.
-    """
-    from delegate.migrate import migrate as run_migrate, print_migration_report
-
-    hc_home = _get_home(ctx)
-    report = run_migrate(old_root.resolve(), team_name, hc_home=hc_home)
-    print_migration_report(report)
-
-
-# ──────────────────────────────────────────────────────────────
 # delegate self-update
 # ──────────────────────────────────────────────────────────────
 
