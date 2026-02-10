@@ -282,7 +282,7 @@ def _get_current_task(hc_home: Path, team: str, agent: str) -> dict | None:
         tasks = list_tasks(hc_home, team, assignee=agent, status="in_progress")
         if len(tasks) == 1:
             return tasks[0]
-        tasks = list_tasks(hc_home, team, assignee=agent, status="open")
+        tasks = list_tasks(hc_home, team, assignee=agent, status="todo")
         if len(tasks) == 1:
             return tasks[0]
     except Exception:
@@ -769,7 +769,7 @@ def build_user_message(
         from delegate.task import list_tasks
         tasks = list_tasks(hc_home, team, assignee=agent)
         if tasks:
-            active = [t for t in tasks if t["status"] in ("open", "in_progress")]
+            active = [t for t in tasks if t["status"] in ("todo", "in_progress")]
             if active:
                 parts.append("\n=== YOUR ASSIGNED TASKS ===")
                 for t in active:

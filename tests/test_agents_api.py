@@ -160,7 +160,7 @@ class TestCurrentTask:
         task = create_task(tmp_team, TEAM, title="Review me")
         assign_task(tmp_team, TEAM, task["id"], "alice")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
-        change_status(tmp_team, TEAM, task["id"], "review")
+        change_status(tmp_team, TEAM, task["id"], "in_review")
 
         resp = client.get(f"/teams/{TEAM}/agents")
         agents = resp.json()

@@ -248,7 +248,7 @@ def _collect_task_metrics(hc_home: Path, team: str = EVAL_TEAM) -> dict:
         status = task.get("status", "")
         if status == "done":
             completed += 1
-        elif status in ("open", "in_progress", "review"):
+        elif status in ("todo", "in_progress", "in_review"):
             failed += 1
 
     metrics["tasks_completed"] = completed

@@ -41,13 +41,13 @@ def hc_home(tmp_path):
     return hc
 
 
-def _make_needs_merge_task(hc_home, title="Task", repo="myrepo", branch="feature/test"):
-    """Helper: create a task and advance it to needs_merge status."""
+def _make_in_approval_task(hc_home, title="Task", repo="myrepo", branch="feature/test"):
+    """Helper: create a task and advance it to in_approval status."""
     task = create_task(hc_home, SAMPLE_TEAM, title=title)
     update_task(hc_home, SAMPLE_TEAM, task["id"], repo=repo, branch=branch)
     change_status(hc_home, SAMPLE_TEAM, task["id"], "in_progress")
-    change_status(hc_home, SAMPLE_TEAM, task["id"], "review")
-    change_status(hc_home, SAMPLE_TEAM, task["id"], "needs_merge")
+    change_status(hc_home, SAMPLE_TEAM, task["id"], "in_review")
+    change_status(hc_home, SAMPLE_TEAM, task["id"], "in_approval")
     return get_task(hc_home, SAMPLE_TEAM, task["id"])
 
 
@@ -98,7 +98,7 @@ class TestMergeTask:
         _make_feature_branch(repo, "alice/T0001")
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001")
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch="alice/T0001")
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
@@ -106,7 +106,7 @@ class TestMergeTask:
         assert "success" in result.message.lower()
 
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
-        assert updated["status"] == "merged"
+        assert updated["status"] == "done"
         assert (repo / "feature.py").exists()  # Feature is on main
 
     def test_rebase_conflict(self, hc_home, tmp_path):
@@ -123,7 +123,7 @@ class TestMergeTask:
 
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001")
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch="alice/T0001")
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
 
         with patch("delegate.merge.notify_conflict") as mock_notify:
@@ -141,8 +141,8 @@ class TestMergeTask:
         task = create_task(hc_home, SAMPLE_TEAM, title="No branch")
         update_task(hc_home, SAMPLE_TEAM, task["id"], repo="myrepo")
         change_status(hc_home, SAMPLE_TEAM, task["id"], "in_progress")
-        change_status(hc_home, SAMPLE_TEAM, task["id"], "review")
-        change_status(hc_home, SAMPLE_TEAM, task["id"], "needs_merge")
+        change_status(hc_home, SAMPLE_TEAM, task["id"], "in_review")
+        change_status(hc_home, SAMPLE_TEAM, task["id"], "in_approval")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
         assert result.success is False
@@ -154,8 +154,8 @@ class TestMergeTask:
         task = create_task(hc_home, SAMPLE_TEAM, title="No repo")
         update_task(hc_home, SAMPLE_TEAM, task["id"], branch="some/branch")
         change_status(hc_home, SAMPLE_TEAM, task["id"], "in_progress")
-        change_status(hc_home, SAMPLE_TEAM, task["id"], "review")
-        change_status(hc_home, SAMPLE_TEAM, task["id"], "needs_merge")
+        change_status(hc_home, SAMPLE_TEAM, task["id"], "in_review")
+        change_status(hc_home, SAMPLE_TEAM, task["id"], "in_approval")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
         assert result.success is False
@@ -179,7 +179,7 @@ class TestMergeTask:
         )
         assert wt_path.exists()
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
         update_task(hc_home, SAMPLE_TEAM, task["id"], assignee="alice", approval_status="approved")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
@@ -187,7 +187,7 @@ class TestMergeTask:
         assert not wt_path.exists(), "Worktree should have been removed"
 
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
-        assert updated["status"] == "merged"
+        assert updated["status"] == "done"
 
     def test_merge_succeeds_with_unstaged_changes(self, hc_home, tmp_path):
         """Merge should stash unstaged changes before rebasing and restore after."""
@@ -199,14 +199,14 @@ class TestMergeTask:
         # Create an unstaged change in the repo working directory
         (repo / "untracked_file.js").write_text("// generated\n")
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
         assert result.success is True, f"Merge failed: {result.message}"
 
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
-        assert updated["status"] == "merged"
+        assert updated["status"] == "done"
 
         # The untracked file should still be present after merge
         assert (repo / "untracked_file.js").exists(), "Stashed file should be restored"
@@ -221,14 +221,14 @@ class TestMergeTask:
         # Modify a tracked file without staging it
         (repo / "README.md").write_text("# Modified but not staged\n")
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
         assert result.success is True, f"Merge failed: {result.message}"
 
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
-        assert updated["status"] == "merged"
+        assert updated["status"] == "done"
 
     def test_rebase_onto_with_base_sha(self, hc_home, tmp_path):
         """When base_sha is set on the task, rebase uses --onto to replay
@@ -256,14 +256,14 @@ class TestMergeTask:
 
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved", base_sha=base_sha)
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
         assert result.success is True, f"Merge with --onto failed: {result.message}"
 
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
-        assert updated["status"] == "merged"
+        assert updated["status"] == "done"
         assert (repo / "onto_feature.py").exists()  # Agent's commit landed
 
     def test_rebase_fallback_without_base_sha(self, hc_home, tmp_path):
@@ -273,7 +273,7 @@ class TestMergeTask:
         _make_feature_branch(repo, branch, filename="nobase.py", content="# no base\n")
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
         # Explicitly set base_sha to empty string (simulating a task without it)
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved", base_sha="")
 
@@ -281,7 +281,7 @@ class TestMergeTask:
         assert result.success is True, f"Fallback merge failed: {result.message}"
 
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
-        assert updated["status"] == "merged"
+        assert updated["status"] == "done"
         assert (repo / "nobase.py").exists()
 
     def test_rebase_onto_excludes_reverted_commits(self, hc_home, tmp_path):
@@ -336,14 +336,14 @@ class TestMergeTask:
 
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved", base_sha=base_sha)
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
         assert result.success is True, f"Rebase --onto with reverted commits failed: {result.message}"
 
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
-        assert updated["status"] == "merged"
+        assert updated["status"] == "done"
 
         # Agent's work should be on main
         assert (repo / "agent_work.py").exists()
@@ -379,7 +379,7 @@ class TestMergeBaseAndTip:
         )
         expected_base = pre_merge.stdout.strip()
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
@@ -404,7 +404,7 @@ class TestMergeBaseAndTip:
         _make_feature_branch(repo, branch, filename="new_feature.py", content="# feature code\n")
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
@@ -430,7 +430,7 @@ class TestMergeBaseAndTip:
 
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001")
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch="alice/T0001")
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
 
         with patch("delegate.merge.notify_conflict"):
@@ -452,8 +452,8 @@ class TestMergeOnce:
         task = create_task(hc_home, SAMPLE_TEAM, title="No repo")
         update_task(hc_home, SAMPLE_TEAM, task["id"], branch="some/branch")
         change_status(hc_home, SAMPLE_TEAM, task["id"], "in_progress")
-        change_status(hc_home, SAMPLE_TEAM, task["id"], "review")
-        change_status(hc_home, SAMPLE_TEAM, task["id"], "needs_merge")
+        change_status(hc_home, SAMPLE_TEAM, task["id"], "in_review")
+        change_status(hc_home, SAMPLE_TEAM, task["id"], "in_approval")
 
         results = merge_once(hc_home, SAMPLE_TEAM)
         assert results == []
@@ -461,7 +461,7 @@ class TestMergeOnce:
     def test_skips_manual_unapproved(self, hc_home):
         """Manual approval tasks without approval_status='approved' are skipped."""
         add_repo(hc_home, SAMPLE_TEAM, "myrepo", "/fake", approval="manual")
-        _make_needs_merge_task(hc_home, title="Unapproved")
+        _make_in_approval_task(hc_home, title="Unapproved")
         results = merge_once(hc_home, SAMPLE_TEAM)
         assert results == []
 
@@ -471,7 +471,7 @@ class TestMergeOnce:
         _make_feature_branch(repo, "alice/T0001")
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001")
+        _make_in_approval_task(hc_home, repo="myrepo", branch="alice/T0001")
 
         results = merge_once(hc_home, SAMPLE_TEAM)
         assert len(results) == 1
@@ -488,7 +488,7 @@ class TestMergeOnce:
         (rd / "myrepo").symlink_to(repo)
         add_repo(hc_home, SAMPLE_TEAM, "myrepo", str(repo), approval="manual")
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001")
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch="alice/T0001")
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
 
         results = merge_once(hc_home, SAMPLE_TEAM)
@@ -496,7 +496,7 @@ class TestMergeOnce:
         assert results[0].success is True
 
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
-        assert updated["status"] == "merged"
+        assert updated["status"] == "done"
 
 
 # ---------------------------------------------------------------------------
@@ -729,7 +729,7 @@ class TestRunPipeline:
             {"name": "test", "run": "false"},
         ])
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
 
         with patch("delegate.merge.notify_conflict"):
@@ -753,14 +753,14 @@ class TestRunPipeline:
             {"name": "test", "run": "echo all-tests-pass"},
         ])
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
         assert result.success is True
 
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
-        assert updated["status"] == "merged"
+        assert updated["status"] == "done"
 
 
 # ---------------------------------------------------------------------------
@@ -799,9 +799,9 @@ class TestSharedBranchCleanup:
 
         # Advance t1 to merged
         change_status(hc_home, SAMPLE_TEAM, t1["id"], "in_progress")
-        change_status(hc_home, SAMPLE_TEAM, t1["id"], "review")
-        change_status(hc_home, SAMPLE_TEAM, t1["id"], "needs_merge")
-        change_status(hc_home, SAMPLE_TEAM, t1["id"], "merged")
+        change_status(hc_home, SAMPLE_TEAM, t1["id"], "in_review")
+        change_status(hc_home, SAMPLE_TEAM, t1["id"], "in_approval")
+        change_status(hc_home, SAMPLE_TEAM, t1["id"], "done")
 
         # t2 is in_progress — from t2's perspective, t1 is merged, so False
         change_status(hc_home, SAMPLE_TEAM, t2["id"], "in_progress")
@@ -828,15 +828,15 @@ class TestSharedBranchCleanup:
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
         # Create two tasks sharing the same branch
-        t1 = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
-        t2 = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        t1 = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
+        t2 = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
         update_task(hc_home, SAMPLE_TEAM, t1["id"], approval_status="approved")
         update_task(hc_home, SAMPLE_TEAM, t2["id"], approval_status="approved")
 
         # Merge the first task
         result = merge_task(hc_home, SAMPLE_TEAM, t1["id"], skip_tests=True)
         assert result.success is True
-        assert get_task(hc_home, SAMPLE_TEAM, t1["id"])["status"] == "merged"
+        assert get_task(hc_home, SAMPLE_TEAM, t1["id"])["status"] == "done"
 
         # The branch must still exist because t2 is not merged yet
         branch_check = subprocess.run(
@@ -854,8 +854,8 @@ class TestSharedBranchCleanup:
         _make_feature_branch(repo, branch)
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        t1 = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
-        t2 = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        t1 = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
+        t2 = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
         update_task(hc_home, SAMPLE_TEAM, t1["id"], approval_status="approved")
         update_task(hc_home, SAMPLE_TEAM, t2["id"], approval_status="approved")
 
@@ -883,7 +883,7 @@ class TestSharedBranchCleanup:
         _make_feature_branch(repo, branch)
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch)
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)

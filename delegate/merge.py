@@ -1,6 +1,6 @@
 """Merge worker — rebase, test, fast-forward merge for approved tasks.
 
-The merge sequence for a task in ``needs_merge`` with ``approval_status == 'approved'``
+The merge sequence for a task in ``in_approval`` with ``approval_status == 'approved'``
 (or ``approval == 'auto'`` on the repo):
 
 1. ``git rebase --onto main <base_sha> <branch>``  — rebase the agent's commits onto latest main.
@@ -8,7 +8,7 @@ The merge sequence for a task in ``needs_merge`` with ``approval_status == 'appr
 3. Run test suite on the rebased branch.
 4. If tests fail: set task to ``conflict``, notify manager.
 5. ``git merge --ff-only <branch>`` — atomic fast-forward of main.
-6. Set task to ``merged``.
+6. Set task to ``done``.
 7. Clean up: remove worktree, delete branch, prune.
 
 The merge worker is called from the daemon loop (via ``merge_once``).
@@ -211,16 +211,16 @@ def _other_unmerged_tasks_on_branch(
     branch: str,
     exclude_task_id: int,
 ) -> bool:
-    """Check whether any other task shares *branch* and is not yet merged.
+    """Check whether any other task shares *branch* and is not yet done.
 
     Returns ``True`` when at least one other task on the same branch still
-    has a non-``merged`` status, meaning the branch should be kept alive.
+    has a non-``done`` status, meaning the branch should be kept alive.
     """
     all_tasks = list_tasks(hc_home, team)
     for t in all_tasks:
         if t["id"] == exclude_task_id:
             continue
-        if t.get("branch") == branch and t.get("status") != "merged":
+        if t.get("branch") == branch and t.get("status") != "done":
             return True
     return False
 
@@ -315,9 +315,9 @@ def merge_task(
     post_merge = _run_git(["rev-parse", "main"], cwd=repo_str)
     merge_tip_sha = post_merge.stdout.strip() if post_merge.returncode == 0 else ""
 
-    # Step 4: Record merge_base and merge_tip, then mark as merged
+    # Step 4: Record merge_base and merge_tip, then mark as done
     update_task(hc_home, team, task_id, merge_base=merge_base_sha, merge_tip=merge_tip_sha)
-    change_status(hc_home, team, task_id, "merged")
+    change_status(hc_home, team, task_id, "done")
     log_event(hc_home, team, f"{format_task_id(task_id)} merged to main \u2713")
 
     # Step 5: Clean up branch (best effort).
@@ -351,13 +351,13 @@ def merge_once(hc_home: Path, team: str) -> list[MergeResult]:
     """Scan for tasks ready to merge and process them.
 
     A task is ready to merge if:
-    - status == 'needs_merge'
+    - status == 'in_approval'
     - approval_status == 'approved' (for manual-approval repos)
     - OR the repo has approval == 'auto'
 
     Returns list of merge results.
     """
-    tasks = list_tasks(hc_home, team, status="needs_merge")
+    tasks = list_tasks(hc_home, team, status="in_approval")
     results = []
 
     for task in tasks:

@@ -52,7 +52,7 @@ class TestCreateTask:
         assert loaded["description"] == "REST endpoints"
         assert loaded["project"] == "backend"
         assert loaded["priority"] == "high"
-        assert loaded["status"] == "open"
+        assert loaded["status"] == "todo"
         assert loaded["assignee"] == ""
         assert loaded["completed_at"] == ""
         assert loaded["created_at"]
@@ -121,30 +121,30 @@ class TestAssignTask:
 
 class TestChangeStatus:
     def test_valid_transition_chain(self, tmp_team):
-        """Test a full valid transition chain: open -> in_progress -> review -> done."""
+        """Test a full valid transition chain: todo -> in_progress -> in_review -> done."""
         task = create_task(tmp_team, TEAM, title="Work")
-        assert task["status"] == "open"
+        assert task["status"] == "todo"
 
         task = change_status(tmp_team, TEAM, task["id"], "in_progress")
         assert task["status"] == "in_progress"
 
-        task = change_status(tmp_team, TEAM, task["id"], "review")
-        assert task["status"] == "review"
+        task = change_status(tmp_team, TEAM, task["id"], "in_review")
+        assert task["status"] == "in_review"
 
         task = change_status(tmp_team, TEAM, task["id"], "done")
         assert task["status"] == "done"
 
     def test_merge_queue_transition_chain(self, tmp_team):
-        """Test merge queue path: open -> in_progress -> review -> needs_merge -> merged."""
+        """Test approval path: todo -> in_progress -> in_review -> in_approval -> done."""
         task = create_task(tmp_team, TEAM, title="Repo Work")
 
         task = change_status(tmp_team, TEAM, task["id"], "in_progress")
-        task = change_status(tmp_team, TEAM, task["id"], "review")
-        task = change_status(tmp_team, TEAM, task["id"], "needs_merge")
-        assert task["status"] == "needs_merge"
+        task = change_status(tmp_team, TEAM, task["id"], "in_review")
+        task = change_status(tmp_team, TEAM, task["id"], "in_approval")
+        assert task["status"] == "in_approval"
 
-        task = change_status(tmp_team, TEAM, task["id"], "merged")
-        assert task["status"] == "merged"
+        task = change_status(tmp_team, TEAM, task["id"], "done")
+        assert task["status"] == "done"
 
     def test_invalid_status_raises(self, tmp_team):
         task = create_task(tmp_team, TEAM, title="Work")
@@ -152,16 +152,16 @@ class TestChangeStatus:
             change_status(tmp_team, TEAM, task["id"], "invalid")
 
     def test_invalid_transition_raises(self, tmp_team):
-        """Cannot skip statuses — e.g. open -> review is invalid."""
+        """Cannot skip statuses — e.g. todo -> in_review is invalid."""
         task = create_task(tmp_team, TEAM, title="Work")
         with pytest.raises(ValueError, match="Invalid transition"):
-            change_status(tmp_team, TEAM, task["id"], "review")
+            change_status(tmp_team, TEAM, task["id"], "in_review")
 
     def test_terminal_status_raises(self, tmp_team):
-        """Cannot transition out of terminal statuses (done, merged)."""
+        """Cannot transition out of terminal status (done)."""
         task = create_task(tmp_team, TEAM, title="Work")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
-        change_status(tmp_team, TEAM, task["id"], "review")
+        change_status(tmp_team, TEAM, task["id"], "in_review")
         change_status(tmp_team, TEAM, task["id"], "done")
         with pytest.raises(ValueError, match="terminal status"):
             change_status(tmp_team, TEAM, task["id"], "in_progress")
@@ -171,20 +171,20 @@ class TestChangeStatus:
         assert task["completed_at"] == ""
 
         change_status(tmp_team, TEAM, task["id"], "in_progress")
-        change_status(tmp_team, TEAM, task["id"], "review")
+        change_status(tmp_team, TEAM, task["id"], "in_review")
         updated = change_status(tmp_team, TEAM, task["id"], "done")
         assert updated["completed_at"] != ""
         assert updated["completed_at"].startswith("20")
 
-    def test_completed_at_set_on_merged(self, tmp_team):
-        """completed_at should also be set when status becomes 'merged'."""
+    def test_completed_at_set_on_done_via_approval(self, tmp_team):
+        """completed_at should be set when done via the approval path."""
         task = create_task(tmp_team, TEAM, title="Repo Work")
         assert task["completed_at"] == ""
 
         change_status(tmp_team, TEAM, task["id"], "in_progress")
-        change_status(tmp_team, TEAM, task["id"], "review")
-        change_status(tmp_team, TEAM, task["id"], "needs_merge")
-        updated = change_status(tmp_team, TEAM, task["id"], "merged")
+        change_status(tmp_team, TEAM, task["id"], "in_review")
+        change_status(tmp_team, TEAM, task["id"], "in_approval")
+        updated = change_status(tmp_team, TEAM, task["id"], "done")
         assert updated["completed_at"] != ""
         assert updated["completed_at"].startswith("20")
 
@@ -193,21 +193,21 @@ class TestChangeStatus:
         updated = change_status(tmp_team, TEAM, task["id"], "in_progress")
         assert updated["completed_at"] == ""
 
-    def test_needs_merge_to_rejected(self, tmp_team):
-        """needs_merge -> rejected is a valid transition."""
+    def test_in_approval_to_rejected(self, tmp_team):
+        """in_approval -> rejected is a valid transition."""
         task = create_task(tmp_team, TEAM, title="Work")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
-        change_status(tmp_team, TEAM, task["id"], "review")
-        change_status(tmp_team, TEAM, task["id"], "needs_merge")
+        change_status(tmp_team, TEAM, task["id"], "in_review")
+        change_status(tmp_team, TEAM, task["id"], "in_approval")
         updated = change_status(tmp_team, TEAM, task["id"], "rejected")
         assert updated["status"] == "rejected"
 
-    def test_needs_merge_to_conflict(self, tmp_team):
-        """needs_merge -> conflict is a valid transition."""
+    def test_in_approval_to_conflict(self, tmp_team):
+        """in_approval -> conflict is a valid transition."""
         task = create_task(tmp_team, TEAM, title="Work")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
-        change_status(tmp_team, TEAM, task["id"], "review")
-        change_status(tmp_team, TEAM, task["id"], "needs_merge")
+        change_status(tmp_team, TEAM, task["id"], "in_review")
+        change_status(tmp_team, TEAM, task["id"], "in_approval")
         updated = change_status(tmp_team, TEAM, task["id"], "conflict")
         assert updated["status"] == "conflict"
 
@@ -215,8 +215,8 @@ class TestChangeStatus:
         """rejected -> in_progress (rework) is a valid transition."""
         task = create_task(tmp_team, TEAM, title="Work")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
-        change_status(tmp_team, TEAM, task["id"], "review")
-        change_status(tmp_team, TEAM, task["id"], "needs_merge")
+        change_status(tmp_team, TEAM, task["id"], "in_review")
+        change_status(tmp_team, TEAM, task["id"], "in_approval")
         change_status(tmp_team, TEAM, task["id"], "rejected")
         updated = change_status(tmp_team, TEAM, task["id"], "in_progress")
         assert updated["status"] == "in_progress"
@@ -225,8 +225,8 @@ class TestChangeStatus:
         """conflict -> in_progress (rebase) is a valid transition."""
         task = create_task(tmp_team, TEAM, title="Work")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
-        change_status(tmp_team, TEAM, task["id"], "review")
-        change_status(tmp_team, TEAM, task["id"], "needs_merge")
+        change_status(tmp_team, TEAM, task["id"], "in_review")
+        change_status(tmp_team, TEAM, task["id"], "in_approval")
         change_status(tmp_team, TEAM, task["id"], "conflict")
         updated = change_status(tmp_team, TEAM, task["id"], "in_progress")
         assert updated["status"] == "in_progress"
@@ -247,7 +247,7 @@ class TestListTasks:
         t2 = create_task(tmp_team, TEAM, title="B")
         change_status(tmp_team, TEAM, t1["id"], "in_progress")
 
-        open_tasks = list_tasks(tmp_team, TEAM, status="open")
+        open_tasks = list_tasks(tmp_team, TEAM, status="todo")
         assert len(open_tasks) == 1
         assert open_tasks[0]["id"] == t2["id"]
 
@@ -306,7 +306,7 @@ class TestEventLogging:
         t = create_task(tmp_team, TEAM, title="Build API")
         change_status(tmp_team, TEAM, t["id"], "in_progress")
         events = get_messages(tmp_team, TEAM, msg_type="event")
-        assert any("T0001 Open" in e["content"] and "In Progress" in e["content"] for e in events)
+        assert any("T0001 Todo" in e["content"] and "In Progress" in e["content"] for e in events)
 
 
 class TestBranchAndCommits:
@@ -457,8 +457,8 @@ class TestBranchMetadataBackfill:
     """Tests that branch and base_sha are backfilled on status transitions."""
 
     @patch("delegate.task.subprocess.run")
-    def test_review_backfills_branch_when_empty(self, mock_run, tmp_team):
-        """Transitioning to review should backfill branch from assignee + task_id."""
+    def test_in_review_backfills_branch_when_empty(self, mock_run, tmp_team):
+        """Transitioning to in_review should backfill branch from assignee + task_id."""
         task = create_task(tmp_team, TEAM, title="Feature X", repo="myrepo")
         assign_task(tmp_team, TEAM, task["id"], "alice")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
@@ -469,12 +469,12 @@ class TestBranchMetadataBackfill:
         mock_result.stdout = "abc123def456" * 3 + "abcd"  # 40 chars
         mock_run.return_value = mock_result
 
-        updated = change_status(tmp_team, TEAM, task["id"], "review")
+        updated = change_status(tmp_team, TEAM, task["id"], "in_review")
         assert updated["branch"] == f"delegate/{TEAM}/T0001"
 
     @patch("delegate.task.subprocess.run")
-    def test_review_backfills_base_sha_when_empty(self, mock_run, tmp_team):
-        """Transitioning to review should backfill base_sha via git merge-base."""
+    def test_in_review_backfills_base_sha_when_empty(self, mock_run, tmp_team):
+        """Transitioning to in_review should backfill base_sha via git merge-base."""
         task = create_task(tmp_team, TEAM, title="Feature X", repo="myrepo")
         assign_task(tmp_team, TEAM, task["id"], "alice")
         set_task_branch(tmp_team, TEAM, task["id"], "alice/T0001")
@@ -485,18 +485,18 @@ class TestBranchMetadataBackfill:
         mock_result.stdout = "abc123def456789012345678901234567890"  # 36 chars
         mock_run.return_value = mock_result
 
-        updated = change_status(tmp_team, TEAM, task["id"], "review")
+        updated = change_status(tmp_team, TEAM, task["id"], "in_review")
         assert updated["base_sha"] == "abc123def456789012345678901234567890"
 
-    def test_review_does_not_overwrite_existing_branch(self, tmp_team):
-        """If branch is already set, review transition should not overwrite it."""
+    def test_in_review_does_not_overwrite_existing_branch(self, tmp_team):
+        """If branch is already set, in_review transition should not overwrite it."""
         task = create_task(tmp_team, TEAM, title="Feature X", repo="myrepo")
         assign_task(tmp_team, TEAM, task["id"], "alice")
         set_task_branch(tmp_team, TEAM, task["id"], "alice/custom-branch")
         update_task(tmp_team, TEAM, task["id"], base_sha="existing_sha")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
 
-        updated = change_status(tmp_team, TEAM, task["id"], "review")
+        updated = change_status(tmp_team, TEAM, task["id"], "in_review")
         assert updated["branch"] == "alice/custom-branch"
         assert updated["base_sha"] == "existing_sha"
 
@@ -505,13 +505,13 @@ class TestBranchMetadataBackfill:
         task = create_task(tmp_team, TEAM, title="No Repo Task")
         assign_task(tmp_team, TEAM, task["id"], "alice")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
-        updated = change_status(tmp_team, TEAM, task["id"], "review")
+        updated = change_status(tmp_team, TEAM, task["id"], "in_review")
         assert updated["branch"] == ""
         assert updated["base_sha"] == ""
 
     @patch("delegate.task.subprocess.run")
-    def test_needs_merge_backfills_branch(self, mock_run, tmp_team):
-        """Transitioning to needs_merge should also backfill branch."""
+    def test_in_approval_backfills_branch(self, mock_run, tmp_team):
+        """Transitioning to in_approval should also backfill branch."""
         task = create_task(tmp_team, TEAM, title="Feature X", repo="myrepo")
         assign_task(tmp_team, TEAM, task["id"], "alice")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
@@ -522,10 +522,10 @@ class TestBranchMetadataBackfill:
         mock_result.stdout = "abc123def456789012345678901234567890"
         mock_run.return_value = mock_result
 
-        change_status(tmp_team, TEAM, task["id"], "review")
+        change_status(tmp_team, TEAM, task["id"], "in_review")
 
-        # Branch was backfilled during review; verify it's still there for needs_merge
-        updated = change_status(tmp_team, TEAM, task["id"], "needs_merge")
+        # Branch was backfilled during in_review; verify it's still there for in_approval
+        updated = change_status(tmp_team, TEAM, task["id"], "in_approval")
         assert updated["branch"] == f"delegate/{TEAM}/T0001"
 
 

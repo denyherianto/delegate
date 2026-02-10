@@ -39,16 +39,14 @@ html, body { height: 100%; }
   --backdrop-bg: rgba(0,0,0,0.3);
   --bg-panel-body: #ffffff;
   /* Task status colors */
-  --status-open: #3b82f6;
-  --status-open-bg: rgba(59,130,246,0.1);
+  --status-todo: #3b82f6;
+  --status-todo-bg: rgba(59,130,246,0.1);
   --status-in-progress: #f59e0b;
   --status-in-progress-bg: rgba(245,158,11,0.1);
-  --status-review: #8b5cf6;
-  --status-review-bg: rgba(139,92,246,0.1);
-  --status-needs-merge: #8b5cf6;
-  --status-needs-merge-bg: rgba(139,92,246,0.12);
-  --status-merged: #22c55e;
-  --status-merged-bg: rgba(34,197,94,0.12);
+  --status-in-review: #8b5cf6;
+  --status-in-review-bg: rgba(139,92,246,0.1);
+  --status-in-approval: #8b5cf6;
+  --status-in-approval-bg: rgba(139,92,246,0.12);
   --status-done: #22c55e;
   --status-done-bg: rgba(34,197,94,0.12);
   --status-rejected: #ef4444;
@@ -92,16 +90,14 @@ html, body { height: 100%; }
   --backdrop-bg: rgba(0,0,0,0.5);
   --bg-panel-body: #111113;
   /* Task status colors (dark mode) */
-  --status-open: #60a5fa;
-  --status-open-bg: rgba(96,165,250,0.12);
+  --status-todo: #60a5fa;
+  --status-todo-bg: rgba(96,165,250,0.12);
   --status-in-progress: #fbbf24;
   --status-in-progress-bg: rgba(251,191,36,0.12);
-  --status-review: #a78bfa;
-  --status-review-bg: rgba(167,139,250,0.12);
-  --status-needs-merge: #a78bfa;
-  --status-needs-merge-bg: rgba(167,139,250,0.12);
-  --status-merged: #4ade80;
-  --status-merged-bg: rgba(74,222,128,0.12);
+  --status-in-review: #a78bfa;
+  --status-in-review-bg: rgba(167,139,250,0.12);
+  --status-in-approval: #a78bfa;
+  --status-in-approval-bg: rgba(167,139,250,0.12);
   --status-done: #4ade80;
   --status-done-bg: rgba(74,222,128,0.12);
   --status-rejected: #f87171;
@@ -146,16 +142,14 @@ html, body { height: 100%; }
     --backdrop-bg: rgba(0,0,0,0.5);
     --bg-panel-body: #111113;
     /* Task status colors (dark mode auto) */
-    --status-open: #60a5fa;
-    --status-open-bg: rgba(96,165,250,0.12);
+    --status-todo: #60a5fa;
+    --status-todo-bg: rgba(96,165,250,0.12);
     --status-in-progress: #fbbf24;
     --status-in-progress-bg: rgba(251,191,36,0.12);
-    --status-review: #a78bfa;
-    --status-review-bg: rgba(167,139,250,0.12);
-    --status-needs-merge: #a78bfa;
-    --status-needs-merge-bg: rgba(167,139,250,0.12);
-    --status-merged: #4ade80;
-    --status-merged-bg: rgba(74,222,128,0.12);
+    --status-in-review: #a78bfa;
+    --status-in-review-bg: rgba(167,139,250,0.12);
+    --status-in-approval: #a78bfa;
+    --status-in-approval-bg: rgba(167,139,250,0.12);
     --status-done: #4ade80;
     --status-done-bg: rgba(74,222,128,0.12);
     --status-rejected: #f87171;
@@ -420,11 +414,10 @@ body {
 /* Task dot indicators (replacing text badges) */
 .sidebar-task-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
 /* Task status dots — use CSS custom properties for automatic dark mode */
-.sidebar-task-dot.dot-open { background: var(--status-open); }
+.sidebar-task-dot.dot-todo { background: var(--status-todo); }
 .sidebar-task-dot.dot-in_progress { background: var(--status-in-progress); box-shadow: 0 0 6px rgba(245,158,11,0.4); }
-.sidebar-task-dot.dot-review { background: var(--status-review); box-shadow: 0 0 6px rgba(139,92,246,0.4); }
-.sidebar-task-dot.dot-needs_merge { background: var(--status-needs-merge); }
-.sidebar-task-dot.dot-merged { background: var(--status-merged); }
+.sidebar-task-dot.dot-in_review { background: var(--status-in-review); box-shadow: 0 0 6px rgba(139,92,246,0.4); }
+.sidebar-task-dot.dot-in_approval { background: var(--status-in-approval); }
 .sidebar-task-dot.dot-done { background: var(--status-done); }
 .sidebar-task-dot.dot-rejected { background: var(--status-rejected); }
 .sidebar-task-dot.dot-conflict { background: var(--status-conflict); }
@@ -493,12 +486,11 @@ body {
 /* ---- Badges ---- */
 .badge { padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 500; letter-spacing: 0.01em; }
 /* Task status badges — use CSS custom properties for automatic dark mode */
-.badge-open { background: var(--status-open-bg); color: var(--status-open); }
+.badge-todo { background: var(--status-todo-bg); color: var(--status-todo); }
 .badge-in_progress { background: var(--status-in-progress-bg); color: var(--status-in-progress); }
-.badge-review { background: var(--status-review-bg); color: var(--status-review); }
+.badge-in_review { background: var(--status-in-review-bg); color: var(--status-in-review); }
+.badge-in_approval { background: var(--status-in-approval-bg); color: var(--status-in-approval); }
 .badge-done { background: var(--status-done-bg); color: var(--status-done); }
-.badge-needs_merge { background: var(--status-needs-merge-bg); color: var(--status-needs-merge); }
-.badge-merged { background: var(--status-merged-bg); color: var(--status-merged); }
 .badge-rejected { background: var(--status-rejected-bg); color: var(--status-rejected); }
 .badge-conflict { background: var(--status-conflict-bg); color: var(--status-conflict); }
 /* Dark mode overrides for action count badge (not covered by CSS vars) */

@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     title            TEXT    NOT NULL,
     description      TEXT    NOT NULL DEFAULT '',
-    status           TEXT    NOT NULL DEFAULT 'open',
+    status           TEXT    NOT NULL DEFAULT 'todo',
     dri              TEXT    NOT NULL DEFAULT '',
     assignee         TEXT    NOT NULL DEFAULT '',
     project          TEXT    NOT NULL DEFAULT '',

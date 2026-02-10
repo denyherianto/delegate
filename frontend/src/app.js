@@ -492,7 +492,7 @@ function _taskRowHtml(t) {
 function renderTaskApproval(task) {
   const status = task.status || "";
   const approvalStatus = task.approval_status || "";
-  if (status === "merged" || approvalStatus === "approved") {
+  if (status === "done" || approvalStatus === "approved") {
     return '<div class="task-inspector-approval"><div class="approval-badge approval-badge-approved">\u2714 Approved</div></div>';
   }
   if (status === "rejected" || approvalStatus === "rejected") {
@@ -505,7 +505,7 @@ function renderTaskApproval(task) {
       "</div>"
     );
   }
-  if (status === "needs_merge") {
+  if (status === "in_approval") {
     let html = '<div class="task-inspector-approval">';
     html += '<div class="task-inspector-approval-actions">';
     html +=
@@ -606,7 +606,7 @@ async function loadTasks() {
     if (
       prev &&
       prev !== t.status &&
-      (t.status === "done" || t.status === "review")
+      (t.status === "done" || t.status === "in_review")
     )
       taskSoundNeeded = true;
     _prevTaskStatuses[t.id] = t.status;
@@ -786,8 +786,8 @@ async function loadTaskActivity(taskId, task) {
   if (task.assignee) {
     events.push({ type: "assignment", time: task.created_at, text: "Assigned to " + cap(task.assignee), icon: "\uD83D\uDC64" });
   }
-  // 3. Current status (if not open — we don't have full history in v1)
-  if (task.status && task.status !== "open") {
+  // 3. Current status (if not todo — we don't have full history in v1)
+  if (task.status && task.status !== "todo") {
     events.push({ type: "status", time: task.updated_at, text: "Status: " + fmtStatus(task.status), icon: "\uD83D\uDD04" });
   }
   // 4. Chat messages mentioning this task
@@ -913,7 +913,7 @@ async function openTaskPanel(taskId) {
     if (task.depends_on && task.depends_on.length) {
       body += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Depends on: ';
       task.depends_on.forEach(function (d) {
-        const depStatus = (task._dep_statuses && task._dep_statuses[d]) || "open";
+        const depStatus = (task._dep_statuses && task._dep_statuses[d]) || "todo";
         body += '<span class="task-link" data-task-id="' + d + '" onclick="event.stopPropagation();openTaskPanel(' + d + ')"><span class="badge badge-' + depStatus + '" style="font-size:11px;margin-right:4px;cursor:pointer">T' + String(d).padStart(4, "0") + '</span></span>';
       });
       body += '</div>';
@@ -1368,9 +1368,9 @@ async function loadSidebar() {
     ).length;
     const openCount = tasks.filter(
       (t) =>
-        t.status === "open" ||
+        t.status === "todo" ||
         t.status === "in_progress" ||
-        t.status === "review"
+        t.status === "in_review"
     ).length;
     let totalCost = 0;
     for (const name in statsMap)
@@ -1390,7 +1390,7 @@ async function loadSidebar() {
     // Tasks where the boss is the current assignee (i.e. waiting on human action)
     const actionItems = tasks.filter(function (t) {
       return t.assignee && t.assignee.toLowerCase() === _bossName.toLowerCase() &&
-        t.status !== "merged" && t.status !== "done";
+        t.status !== "done";
     }).sort(function (a, b) {
       return (a.updated_at || "").localeCompare(b.updated_at || "");
     });
@@ -1413,7 +1413,7 @@ async function loadSidebar() {
       let actionHtml = "";
       for (const t of actionItems) {
         const tid = "T" + String(t.id).padStart(4, "0");
-        const icon = t.status === "needs_merge" ? "\uD83D\uDD00" : (t.status === "review" ? "\uD83D\uDC41" : "\u26A1");
+        const icon = t.status === "in_approval" ? "\uD83D\uDD00" : (t.status === "in_review" ? "\uD83D\uDC41" : "\u26A1");
         const timeWaiting = _fmtRelativeTime(t.updated_at);
         actionHtml +=
           '<div class="sidebar-action-row" onclick="openTaskPanel(' + t.id + ')">' +
@@ -1470,12 +1470,12 @@ async function loadSidebar() {
         '</div>';
     }
     document.getElementById("sidebarAgentList").innerHTML = agentHtml;
-    // Task heuristic: Tier 0 needs_merge, Tier 1 in_progress+review, Tier 2 open, Tier 3 merged+done (max 3). Never show rejected.
+    // Task heuristic: Tier 0 in_approval, Tier 1 in_progress+in_review, Tier 2 todo, Tier 3 done (max 3). Never show rejected.
     function taskTier(t) {
-      if (t.status === "needs_merge") return 0;
-      if (t.status === "in_progress" || t.status === "review") return 1;
-      if (t.status === "open") return 2;
-      if (t.status === "merged" || t.status === "done") return 3;
+      if (t.status === "in_approval") return 0;
+      if (t.status === "in_progress" || t.status === "in_review") return 1;
+      if (t.status === "todo") return 2;
+      if (t.status === "done") return 3;
       return 4; // conflict, etc — treat as low priority
     }
     const eligible = tasks.filter((t) => t.status !== "rejected");

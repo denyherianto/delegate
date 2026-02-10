@@ -196,7 +196,7 @@ def get_agent_stats(hc_home: Path, team: str, agent: str) -> dict:
 
     all_tasks = list_tasks(hc_home, team, assignee=agent)
     tasks_done = sum(1 for t in all_tasks if t.get("status") == "done")
-    tasks_in_review = sum(1 for t in all_tasks if t.get("status") == "review")
+    tasks_in_review = sum(1 for t in all_tasks if t.get("status") == "in_review")
     avg_task_seconds = stats["agent_time_seconds"] / tasks_done if tasks_done > 0 else 0.0
 
     stats["tasks_done"] = tasks_done

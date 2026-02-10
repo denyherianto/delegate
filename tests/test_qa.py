@@ -88,14 +88,14 @@ def qa_team(tmp_path):
 
 @pytest.fixture
 def qa_team_with_task(qa_team):
-    """Extend qa_team with a task in 'review' status and a matching branch name."""
+    """Extend qa_team with a task in 'in_review' status and a matching branch name."""
     hc_home, repo_path = qa_team
 
-    # Create a task and move it through the workflow to 'review'
+    # Create a task and move it through the workflow to 'in_review'
     task = create_task(hc_home, TEAM, title="Add multiply feature", repo="myapp")
     assign_task(hc_home, TEAM, task["id"], "alice")
     change_status(hc_home, TEAM, task["id"], "in_progress")
-    change_status(hc_home, TEAM, task["id"], "review")
+    change_status(hc_home, TEAM, task["id"], "in_review")
 
     # Create a branch that matches the task ID pattern
     branch_name = f"alice/{format_task_id(task['id'])}"
@@ -328,8 +328,8 @@ class TestCheckTestCoverage:
 
 
 class TestTaskStatusTransitions:
-    def test_approval_sets_needs_merge(self, qa_team_with_task):
-        """When QA approves, task status should transition to needs_merge."""
+    def test_approval_sets_in_approval(self, qa_team_with_task):
+        """When QA approves, task status should transition to in_approval."""
         hc_home, repo_path, task_id, branch_name = qa_team_with_task
         req = ReviewRequest(repo=repo_path, branch=branch_name, requester="alice")
 
@@ -339,7 +339,7 @@ class TestTaskStatusTransitions:
 
         assert result.approved
         task = get_task(hc_home, TEAM, task_id)
-        assert task["status"] == "needs_merge"
+        assert task["status"] == "in_approval"
 
     def test_rejection_sets_in_progress(self, qa_team_with_task):
         """When QA rejects (tests fail), task status should go back to in_progress."""

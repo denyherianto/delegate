@@ -10,7 +10,7 @@ owns the ball and is updated by the manager as the task moves through stages.
 
 Usage:
     python -m delegate.task create <home> <team> --title "Build API" [--priority high]
-    python -m delegate.task list <home> <team> [--status open] [--assignee alice]
+    python -m delegate.task list <home> <team> [--status todo] [--assignee alice]
     python -m delegate.task update <home> <team> <task_id> [--title ...] [--description ...] [--priority ...]
     python -m delegate.task assign <home> <team> <task_id> <assignee>
     python -m delegate.task status <home> <team> <task_id> <status>
@@ -26,21 +26,20 @@ from pathlib import Path
 from delegate.db import get_connection, task_row_to_dict, _JSON_COLUMNS
 
 
-VALID_STATUSES = ("open", "in_progress", "review", "done", "needs_merge", "merged", "rejected", "conflict")
+VALID_STATUSES = ("todo", "in_progress", "in_review", "in_approval", "done", "rejected", "conflict")
 VALID_PRIORITIES = ("low", "medium", "high", "critical")
 VALID_APPROVAL_STATUSES = ("", "pending", "approved", "rejected")
 
 # Allowed status transitions: from_status -> set of valid to_statuses
 VALID_TRANSITIONS = {
-    "open": {"in_progress"},
-    "in_progress": {"review"},
-    "review": {"done", "needs_merge", "in_progress"},
-    "needs_merge": {"merged", "rejected", "conflict"},
+    "todo": {"in_progress"},
+    "in_progress": {"in_review"},
+    "in_review": {"done", "in_approval", "in_progress"},
+    "in_approval": {"done", "rejected", "conflict"},
     "rejected": {"in_progress"},
     "conflict": {"in_progress"},
-    # done and merged are terminal states — no transitions out
+    # done is the sole terminal state — no transitions out
     "done": set(),
-    "merged": set(),
 }
 
 # All columns in the tasks table (used for field validation on update).
@@ -101,7 +100,7 @@ def create_task(
                 depends_on, branch, base_sha, commits,
                 rejection_reason, approval_status, merge_base, merge_tip
             ) VALUES (
-                ?, ?, 'open', '', '',
+                ?, ?, 'todo', '', '',
                 ?, ?, ?, ?,
                 ?, ?, '',
                 ?, '', '', '[]',
@@ -259,7 +258,7 @@ def _backfill_branch_metadata(hc_home: Path, team: str, task: dict, updates: dic
 
 
 def change_status(hc_home: Path, team: str, task_id: int, status: str) -> dict:
-    """Change task status. Sets completed_at when moving to 'done' or 'merged'.
+    """Change task status. Sets completed_at when moving to 'done'.
 
     Validates status transitions according to VALID_TRANSITIONS.
     """
@@ -283,12 +282,12 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str) -> dict:
 
     old_status = current.replace("_", " ").title()
     updates: dict = {"status": status}
-    if status in ("done", "merged"):
+    if status == "done":
         updates["completed_at"] = _now()
 
-    # Safety net: backfill branch/base_sha when entering review or needs_merge
+    # Safety net: backfill branch/base_sha when entering in_review or in_approval
     # if they're still empty.
-    if status in ("review", "needs_merge"):
+    if status in ("in_review", "in_approval"):
         _backfill_branch_metadata(hc_home, team, old_task, updates)
 
     task = update_task(hc_home, team, task_id, **updates)

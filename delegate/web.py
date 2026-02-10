@@ -383,10 +383,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
-        if task["status"] != "needs_merge":
+        if task["status"] != "in_approval":
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot approve task in '{task['status']}' status. Task must be in 'needs_merge' status.",
+                detail=f"Cannot approve task in '{task['status']}' status. Task must be in 'in_approval' status.",
             )
 
         updated = _update_task(hc_home, team, task_id, approval_status="approved")
@@ -500,7 +500,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         for t in _list_teams(hc_home):
             try:
                 task = _get_task(hc_home, t, task_id)
-                if task["status"] != "needs_merge":
+                if task["status"] != "in_approval":
                     raise HTTPException(status_code=400, detail=f"Cannot approve task in '{task['status']}' status.")
                 updated = _update_task(hc_home, t, task_id, approval_status="approved")
                 _log_event(hc_home, t, f"{format_task_id(task_id)} approved \u2713")

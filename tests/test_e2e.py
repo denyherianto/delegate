@@ -299,7 +299,7 @@ class TestTasksAndMessaging:
         # Create a team-scoped task
         task = create_task(hc, TEAM_A, title="Fix pagination bug", description="Off by one")
         task_id = task["id"]
-        assert task["status"] == "open"
+        assert task["status"] == "todo"
 
         # Assign to alice
         assign_task(hc, TEAM_A, task_id, "alice")
@@ -326,13 +326,13 @@ class TestTasksAndMessaging:
         assert len(qa_inbox) == 1
         assert "REVIEW_REQUEST" in qa_inbox[0].body
 
-        # QA approves: review → needs_merge → merged
-        change_status(hc, TEAM_A, task_id, "review")
-        assert get_task(hc, TEAM_A, task_id)["status"] == "review"
-        change_status(hc, TEAM_A, task_id, "needs_merge")
-        assert get_task(hc, TEAM_A, task_id)["status"] == "needs_merge"
-        change_status(hc, TEAM_A, task_id, "merged")
-        assert get_task(hc, TEAM_A, task_id)["status"] == "merged"
+        # Reviewer approves: in_review → in_approval → done
+        change_status(hc, TEAM_A, task_id, "in_review")
+        assert get_task(hc, TEAM_A, task_id)["status"] == "in_review"
+        change_status(hc, TEAM_A, task_id, "in_approval")
+        assert get_task(hc, TEAM_A, task_id)["status"] == "in_approval"
+        change_status(hc, TEAM_A, task_id, "done")
+        assert get_task(hc, TEAM_A, task_id)["status"] == "done"
 
 
 # ---------------------------------------------------------------------------

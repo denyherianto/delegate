@@ -5,7 +5,7 @@
 All work happens on feature branches in git worktrees. Branch naming convention:
 
 ```
-<dri>/T<NNNN>
+delegate/<team>/T<NNNN>
 ```
 
 No direct pushes to main.
@@ -14,11 +14,10 @@ No direct pushes to main.
 
 Agents don't merge their own branches. To merge:
 
-1. Agent sets the task status to `review`.
-2. Agent sends a review request to QA: `REVIEW_REQUEST: repo=<repo_name> branch=<branch>`
-3. QA creates a worktree, runs a quick smoke test — does it start, does the happy path work?
-4. If approved: task moves to `needs_merge`. Auto-merge or boss approval depending on repo settings.
-5. Merge worker rebases onto main, runs tests, fast-forward merges. On conflict, manager is notified.
+1. Agent sets the task status to `in_review`. Manager reassigns to a peer reviewer.
+2. Reviewer creates a worktree, runs a quick smoke test — does it start, does the happy path work?
+3. If approved: task moves to `in_approval`. Auto-merge or boss approval depending on repo settings.
+4. Merge worker rebases onto main, runs tests, fast-forward merges. On conflict, manager is notified.
 
 ## Review Standards
 

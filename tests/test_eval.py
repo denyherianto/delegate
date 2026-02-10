@@ -257,7 +257,7 @@ def _create_db(db_path: Path, sessions=None, messages=None):
             id               INTEGER PRIMARY KEY AUTOINCREMENT,
             title            TEXT    NOT NULL,
             description      TEXT    NOT NULL DEFAULT '',
-            status           TEXT    NOT NULL DEFAULT 'open',
+            status           TEXT    NOT NULL DEFAULT 'todo',
             dri              TEXT    NOT NULL DEFAULT '',
             assignee         TEXT    NOT NULL DEFAULT '',
             project          TEXT    NOT NULL DEFAULT '',
@@ -1124,7 +1124,7 @@ class TestSeedTasks:
         assert len(created) == 2
         for task in created:
             assert "id" in task
-            assert task["status"] == "open"
+            assert task["status"] == "todo"
 
     def test_task_ids_are_unique(self, tmp_path, specs_dir):
         """Each seeded task gets a unique ID."""

@@ -3,7 +3,7 @@
 When an agent finishes work on a branch, it sends a review request to the QA agent.
 QA creates a worktree from the repo (via symlink), runs tests on the branch,
 verifies test coverage, and reports results.  QA reviews only the diff between
-base_sha and the branch tip.  On approval, QA sets the task status to 'needs_merge'
+base_sha and the branch tip.  On approval, QA sets the task status to 'in_approval'
 so the daemon merge worker can pick it up.
 
 Message format (from agent to QA):
@@ -338,7 +338,7 @@ def handle_review_request(
     """Full QA pipeline: clone, checkout, test, check coverage, update task status, report.
 
     On approval (tests pass + coverage sufficient):
-        - Sets task status to 'needs_merge' (ready for merge queue)
+        - Sets task status to 'in_approval' (ready for merge queue)
         - Reports APPROVED to requester and manager
     On rejection (tests fail or coverage insufficient):
         - Sets task status back to 'in_progress'
@@ -394,12 +394,12 @@ def handle_review_request(
 
 
 def _update_task_on_approval(hc_home: Path, team: str, task_id: int) -> None:
-    """Set task status to needs_merge when QA approves."""
+    """Set task status to in_approval when QA approves."""
     try:
         task = get_task(hc_home, team, task_id)
-        if task["status"] == "review":
-            change_status(hc_home, team, task_id, "needs_merge")
-            logger.info("%s: QA approved, status set to needs_merge", task_id)
+        if task["status"] == "in_review":
+            change_status(hc_home, team, task_id, "in_approval")
+            logger.info("%s: QA approved, status set to in_approval", task_id)
     except (FileNotFoundError, ValueError) as e:
         logger.warning("Could not update task %s on approval: %s", task_id, e)
 
@@ -410,7 +410,7 @@ def _update_task_on_rejection(hc_home: Path, team: str, task_id: int | None, req
         return
     try:
         task = get_task(hc_home, team, task_id)
-        if task["status"] == "review":
+        if task["status"] == "in_review":
             change_status(hc_home, team, task_id, "in_progress")
             logger.info("%s: QA rejected, status set back to in_progress", task_id)
     except (FileNotFoundError, ValueError) as e:

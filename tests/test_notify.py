@@ -22,22 +22,22 @@ def notify_team(tmp_path):
     return hc_home
 
 
-def _make_task_at_needs_merge(hc_home):
-    """Create a task and advance it to needs_merge status.
+def _make_task_at_in_approval(hc_home):
+    """Create a task and advance it to in_approval status.
 
     Returns the current task dict (reloaded after all transitions).
     """
     task = create_task(hc_home, TEAM, title="Build login feature")
     assign_task(hc_home, TEAM, task["id"], "alice")
     change_status(hc_home, TEAM, task["id"], "in_progress")
-    change_status(hc_home, TEAM, task["id"], "review")
-    change_status(hc_home, TEAM, task["id"], "needs_merge")
+    change_status(hc_home, TEAM, task["id"], "in_review")
+    change_status(hc_home, TEAM, task["id"], "in_approval")
     return get_task(hc_home, TEAM, task["id"])
 
 
 class TestNotifyRejection:
     def test_sends_message_to_manager(self, notify_team):
-        task = _make_task_at_needs_merge(notify_team)
+        task = _make_task_at_in_approval(notify_team)
         change_status(notify_team, TEAM, task["id"], "rejected")
 
         result = notify_rejection(
@@ -53,7 +53,7 @@ class TestNotifyRejection:
         assert msg.sender == "boss"
 
     def test_message_contains_task_details(self, notify_team):
-        task = _make_task_at_needs_merge(notify_team)
+        task = _make_task_at_in_approval(notify_team)
         change_status(notify_team, TEAM, task["id"], "rejected")
 
         notify_rejection(
@@ -70,7 +70,7 @@ class TestNotifyRejection:
         assert "Missing error handling" in body
 
     def test_message_contains_suggested_actions(self, notify_team):
-        task = _make_task_at_needs_merge(notify_team)
+        task = _make_task_at_in_approval(notify_team)
         change_status(notify_team, TEAM, task["id"], "rejected")
 
         notify_rejection(notify_team, TEAM, task, reason="Needs work")
@@ -83,7 +83,7 @@ class TestNotifyRejection:
         assert "Discard" in body
 
     def test_no_reason_shows_placeholder(self, notify_team):
-        task = _make_task_at_needs_merge(notify_team)
+        task = _make_task_at_in_approval(notify_team)
         change_status(notify_team, TEAM, task["id"], "rejected")
 
         notify_rejection(notify_team, TEAM, task, reason="")
@@ -94,7 +94,7 @@ class TestNotifyRejection:
 
     def test_returns_id_string(self, notify_team):
         """notify_rejection returns the message id as a string."""
-        task = _make_task_at_needs_merge(notify_team)
+        task = _make_task_at_in_approval(notify_team)
         change_status(notify_team, TEAM, task["id"], "rejected")
 
         result = notify_rejection(notify_team, TEAM, task, reason="Test")
@@ -104,7 +104,7 @@ class TestNotifyRejection:
 
 class TestNotifyConflict:
     def test_sends_message_to_manager(self, notify_team):
-        task = _make_task_at_needs_merge(notify_team)
+        task = _make_task_at_in_approval(notify_team)
         task["branch"] = "alice/T0001"
         change_status(notify_team, TEAM, task["id"], "conflict")
 
@@ -120,7 +120,7 @@ class TestNotifyConflict:
         assert msg.sender == "boss"
 
     def test_message_contains_task_and_branch(self, notify_team):
-        task = _make_task_at_needs_merge(notify_team)
+        task = _make_task_at_in_approval(notify_team)
         task["branch"] = "alice/T0001"
         change_status(notify_team, TEAM, task["id"], "conflict")
 
@@ -139,7 +139,7 @@ class TestNotifyConflict:
         assert "Conflict in auth.py" in body
 
     def test_message_suggests_rebase(self, notify_team):
-        task = _make_task_at_needs_merge(notify_team)
+        task = _make_task_at_in_approval(notify_team)
         task["branch"] = "alice/T0001"
         change_status(notify_team, TEAM, task["id"], "conflict")
 
@@ -152,7 +152,7 @@ class TestNotifyConflict:
         assert "alice" in body
 
     def test_no_details_shows_placeholder(self, notify_team):
-        task = _make_task_at_needs_merge(notify_team)
+        task = _make_task_at_in_approval(notify_team)
         task["branch"] = "alice/T0001"
         change_status(notify_team, TEAM, task["id"], "conflict")
 
@@ -164,7 +164,7 @@ class TestNotifyConflict:
 
     def test_returns_id_string(self, notify_team):
         """notify_conflict returns the message id as a string."""
-        task = _make_task_at_needs_merge(notify_team)
+        task = _make_task_at_in_approval(notify_team)
         change_status(notify_team, TEAM, task["id"], "conflict")
 
         result = notify_conflict(notify_team, TEAM, task, conflict_details="Test")
