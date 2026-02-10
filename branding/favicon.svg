@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <clipPath id="rounded">
+      <rect width="512" height="512" rx="96"/>
+    </clipPath>
+  </defs>
+  
+  <g clip-path="url(#rounded)">
+    <!-- Background -->
+    <rect width="512" height="512" fill="#0F1117"/>
+    
+    <!-- 
+      Geometric "d" lettermark
+      The "d" is constructed as a single path:
+      - A vertical stem on the right
+      - An open bowl on the left that connects to the stem
+    -->
+    <path d="
+      M 304 88
+      L 304 424
+      Q 304 432 296 432
+      L 288 432
+      Q 280 432 280 424
+      L 280 380
+      C 260 406 228 420 192 420
+      C 118 420 64 358 64 280
+      C 64 202 118 140 192 140
+      C 228 140 260 154 280 180
+      L 280 88
+      Q 280 80 288 80
+      L 296 80
+      Q 304 80 304 88
+      Z
+      M 192 380
+      C 244 380 280 338 280 280
+      C 280 222 244 180 192 180
+      C 140 180 104 222 104 280
+      C 104 338 140 380 192 380
+      Z
+    " fill="#6C8EEF" fill-rule="evenodd"/>
+    
+    <!-- Activity dot — the green pulse that says "something's alive" -->
+    <circle cx="400" cy="120" r="28" fill="#4ADE80"/>
+  </g>
+</svg>
