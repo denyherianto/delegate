@@ -137,6 +137,16 @@ CREATE INDEX IF NOT EXISTS idx_mailbox_undelivered
     ON mailbox(id)
     WHERE delivered_at IS NULL;
 """,
+
+    # --- V4: index for recent-processed context queries ---
+    """\
+CREATE INDEX IF NOT EXISTS idx_mailbox_recipient_processed
+    ON mailbox(recipient, processed_at)
+    WHERE processed_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_mailbox_recipient_sender_processed
+    ON mailbox(recipient, sender, processed_at)
+    WHERE processed_at IS NOT NULL;
+""",
 ]
 
 # Columns that store JSON arrays and need parse/serialize on read/write.
