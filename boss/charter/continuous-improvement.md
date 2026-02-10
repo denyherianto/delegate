@@ -1,174 +1,53 @@
 # Continuous Improvement
 
-This document outlines practices for learning, reflection, feedback, and automation. Every team member should follow these practices to build a culture of continuous improvement.
-
 ## For All Agents
 
-### 0. Acknowledge Before Deep Work
+### Acknowledge Before Deep Work
 
-When you receive a message (especially from the boss or manager), **send a lightweight acknowledgment immediately** before diving into deep work. A quick "Got it, working on this now" or "Acknowledged, will have this shortly" lets the sender know you're on it. Don't make people wait in silence while you're heads-down for 10+ minutes.
+When you receive a message (especially from the boss or manager), send a lightweight acknowledgment immediately: "Got it, working on this now." Don't make people wait in silence while you're heads-down.
 
-### 1. Task Journals
+### Task Journals
 
-After completing each task, write a brief journal entry capturing what happened and what you learned.
+After completing each task, write a brief journal in `agents/<your-name>/journals/T<NNNN>.md`:
+- What you did, what went well, what you'd do differently, key learnings.
+- Keep it concise — a few bullet points per section.
 
-**Location:** `agents/<your-name>/journals/T<NNNN>.md`
+### Periodic Reflection
 
-**Template:**
-```markdown
-# T0017 — Build task detail side panel
-**Date:** 2026-02-09
-**Duration:** ~45 min
-**Tokens:** ~12,000
+Every ~5 tasks, review journal entries and update `agents/<your-name>/notes/reflections.md`. Look for recurring patterns, improvement goals, growing skills, and efficiency blockers.
 
-## What I did
-- [Brief summary of the work]
+### Automation
 
-## What went well
-- [Things that worked, good decisions]
+If you repeat the same manual steps across tasks, write a script in `teams/<team>/shared/scripts/` and tell the team.
 
-## What I would do differently
-- [Mistakes, inefficiencies, missed steps]
+### Peer Feedback
 
-## Learnings
-- [Specific takeaways to remember for future tasks]
-```
+Send direct, specific, constructive feedback to teammates when you notice something. Save actionable feedback received to `agents/<your-name>/feedback/`.
 
-Keep entries concise — a few bullet points per section is plenty. The goal is to capture lessons while they're fresh, not to write an essay.
+### Code Quality
 
-### 2. Periodic Reflection
+If code feels too complex, hacky, or fragile — speak up. Tell the manager or create a task. Track in `agents/<your-name>/notes/tech-debt.md`.
 
-Every ~5 tasks (or when prompted by your manager), review your journal entries and update your reflections file.
+### Knowledge Sharing
 
-**Location:** `agents/<your-name>/notes/reflections.md`
-
-Look for:
-- **Recurring patterns** — mistakes or successes that repeat
-- **Improvement goals** — concrete things to work on
-- **Growing skills** — areas where you're getting better
-- **Blockers to efficiency** — things that slow you down that could be fixed
-
-### 3. Automation
-
-If you find yourself repeating the same manual steps across tasks:
-
-- Write a shell script to automate it
-- Save to `teams/<team>/shared/scripts/` (or `teams/<team>/scripts/` for team-wide scripts)
-- Add a comment header explaining what it does and how to use it
-- Tell the team about it so others benefit
-
-Example: A pre-submit check that verifies your branch isn't stale before sending for review.
-
-### 4. Peer Feedback
-
-When you notice something that could help a teammate improve:
-
-- **Send them a direct message** with your observation — be kind, specific, and constructive
-- Focus on behaviors and patterns, not personality
-- Include a concrete suggestion, not just criticism
-
-When you receive feedback:
-- Reflect on it honestly
-- Save actionable feedback to `agents/<your-name>/feedback/from-<sender>-<date>.md`
-- Consider updating your reflections.md with insights from the feedback
-
-### 5. Code Quality Advocacy
-
-If you touch a part of the codebase that feels too complex, hacky, or fragile:
-
-- **Speak up** — tell the manager (or create a task yourself if you are the manager)
-- Be specific: which file, what's wrong, what improvement you'd suggest
-- Track observations in `agents/<your-name>/notes/tech-debt.md`
-
-The goal is to keep the codebase healthy over time, not to accumulate tech debt silently.
-
-### 6. Knowledge Sharing via Shared Documents
-
-**Core principle:** Instead of writing very long messages to each other, **write a document in the shared directory and share the file path** in your message. This keeps conversations concise and creates a searchable knowledge base that the whole team can reference.
-
-**Location:** `teams/<team>/shared/`
-
-**Directory structure:**
-- `shared/decisions/` — Architecture and design decisions (ADRs)
-- `shared/specs/` — Design specs and implementation plans (e.g., `specs/T0025-code-review-ux.md`)
-- `shared/guides/` — How-to guides and patterns
-- `shared/scripts/` — Reusable automation scripts
-- `shared/snippets/` — Useful code snippets and templates
-- `shared/reviews/` — Code review notes and post-mortems
-- `shared/docs/` — General documentation
-
-**Naming convention:** Use descriptive, lowercase, hyphenated filenames. Prefix with date or task ID where relevant:
-```
-decisions/2026-02-09-code-review-architecture.md
-specs/T0025-code-review-ux.md
-guides/stale-base-rebase-howto.md
-```
-
-**When to write a doc vs. a message:**
-- **Write a doc** for: anything longer than ~10 lines, design decisions, specs, how-tos, anything others might reference later
-- **Send a message** for: quick updates, status, questions, acknowledgments, task assignments
-
-**How to share:** After writing a doc, send a concise message with the file path. File paths in chat messages are clickable and open in the side panel for easy reading.
-
-**Keep docs alive:** Update them as decisions evolve. They are living documents, not write-once artifacts.
+Write documents instead of long messages. Use `teams/<team>/shared/` (subdirs: `decisions/`, `specs/`, `guides/`, `scripts/`, `docs/`). Share the file path in a concise message. Write a doc for anything >10 lines or that others might reference later.
 
 ---
 
 ## For Managers
 
-### 7. Cost and Time Tracking
+### Cost & Time Tracking
 
-Track metrics for every merged task to understand team velocity and cost efficiency.
+Track per-task metrics in `agents/<your-name>/notes/metrics.md`: assignee, duration, tokens, cost, files changed, rework cycles. Periodically review which tasks cost more than expected.
 
-**Location:** `agents/<your-name>/notes/metrics.md`
+### Team Model
 
-Track per task:
-- Assignee, duration, token count, cost
-- Number of files changed, lines added/removed
-- Number of rebase/rework cycles required
+Maintain a model of each member in `agents/<your-name>/notes/team-model.md`: strengths, growth areas, codebase ownership, task speed, review quality. Update after each task cycle.
 
-Periodically ask: which tasks cost more than expected? Where can we reduce tokens without sacrificing quality?
+### Feedback Culture
 
-### 8. Team Model
+Proactively gather feedback after tasks. Keep a log in `agents/<your-name>/notes/feedback-log.md`. When patterns emerge, share them kindly.
 
-Maintain a mental model of each team member's strengths, growth areas, and codebase ownership.
+### Codebase Health
 
-**Location:** `agents/<your-name>/notes/team-model.md`
-
-For each person track:
-- **Strengths** — what they do well
-- **Growth areas** — where they can improve
-- **Context/Ownership** — what parts of the codebase they know best
-- **Task speed** — typical completion time
-- **Review quality** — how thorough their work is
-
-Update after each task cycle. Use this model to improve task assignments and code review pairings.
-
-### 9. Feedback Culture
-
-Proactively build a culture of feedback:
-
-- After tasks, ask assignees what went well and what was hard
-- Periodically ask people for feedback about work quality and review quality of teammates
-- Keep a running log in `agents/<your-name>/notes/feedback-log.md`
-- When patterns emerge, synthesize and share them kindly with the recipient
-- Track whether feedback leads to improvement
-
-### 10. Direct Communication
-
-Encourage agents to communicate directly with each other for:
-- Technical questions about code they own
-- Design clarifications between designer and implementer
-- Peer code review discussions
-- Knowledge transfer
-
-Not every message needs to go through the manager. A healthy team communicates laterally.
-
-### 11. Codebase Health
-
-Prioritize cleanup of modules that are:
-- **Frequently modified** (high churn) — changes here affect many tasks
-- **Complex/hacky** (high cognitive load) — slows down everyone who touches it
-- **Both** (highest priority for cleanup)
-
-The test for prioritization: will cleaning this up make us move faster on future tasks? If yes, create a task for it. Balance cleanup work against feature delivery — aim for sustainable pace.
+Prioritize cleanup of frequently modified + complex modules. Test: will cleaning this up make us faster on future tasks? Balance cleanup against feature delivery.

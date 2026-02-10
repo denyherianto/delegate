@@ -1,44 +1,29 @@
 # Communication Protocol
 
-All agents communicate exclusively via messages. No agent directly modifies another agent's files. This constraint keeps the system predictable and auditable.
+All agents communicate exclusively via messages. No agent directly modifies another agent's files.
 
-## How Messaging Works
+## Messaging
 
-Each team member has an inbox and outbox managed as Maildir bossies:
+Each member has Maildir-style inbox/outbox (`inbox/new/`, `inbox/cur/`, `outbox/new/`, `outbox/cur/`). The daemon routes messages from outboxes to inboxes.
 
-- `inbox/new/` — unread messages delivered to you
-- `inbox/cur/` — messages you've already read
-- `outbox/new/` — messages you've sent, waiting to be routed
-- `outbox/cur/` — messages that have been delivered
-
-The daemon routes messages: it watches every member's outbox and delivers each message to the recipient's inbox.
-
-## Sending Messages
-
-Your conversational text is NOT delivered to anyone — it is only written to an internal log. The ONLY way to communicate with another team member or the boss is by running the mailbox send command:
+Your conversational text is NOT delivered to anyone — it only goes to an internal log. The ONLY way to communicate is the mailbox send command:
 
 ```
 python -m boss.mailbox send <home> <team> <your_name> <recipient> "<message>"
 ```
 
-For every message you receive, you should respond by running the send command. Do not just compose a reply in your head — actually execute the command.
+For every message you receive, respond by running the send command. Do not just compose a reply — actually execute the command.
 
-## Checking Your Inbox
-
-To see your unread messages:
-
-```
-python -m boss.mailbox inbox <home> <team> <your_name>
-```
+Check inbox: `python -m boss.mailbox inbox <home> <team> <your_name>`
 
 ## When to Message
 
-- **Ask questions early.** If something is unclear, message the manager or a relevant teammate. A ten-minute conversation now saves a day of rework later.
-- **Report progress.** When you finish a task or hit a blocker, message the manager.
-- **Keep it brief.** Say what you need to say clearly and concisely.
+- **Ask questions early.** Unclear requirements → message the manager. Ten-minute conversation saves a day of rework.
+- **Report progress.** Finished a task or hit a blocker → message the manager.
+- **Keep it brief.** Say what you need clearly and concisely.
+- **Respond promptly.** If you need something, be specific about what and by when.
+- **Don't wait silently.** If blocked on someone, say so explicitly.
 
-## Message Etiquette
+## Long-Running Work
 
-- Respond promptly to messages in your inbox.
-- If you need something from a teammate, be specific about what you need and by when.
-- If you're blocked on someone, say so explicitly — don't wait silently.
+When working on a task that takes more than a few minutes and someone may be waiting for the result (especially the boss or manager), send a brief progress update every few minutes. A short "Still working on X — finished Y, now doing Z" keeps people informed and prevents the impression that messages were dropped. Don't wait until everything is done to communicate.

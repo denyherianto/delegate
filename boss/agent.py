@@ -514,35 +514,40 @@ def build_system_prompt(
     boss_name = get_boss(hc_home) or "boss"
     manager_name = get_member_by_role(hc_home, team, "manager") or "manager"
 
-    # Build charter file pointers (base charter from package)
+    # Inline charter content directly into the prompt (avoids file-read tool calls)
     charter_dir = base_charter_dir()
-    file_pointers = [
-        f"  {charter_dir}/constitution.md  — team values and working agreements",
-        f"  {charter_dir}/communication.md — messaging protocol details",
-        f"  {charter_dir}/task-management.md — task workflow",
-        f"  {charter_dir}/code-review.md   — review and merge process",
-        f"  {charter_dir}/continuous-improvement.md — learning, reflection, and feedback practices",
+    charter_files = [
+        "constitution.md",
+        "communication.md",
+        "task-management.md",
+        "code-review.md",
+        "continuous-improvement.md",
     ]
     if role == "manager":
-        file_pointers.append(
-            f"  {charter_dir}/manager.md       — your responsibilities as manager"
-        )
+        charter_files.append("manager.md")
 
-    # Team override charter
+    charter_sections = []
+    for fname in charter_files:
+        fpath = charter_dir / fname
+        if fpath.is_file():
+            charter_sections.append(fpath.read_text().strip())
+
+    # Team override charter (inline if present)
     team_override = hc_home / "teams" / team / "override.md"
     if team_override.exists():
-        file_pointers.append(
-            f"  {team_override} — team-specific overrides"
+        charter_sections.append(
+            f"# Team Overrides\n\n{team_override.read_text().strip()}"
         )
 
-    # Roster and teammate bios
+    charter_block = "\n\n---\n\n".join(charter_sections)
+
+    # Roster and teammate bios — these change, so point to files
     roster = hc_home / "teams" / team / "roster.md"
     agents_root = agents_dir(hc_home, team)
-    file_pointers += [
-        f"  {roster}                — who is on the team",
-        f"  {agents_root}/*/bio.md  — teammate backgrounds",
-    ]
-    files_block = "\n".join(file_pointers)
+    files_block = (
+        f"  {roster}                — who is on the team\n"
+        f"  {agents_root}/*/bio.md  — teammate backgrounds"
+    )
 
     # Workspace
     ws = workspace_path or (ad / "workspace")
@@ -594,8 +599,12 @@ Other commands:
 Your workspace: {ws}
 Team data:      {hc_home}/teams/{team}/
 {worktree_block}
-IMPORTANT FILES — read these as needed:
+REFERENCE FILES (read as needed):
 {files_block}
+
+=== TEAM CHARTER ===
+
+{charter_block}
 """
 
 
@@ -698,12 +707,14 @@ async def wait_for_inbox(
 def _collect_tokens_from_message(msg: Any) -> tuple[int, int, float]:
     """Extract (tokens_in, tokens_out, cost_usd) from a ResultMessage.
 
-    The SDK's ``total_cost_usd`` on ResultMessage is a **cumulative session
-    total** — it reflects the running cost across all turns in the persistent
-    CLI process.  Callers should treat the returned cost as an absolute value
-    (not a delta) and replace (not sum) their running total with it.
+    Only ``ResultMessage`` carries usage/cost data in the Claude Code SDK.
+    ``AssistantMessage`` has ``content`` and ``model`` but no usage fields —
+    the SDK aggregates all token/cost info into the single ``ResultMessage``
+    emitted at the end of each ``client.query()`` call.
 
-    Token counts from ``usage`` are per-turn deltas and can be summed.
+    With per-turn sessions (each turn uses a fresh ``session_id``),
+    ``total_cost_usd`` and ``usage`` reflect **this turn only**, so callers
+    should simply sum them across turns.
     """
     msg_type = type(msg).__name__
     if hasattr(msg, "total_cost_usd"):
@@ -714,6 +725,11 @@ def _collect_tokens_from_message(msg: Any) -> tuple[int, int, float]:
         if usage and isinstance(usage, dict):
             tin = usage.get("input_tokens", 0)
             tout = usage.get("output_tokens", 0)
+        elif usage is not None:
+            logger.warning(
+                "Unexpected usage type %s on %s — skipping token extraction",
+                type(usage).__name__, msg_type,
+            )
         logger.debug(
             "Token extract from %s: usage=%r cost_usd=%r -> tin=%d tout=%d cost=%.6f",
             msg_type, usage, msg.total_cost_usd, tin, tout, cost,
@@ -938,14 +954,10 @@ def _finish_turn(
     """
     from boss.chat import update_session_tokens, update_session_task
 
-    # Compute cost delta (SDK cost is cumulative, not per-turn)
-    cost_delta = turn_cost - ctx.total_cost_usd if turn_cost > 0 else 0.0
-
-    # Accumulate session totals
+    # With per-turn sessions, cost and tokens are per-turn deltas — just sum.
     ctx.total_tokens_in += turn_tokens_in
     ctx.total_tokens_out += turn_tokens_out
-    if turn_cost > 0:
-        ctx.total_cost_usd = turn_cost
+    ctx.total_cost_usd += turn_cost
 
     ctx.turn = turn_num
 
@@ -954,7 +966,7 @@ def _finish_turn(
         turn_num,
         tokens_in=turn_tokens_in,
         tokens_out=turn_tokens_out,
-        cost_usd=cost_delta,
+        cost_usd=turn_cost,
         cumulative_tokens_in=ctx.total_tokens_in,
         cumulative_tokens_out=ctx.total_tokens_out,
         cumulative_cost=ctx.total_cost_usd,
@@ -1035,30 +1047,32 @@ async def run_agent_loop(
         ctx.alog.client_connected()
 
         try:
-            # --- First turn: include context.md for cold-start recovery ---
+            # --- First turn ---
+            turn = 1
             user_msg = build_user_message(hc_home, team, agent, include_context=True)
-            ctx.worklog_lines.append(f"\n## Turn 1\n{user_msg}")
+            ctx.worklog_lines.append(f"\n## Turn {turn}\n{user_msg}")
 
             # Log incoming messages from this turn
             messages = read_inbox(hc_home, team, agent, unread_only=True)
             for inbox_msg in messages:
                 ctx.alog.message_received(inbox_msg.sender, len(inbox_msg.body))
 
-            ctx.alog.turn_start(1, user_msg)
+            ctx.alog.turn_start(turn, user_msg)
 
             turn_tokens_in = 0
             turn_tokens_out = 0
             turn_cost = 0.0
             turn_tools: list[str] = []
 
-            await client.query(user_msg, session_id="main")
+            # Each turn uses a fresh session_id so context doesn't grow
+            await client.query(user_msg, session_id=f"turn-{turn}")
             async for msg in client.receive_response():
                 turn_tokens_in, turn_tokens_out, turn_cost = _process_turn_messages(
                     msg, ctx.alog, turn_tokens_in, turn_tokens_out, turn_cost,
                     turn_tools, ctx.worklog_lines,
                 )
 
-            _finish_turn(ctx, 1, turn_tokens_in, turn_tokens_out, turn_cost, turn_tools)
+            _finish_turn(ctx, turn, turn_tokens_in, turn_tokens_out, turn_cost, turn_tools)
 
             # --- Event loop: wait for new inbox messages ---
             while True:
@@ -1070,7 +1084,8 @@ async def run_agent_loop(
                     break
 
                 turn = ctx.turn + 1
-                user_msg = build_user_message(hc_home, team, agent)
+                # Always include context — each turn is a fresh session
+                user_msg = build_user_message(hc_home, team, agent, include_context=True)
                 ctx.worklog_lines.append(f"\n## Turn {turn}\n{user_msg}")
 
                 # Log incoming messages
@@ -1085,7 +1100,7 @@ async def run_agent_loop(
                 turn_cost = 0.0
                 turn_tools = []
 
-                await client.query(user_msg, session_id="main")
+                await client.query(user_msg, session_id=f"turn-{turn}")
                 async for msg in client.receive_response():
                     turn_tokens_in, turn_tokens_out, turn_cost = _process_turn_messages(
                         msg, ctx.alog, turn_tokens_in, turn_tokens_out, turn_cost,
