@@ -497,10 +497,18 @@ def build_system_prompt(
     current_task: dict | None = None,
     workspace_path: Path | None = None,
 ) -> str:
-    """Build a minimal system prompt: identity + commands + file pointers.
+    """Build the system prompt, ordered for maximal prompt-cache reuse.
 
-    If the agent has a current task with an associated repo, includes
-    worktree and git workflow instructions.
+    Layout (top = most shared / stable, bottom = most specific / volatile):
+
+    1. TEAM CHARTER — identical for all agents on the team (cache prefix)
+    2. MANAGER CHARTER — only for managers (extends the shared prefix)
+    3. TEAM OVERRIDES — per-team customizations
+    4. AGENT IDENTITY — name, role, boss name
+    5. COMMANDS — mailbox, task CLI (includes agent-specific paths)
+    6. REFLECTIONS — inlined from notes/reflections.md (agent-specific)
+    7. REFERENCE FILES — file pointers (journals, notes, shared, roster, bios)
+    8. WORKSPACE — worktree / git info (task-specific, most volatile)
     """
     ad = _resolve_agent_dir(hc_home, team, agent)
     python = sys.executable
@@ -514,45 +522,85 @@ def build_system_prompt(
     boss_name = get_boss(hc_home) or "boss"
     manager_name = get_member_by_role(hc_home, team, "manager") or "manager"
 
-    # Inline charter content directly into the prompt (avoids file-read tool calls)
+    # --- 1. Universal charter (shared across ALL agents) ---
     charter_dir = base_charter_dir()
-    charter_files = [
+    universal_charter_files = [
         "constitution.md",
         "communication.md",
         "task-management.md",
         "code-review.md",
         "continuous-improvement.md",
     ]
-    if role == "manager":
-        charter_files.append("manager.md")
-
     charter_sections = []
-    for fname in charter_files:
+    for fname in universal_charter_files:
         fpath = charter_dir / fname
         if fpath.is_file():
             charter_sections.append(fpath.read_text().strip())
 
-    # Team override charter (inline if present)
-    team_override = hc_home / "teams" / team / "override.md"
-    if team_override.exists():
-        charter_sections.append(
-            f"# Team Overrides\n\n{team_override.read_text().strip()}"
-        )
-
     charter_block = "\n\n---\n\n".join(charter_sections)
 
-    # Roster and teammate bios — these change, so point to files
+    # --- 2. Manager-specific charter (only for managers) ---
+    manager_block = ""
+    if role == "manager":
+        mgr_path = charter_dir / "manager.md"
+        if mgr_path.is_file():
+            manager_block = f"\n\n---\n\n{mgr_path.read_text().strip()}"
+
+    # --- 3. Team override charter ---
+    override_block = ""
+    team_override = hc_home / "teams" / team / "override.md"
+    if team_override.exists():
+        content = team_override.read_text().strip()
+        if content:
+            override_block = f"\n\n---\n\n# Team Overrides\n\n{content}"
+
+    # --- 6. Reflections (inline if present) ---
+    reflections_block = ""
+    reflections_path = ad / "notes" / "reflections.md"
+    if reflections_path.is_file():
+        content = reflections_path.read_text().strip()
+        if content:
+            reflections_block = (
+                "\n\n=== YOUR REFLECTIONS ===\n"
+                "(Lessons learned from past work — apply these going forward.)\n\n"
+                f"{content}"
+            )
+
+    # --- 7. Reference files (pointers for dynamic/large content) ---
     roster = hc_home / "teams" / team / "roster.md"
     agents_root = agents_dir(hc_home, team)
-    files_block = (
-        f"  {roster}                — who is on the team\n"
-        f"  {agents_root}/*/bio.md  — teammate backgrounds"
-    )
+    shared = hc_home / "teams" / team / "shared"
 
-    # Workspace
+    file_pointers = [
+        f"  {roster}                     — team roster",
+        f"  {agents_root}/*/bio.md       — teammate backgrounds",
+    ]
+
+    # Agent's own journals and notes
+    journals_dir = ad / "journals"
+    notes_dir = ad / "notes"
+    if journals_dir.is_dir() and any(journals_dir.iterdir()):
+        file_pointers.append(
+            f"  {journals_dir}/T*.md          — your past task journals"
+        )
+    if notes_dir.is_dir():
+        for note_file in sorted(notes_dir.glob("*.md")):
+            if note_file.name == "reflections.md":
+                continue  # already inlined
+            file_pointers.append(
+                f"  {note_file}  — {note_file.stem.replace('-', ' ')}"
+            )
+
+    # Team shared knowledge base
+    if shared.is_dir() and any(shared.iterdir()):
+        file_pointers.append(
+            f"  {shared}/                     — team shared docs, specs, scripts"
+        )
+
+    files_block = "\n".join(file_pointers)
+
+    # --- 8. Workspace / worktree ---
     ws = workspace_path or (ad / "workspace")
-
-    # Worktree / git section
     worktree_block = ""
     if current_task and current_task.get("repo"):
         repo_name = current_task["repo"]
@@ -572,6 +620,12 @@ GIT WORKTREE:
 """
 
     return f"""\
+=== TEAM CHARTER ===
+
+{charter_block}{manager_block}{override_block}
+
+=== AGENT IDENTITY ===
+
 You are {agent} (role: {role}), a team member in the Delegate system.
 {boss_name} is the human boss. You report to {manager_name} (manager).
 
@@ -595,17 +649,41 @@ Other commands:
 
     # Check your inbox
     {python} -m delegate.mailbox inbox {hc_home} {team} {agent}
+{reflections_block}
 
-Your workspace: {ws}
-Team data:      {hc_home}/teams/{team}/
-{worktree_block}
 REFERENCE FILES (read as needed):
 {files_block}
 
-=== TEAM CHARTER ===
+Your workspace: {ws}
+Team data:      {hc_home}/teams/{team}/
+{worktree_block}"""
 
-{charter_block}
-"""
+
+REFLECTION_TASK_INTERVAL = 5  # trigger reflection every N completed tasks
+
+
+def _check_reflection_due(ad: Path) -> bool:
+    """Return True if the agent is due for a reflection update.
+
+    Reads ``tasks_since_reflection`` from state.yaml and compares
+    against REFLECTION_TASK_INTERVAL.
+    """
+    state = _read_state(ad)
+    return state.get("tasks_since_reflection", 0) >= REFLECTION_TASK_INTERVAL
+
+
+def _increment_tasks_since_reflection(ad: Path) -> None:
+    """Bump the counter after a task status changes to a terminal state."""
+    state = _read_state(ad)
+    state["tasks_since_reflection"] = state.get("tasks_since_reflection", 0) + 1
+    _write_state(ad, state)
+
+
+def _reset_tasks_since_reflection(ad: Path) -> None:
+    """Reset the counter after the agent completes a reflection."""
+    state = _read_state(ad)
+    state["tasks_since_reflection"] = 0
+    _write_state(ad, state)
 
 
 def build_user_message(
@@ -662,6 +740,22 @@ def build_user_message(
                     )
     except Exception:
         pass
+
+    # System-triggered reflection prompt
+    ad = _resolve_agent_dir(hc_home, team, agent)
+    if _check_reflection_due(ad):
+        journals_dir = ad / "journals"
+        reflections_path = ad / "notes" / "reflections.md"
+        parts.append(
+            f"\n=== REFLECTION DUE ===\n"
+            f"You have completed {REFLECTION_TASK_INTERVAL}+ tasks since your "
+            f"last reflection. After handling the message above, please:\n"
+            f"1. Review your recent task journals in {journals_dir}/\n"
+            f"2. Update {reflections_path} with patterns, lessons, and goals.\n"
+            f"   Keep it concise — bullet points, not essays.\n"
+            f"3. This file is inlined in your prompt, so future turns benefit "
+            f"from what you write here."
+        )
 
     return "\n".join(parts)
 
@@ -817,6 +911,7 @@ class _SessionContext:
     total_cost_usd: float = 0.0
     turn: int = 0
     exit_reason: str = "normal"
+    _reflections_mtime: float = 0.0  # tracks reflections.md changes
 
 
 def _session_setup(
@@ -874,6 +969,12 @@ def _session_setup(
         max_turns=max_turns,
     )
 
+    # Snapshot reflections.md mtime for change detection
+    reflections_path = ad / "notes" / "reflections.md"
+    reflections_mtime = (
+        reflections_path.stat().st_mtime if reflections_path.is_file() else 0.0
+    )
+
     return _SessionContext(
         hc_home=hc_home,
         team=team,
@@ -887,6 +988,7 @@ def _session_setup(
         max_turns=max_turns,
         workspace=workspace,
         worklog_lines=worklog_lines,
+        _reflections_mtime=reflections_mtime,
     )
 
 
@@ -997,6 +1099,45 @@ def _finish_turn(
                 "Task association updated | task=%s",
                 format_task_id(ctx.current_task_id),
             )
+
+    # Check if the agent updated reflections.md during this turn
+    # (means they fulfilled the reflection prompt → reset counter).
+    ad = _agent_dir(ctx.hc_home, ctx.team, ctx.agent)
+    reflections_path = ad / "notes" / "reflections.md"
+    if reflections_path.is_file():
+        mtime = reflections_path.stat().st_mtime
+        last_known = getattr(ctx, "_reflections_mtime", None)
+        if last_known is not None and mtime > last_known:
+            _reset_tasks_since_reflection(ad)
+            ctx.alog.info("Reflection updated — reset task counter")
+        ctx._reflections_mtime = mtime  # type: ignore[attr-defined]
+    elif not hasattr(ctx, "_reflections_mtime"):
+        ctx._reflections_mtime = 0.0  # type: ignore[attr-defined]
+
+    # Track task completions for reflection trigger.
+    # If the agent's current task just moved to review/needs_merge/merged/done,
+    # that counts as a completed task for reflection purposes.
+    if ctx.current_task_id is not None:
+        try:
+            from delegate.task import get_task
+            t = get_task(ctx.hc_home, ctx.current_task_id)
+            if t and t.get("status") in ("review", "needs_merge", "merged", "done"):
+                ad = _agent_dir(ctx.hc_home, ctx.team, ctx.agent)
+                state = _read_state(ad)
+                last_completed = state.get("_last_completed_task")
+                if last_completed != ctx.current_task_id:
+                    # First time seeing this task complete — increment counter
+                    _increment_tasks_since_reflection(ad)
+                    state = _read_state(ad)
+                    state["_last_completed_task"] = ctx.current_task_id
+                    _write_state(ad, state)
+                    ctx.alog.info(
+                        "Task completion tracked for reflection | task=%s count=%d",
+                        format_task_id(ctx.current_task_id),
+                        state.get("tasks_since_reflection", 0),
+                    )
+        except Exception:
+            pass  # Don't let reflection tracking break the turn
 
 
 # ---------------------------------------------------------------------------

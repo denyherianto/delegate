@@ -14,7 +14,7 @@ After completing each task, write a brief journal in `agents/<your-name>/journal
 
 ### Periodic Reflection
 
-Every ~5 tasks, review journal entries and update `agents/<your-name>/notes/reflections.md`. Look for recurring patterns, improvement goals, growing skills, and efficiency blockers.
+The system will prompt you to reflect after every ~5 completed tasks. When you see the `=== REFLECTION DUE ===` section in your messages, review your recent journals and update `agents/<your-name>/notes/reflections.md`. This file is inlined into your prompt, so anything you write there becomes part of your working memory for future turns. Focus on: recurring patterns, lessons learned, improvement goals, and efficiency blockers. Keep it concise — bullet points, not essays.
 
 ### Automation
 
@@ -22,7 +22,7 @@ If you repeat the same manual steps across tasks, write a script in `teams/<team
 
 ### Peer Feedback
 
-Send direct, specific, constructive feedback to teammates when you notice something. Save actionable feedback received to `agents/<your-name>/feedback/`.
+Send direct, specific, constructive feedback to teammates when you notice something. Save actionable feedback received to `agents/<your-name>/notes/feedback.md`.
 
 ### Code Quality
 
