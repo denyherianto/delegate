@@ -4,7 +4,7 @@ import sqlite3
 import threading
 import time
 
-from boss.chat import (
+from delegate.chat import (
     log_message,
     log_event,
     get_messages,
@@ -15,7 +15,7 @@ from boss.chat import (
     get_task_stats,
     get_project_stats,
 )
-from boss.paths import db_path as _db_path
+from delegate.paths import db_path as _db_path
 
 
 class TestSchema:
@@ -165,7 +165,7 @@ class TestSessions:
         assert id2 == id1 + 1
 
     def test_end_session_records_tokens(self, tmp_team):
-        from boss.task import create_task
+        from delegate.task import create_task
         task = create_task(tmp_team, title="Test task")
         session_id = start_session(tmp_team, "alice", task_id=task["id"])
         end_session(tmp_team, session_id, tokens_in=100, tokens_out=200, cost_usd=0.05)
@@ -177,7 +177,7 @@ class TestSessions:
         assert stats["total_cost_usd"] == 0.05
 
     def test_end_session_records_duration(self, tmp_team):
-        from boss.task import create_task
+        from delegate.task import create_task
         task = create_task(tmp_team, title="Test task")
         session_id = start_session(tmp_team, "alice", task_id=task["id"])
         time.sleep(0.1)
@@ -187,7 +187,7 @@ class TestSessions:
         assert stats["agent_time_seconds"] > 0
 
     def test_multiple_sessions_aggregate(self, tmp_team):
-        from boss.task import create_task
+        from delegate.task import create_task
         task = create_task(tmp_team, title="Test task")
 
         s1 = start_session(tmp_team, "alice", task_id=task["id"])
@@ -209,7 +209,7 @@ class TestSessions:
         assert stats["session_count"] == 0
 
     def test_project_stats(self, tmp_team):
-        from boss.task import create_task
+        from delegate.task import create_task
         t1 = create_task(tmp_team, title="A", project="myproject")
         t2 = create_task(tmp_team, title="B", project="myproject")
 
@@ -226,7 +226,7 @@ class TestSessions:
 
     def test_update_session_task(self, tmp_team):
         """update_session_task links a running session to a task retroactively."""
-        from boss.task import create_task
+        from delegate.task import create_task
         task = create_task(tmp_team, title="Late-linked task")
 
         # Start session without a task
@@ -243,7 +243,7 @@ class TestSessions:
 
     def test_update_session_task_no_overwrite(self, tmp_team):
         """update_session_task doesn't overwrite an existing task_id."""
-        from boss.task import create_task
+        from delegate.task import create_task
         t1 = create_task(tmp_team, title="First task")
         t2 = create_task(tmp_team, title="Second task")
 
@@ -264,7 +264,7 @@ class TestSessions:
 
     def test_update_session_tokens_mid_session(self, tmp_team):
         """update_session_tokens persists running totals before end_session."""
-        from boss.task import create_task
+        from delegate.task import create_task
         task = create_task(tmp_team, title="Live tracking task")
         session_id = start_session(tmp_team, "alice", task_id=task["id"])
 
@@ -295,7 +295,7 @@ class TestSessions:
         update_session_tokens(tmp_team, session_id, tokens_in=500, tokens_out=200, cost_usd=0.10)
 
         # Query agent stats — session has no ended_at but tokens should be visible
-        from boss.chat import get_agent_stats
+        from delegate.chat import get_agent_stats
         stats = get_agent_stats(tmp_team, "bob")
         assert stats["total_tokens_in"] == 500
         assert stats["total_tokens_out"] == 200
@@ -306,8 +306,8 @@ class TestGetCurrentTaskId:
     """Tests for _get_current_task_id covering the open-task fallback."""
 
     def test_finds_in_progress_task(self, tmp_team):
-        from boss.agent import _get_current_task_id
-        from boss.task import create_task, change_status, assign_task
+        from delegate.agent import _get_current_task_id
+        from delegate.task import create_task, change_status, assign_task
         task = create_task(tmp_team, title="In progress task")
         assign_task(tmp_team, task["id"], "alice")
         change_status(tmp_team, task["id"], "in_progress")
@@ -315,16 +315,16 @@ class TestGetCurrentTaskId:
 
     def test_finds_open_task(self, tmp_team):
         """An open task assigned to the agent should be found (session-start case)."""
-        from boss.agent import _get_current_task_id
-        from boss.task import create_task, assign_task
+        from delegate.agent import _get_current_task_id
+        from delegate.task import create_task, assign_task
         task = create_task(tmp_team, title="Open task")
         assign_task(tmp_team, task["id"], "alice")
         assert _get_current_task_id(tmp_team, "alice") == task["id"]
 
     def test_prefers_in_progress_over_open(self, tmp_team):
         """If both an in_progress and open task exist, prefer in_progress."""
-        from boss.agent import _get_current_task_id
-        from boss.task import create_task, assign_task, change_status
+        from delegate.agent import _get_current_task_id
+        from delegate.task import create_task, assign_task, change_status
         open_task = create_task(tmp_team, title="Open task")
         assign_task(tmp_team, open_task["id"], "alice")
         ip_task = create_task(tmp_team, title="IP task")
@@ -333,13 +333,13 @@ class TestGetCurrentTaskId:
         assert _get_current_task_id(tmp_team, "alice") == ip_task["id"]
 
     def test_returns_none_when_no_tasks(self, tmp_team):
-        from boss.agent import _get_current_task_id
+        from delegate.agent import _get_current_task_id
         assert _get_current_task_id(tmp_team, "alice") is None
 
     def test_returns_none_when_multiple_open(self, tmp_team):
         """Ambiguous: multiple open tasks, no in_progress — returns None."""
-        from boss.agent import _get_current_task_id
-        from boss.task import create_task, assign_task
+        from delegate.agent import _get_current_task_id
+        from delegate.task import create_task, assign_task
         t1 = create_task(tmp_team, title="Task 1")
         t2 = create_task(tmp_team, title="Task 2")
         assign_task(tmp_team, t1["id"], "alice")

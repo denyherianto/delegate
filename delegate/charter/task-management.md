@@ -7,16 +7,16 @@ Tasks should be scoped to roughly half a day of work. If bigger, break it down f
 ## Commands
 
 ```
-python -m boss.task create <home> --title "..." [--description "..."] [--repo <name>] [--priority high] [--depends-on 1,2]
-python -m boss.task list <home> [--status open] [--assignee <name>]
-python -m boss.task show <home> <task_id>
-python -m boss.task assign <home> <task_id> <assignee>
-python -m boss.task status <home> <task_id> <new_status>
+python -m delegate.task create <home> --title "..." [--description "..."] [--repo <name>] [--priority high] [--depends-on 1,2]
+python -m delegate.task list <home> [--status open] [--assignee <name>]
+python -m delegate.task show <home> <task_id>
+python -m delegate.task assign <home> <task_id> <assignee>
+python -m delegate.task status <home> <task_id> <new_status>
 ```
 
 Statuses: `open` → `in_progress` → `review` → `needs_merge` → `merged`. Also: `rejected` (→ `in_progress`), `conflict` (→ `in_progress`), `done` (legacy).
 
-Tasks are global, stored in `~/.boss/tasks/`. Associate with a repo using `--repo`.
+Tasks are global, stored in `~/.delegate/tasks/`. Associate with a repo using `--repo`.
 
 ## Workflow
 

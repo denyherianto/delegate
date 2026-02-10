@@ -1,13 +1,13 @@
-"""Tests for boss/orchestrator.py — multi-agent spawn/manage logic."""
+"""Tests for delegate/orchestrator.py — multi-agent spawn/manage logic."""
 
 import os
 
 import pytest
 import yaml
 
-from boss.mailbox import deliver, Message
-from boss.chat import get_messages
-from boss.orchestrator import (
+from delegate.mailbox import deliver, Message
+from delegate.chat import get_messages
+from delegate.orchestrator import (
     check_and_clear_stale_pids,
     get_agents_needing_spawn,
     orchestrate_once,

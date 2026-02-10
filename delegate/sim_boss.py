@@ -8,10 +8,10 @@ Uses claude_code_sdk.query() for one-shot LLM calls with a standardized prompt.
 
 Usage:
     # Respond to a single message
-    python -m boss.sim_boss respond <home> <team> --message "..." --task-spec "..."
+    python -m delegate.sim_boss respond <home> <team> --message "..." --task-spec "..."
 
     # Run the polling loop
-    python -m boss.sim_boss run <home> <team> --specs-dir benchmarks/tasks/ [--poll-interval 2.0]
+    python -m delegate.sim_boss run <home> <team> --specs-dir benchmarks/tasks/ [--poll-interval 2.0]
 """
 
 import argparse
@@ -22,8 +22,8 @@ from pathlib import Path
 
 import yaml
 
-from boss.mailbox import read_inbox, mark_inbox_read, send as mailbox_send
-from boss.config import get_boss
+from delegate.mailbox import read_inbox, mark_inbox_read, send as mailbox_send
+from delegate.config import get_boss
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ async def sim_boss_respond(
     """Given a message, return the sim-boss's response.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         team: Team name.
         task_spec: The full benchmark task spec text to ground the response.
         message: The manager's question or message.
@@ -180,7 +180,7 @@ async def run_sim_boss(
     """Poll boss inbox, match messages to task specs, respond, loop until stopped.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         team: Team name.
         task_specs: Dict of {task_title: task_description} from benchmark YAML files.
         poll_interval: Seconds between inbox checks.
@@ -295,14 +295,14 @@ def main():
 
     # respond — single message
     p_respond = sub.add_parser("respond", help="Respond to a single message")
-    p_respond.add_argument("home", type=Path, help="Boss home directory")
+    p_respond.add_argument("home", type=Path, help="Delegate home directory")
     p_respond.add_argument("team", help="Team name")
     p_respond.add_argument("--message", required=True, help="The message to respond to")
     p_respond.add_argument("--task-spec", required=True, help="Task spec text")
 
     # run — polling loop
     p_run = sub.add_parser("run", help="Run the polling loop")
-    p_run.add_argument("home", type=Path, help="Boss home directory")
+    p_run.add_argument("home", type=Path, help="Delegate home directory")
     p_run.add_argument("team", help="Team name")
     p_run.add_argument(
         "--specs-dir", type=Path, required=True,

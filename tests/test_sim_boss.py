@@ -1,4 +1,4 @@
-"""Tests for boss/sim_boss.py — simulated boss for eval runs."""
+"""Tests for delegate/sim_boss.py — simulated boss for eval runs."""
 
 import asyncio
 from pathlib import Path
@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from boss.bootstrap import bootstrap
-from boss.config import set_boss
-from boss.mailbox import send as mailbox_send, read_inbox, deliver, Message
-from boss.sim_boss import (
+from delegate.bootstrap import bootstrap
+from delegate.config import set_boss
+from delegate.mailbox import send as mailbox_send, read_inbox, deliver, Message
+from delegate.sim_boss import (
     sim_boss_respond,
     run_sim_boss,
     start_sim_boss_thread,
@@ -266,7 +266,7 @@ class TestProcessInbox:
         )
 
         # The response should be in boss's outbox (pending routing)
-        from boss.mailbox import read_outbox
+        from delegate.mailbox import read_outbox
         outbox = read_outbox(team_root, TEAM, BOSS_NAME, pending_only=True)
         assert len(outbox) == 1
         assert outbox[0].recipient == "manager"
@@ -312,7 +312,7 @@ class TestProcessInbox:
             llm_query=mock_llm_echo,
         )
 
-        from boss.mailbox import read_outbox
+        from delegate.mailbox import read_outbox
         outbox = read_outbox(team_root, TEAM, BOSS_NAME, pending_only=True)
         assert len(outbox) == 1
         assert "don't have any task specs" in outbox[0].body
@@ -374,7 +374,7 @@ class TestRunSimBoss:
         assert len(remaining) == 0
 
         # Response should be in outbox
-        from boss.mailbox import read_outbox
+        from delegate.mailbox import read_outbox
         outbox = read_outbox(team_root, TEAM, BOSS_NAME, pending_only=True)
         assert len(outbox) >= 1
 

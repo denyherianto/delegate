@@ -12,9 +12,9 @@ from pathlib import Path
 
 import yaml
 
-from boss.paths import agents_dir as _agents_dir, agent_dir as _agent_dir
-from boss.mailbox import read_inbox
-from boss.chat import log_event
+from delegate.paths import agents_dir as _agents_dir, agent_dir as _agent_dir
+from delegate.mailbox import read_inbox
+from delegate.chat import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ def spawn_agent_subprocess(
             state["token_budget"] = token_budget
             state_file.write_text(yaml.dump(state, default_flow_style=False))
 
-    cmd = [sys.executable, "-m", "boss.agent", str(hc_home), team, agent]
+    cmd = [sys.executable, "-m", "delegate.agent", str(hc_home), team, agent]
     proc = subprocess.Popen(cmd)
     logger.info(
         "Spawned agent %s | pid=%d | team=%s | token_budget=%s",

@@ -1,26 +1,26 @@
-"""Centralized path computations for boss.
+"""Centralized path computations for Delegate.
 
-All state lives under a single home directory (``~/.boss`` by default).
-The ``BOSS_HOME`` environment variable overrides the default for testing.
+All state lives under a single home directory (``~/.delegate`` by default).
+The ``DELEGATE_HOME`` environment variable overrides the default for testing.
 """
 
 import os
 from pathlib import Path
 
-_DEFAULT_HOME = Path.home() / ".boss"
+_DEFAULT_HOME = Path.home() / ".delegate"
 
 
 def home(override: Path | None = None) -> Path:
-    """Return the boss home directory.
+    """Return the Delegate home directory.
 
     Resolution order:
     1. *override* argument (used in tests)
-    2. ``BOSS_HOME`` environment variable
-    3. ``~/.boss``
+    2. ``DELEGATE_HOME`` environment variable
+    3. ``~/.delegate``
     """
     if override is not None:
         return override
-    env = os.environ.get("BOSS_HOME")
+    env = os.environ.get("DELEGATE_HOME")
     if env:
         return Path(env)
     return _DEFAULT_HOME

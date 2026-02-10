@@ -1,4 +1,4 @@
-"""Shared test fixtures for boss-ai tests."""
+"""Shared test fixtures for delegate-ai tests."""
 
 import os
 import sys
@@ -6,16 +6,16 @@ from pathlib import Path
 
 import pytest
 
-# Ensure the worktree's boss/ directory is on the package path so that
-# new modules (e.g. boss.notify) are importable even before the branch
+# Ensure the worktree's delegate/ directory is on the package path so that
+# new modules (e.g. delegate.notify) are importable even before the branch
 # is merged to main and installed.
-_worktree_hc = str(Path(__file__).resolve().parent.parent / "boss")
-import boss  # noqa: E402
-if _worktree_hc not in boss.__path__:
-    boss.__path__.insert(0, _worktree_hc)
+_worktree_hc = str(Path(__file__).resolve().parent.parent / "delegate")
+import delegate  # noqa: E402
+if _worktree_hc not in delegate.__path__:
+    delegate.__path__.insert(0, _worktree_hc)
 
-from boss.bootstrap import bootstrap
-from boss.config import set_boss
+from delegate.bootstrap import bootstrap
+from delegate.config import set_boss
 
 
 SAMPLE_MANAGER = "manager"
@@ -48,11 +48,11 @@ def tmp_team(tmp_path):
     # Set the boss name in config before bootstrap
     set_boss(hc_home, SAMPLE_BOSS)
     bootstrap(hc_home, SAMPLE_TEAM_NAME, manager=SAMPLE_MANAGER, agents=SAMPLE_WORKERS)
-    # Set BOSS_HOME so modules can find it
-    old_env = os.environ.get("BOSS_HOME")
-    os.environ["BOSS_HOME"] = str(hc_home)
+    # Set DELEGATE_HOME so modules can find it
+    old_env = os.environ.get("DELEGATE_HOME")
+    os.environ["DELEGATE_HOME"] = str(hc_home)
     yield hc_home
     if old_env is None:
-        os.environ.pop("BOSS_HOME", None)
+        os.environ.pop("DELEGATE_HOME", None)
     else:
-        os.environ["BOSS_HOME"] = old_env
+        os.environ["DELEGATE_HOME"] = old_env

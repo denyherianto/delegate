@@ -14,7 +14,7 @@ naming follows ``<agent>/T<task_id>-<slug>``.
 The daemon respawns the agent if it dies and new messages arrive.
 
 Usage:
-    python -m boss.agent <home> <team> <agent_name> [--idle-timeout 600]
+    python -m delegate.agent <home> <team> <agent_name> [--idle-timeout 600]
 """
 
 import argparse
@@ -31,9 +31,9 @@ from typing import Any
 
 import yaml
 
-from boss.paths import agent_dir as _resolve_agent_dir, agents_dir, base_charter_dir
-from boss.mailbox import read_inbox, mark_inbox_read
-from boss.task import format_task_id
+from delegate.paths import agent_dir as _resolve_agent_dir, agents_dir, base_charter_dir
+from delegate.mailbox import read_inbox, mark_inbox_read
+from delegate.task import format_task_id
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ class AgentLogger:
 
     def __init__(self, agent_name: str, base_logger: logging.Logger | None = None):
         self.agent = agent_name
-        self._logger = base_logger or logging.getLogger(f"boss.agent.{agent_name}")
+        self._logger = base_logger or logging.getLogger(f"delegate.agent.{agent_name}")
         self.turn: int = 0
         self.session_start: float = time.monotonic()
 
@@ -267,7 +267,7 @@ def _next_worklog_number(ad: Path) -> int:
 def _get_current_task(hc_home: Path, agent: str) -> dict | None:
     """Get the agent's current task dict, preferring in_progress then open."""
     try:
-        from boss.task import list_tasks
+        from delegate.task import list_tasks
         tasks = list_tasks(hc_home, assignee=agent, status="in_progress")
         if len(tasks) == 1:
             return tasks[0]
@@ -329,7 +329,7 @@ def setup_task_worktree(
     branch = _branch_name(agent, task_id, title)
 
     try:
-        from boss.repo import create_agent_worktree
+        from delegate.repo import create_agent_worktree
         wt_path = create_agent_worktree(
             hc_home, team, repo_name, agent, task_id, branch=branch,
         )
@@ -341,7 +341,7 @@ def setup_task_worktree(
         return None
 
     # Record the branch on the task
-    from boss.task import set_task_branch
+    from delegate.task import set_task_branch
     set_task_branch(hc_home, task_id, branch)
 
     logger.info(
@@ -362,7 +362,7 @@ def push_task_branch(hc_home: Path, task: dict) -> bool:
         return False
 
     try:
-        from boss.repo import push_branch
+        from delegate.repo import push_branch
         return push_branch(hc_home, repo_name, branch)
     except Exception as exc:
         logger.warning("Failed to push branch %s: %s", branch, exc)
@@ -387,7 +387,7 @@ def cleanup_task_worktree(
 
     # Then remove worktree
     try:
-        from boss.repo import remove_agent_worktree
+        from delegate.repo import remove_agent_worktree
         remove_agent_worktree(hc_home, team, repo_name, agent, task_id)
     except Exception as exc:
         logger.warning(
@@ -423,7 +423,7 @@ def _ensure_task_branch_metadata(
     # Backfill base_sha from main HEAD in the repo
     if not task.get("base_sha"):
         try:
-            from boss.repo import get_repo_path
+            from delegate.repo import get_repo_path
             repo_name = task.get("repo", "")
             repo_dir = get_repo_path(hc_home, repo_name)
             real_repo = repo_dir.resolve()
@@ -444,7 +444,7 @@ def _ensure_task_branch_metadata(
             logger.warning("Could not backfill base_sha for task %s: %s", task_id, exc)
 
     if needs_update:
-        from boss.task import update_task
+        from delegate.task import update_task
         update_task(hc_home, task_id, **updates)
 
 
@@ -475,7 +475,7 @@ def get_task_workspace(
         return default_workspace
 
     # Check if worktree already exists
-    from boss.repo import get_worktree_path
+    from delegate.repo import get_worktree_path
     wt_path = get_worktree_path(hc_home, team, repo_name, agent, task["id"])
     if wt_path.is_dir():
         _ensure_task_branch_metadata(hc_home, team, agent, task, wt_path)
@@ -506,8 +506,8 @@ def build_system_prompt(
     python = sys.executable
 
     # Look up role and key teammates
-    from boss.bootstrap import get_member_by_role
-    from boss.config import get_boss
+    from delegate.bootstrap import get_member_by_role
+    from delegate.config import get_boss
 
     state = yaml.safe_load((ad / "state.yaml").read_text()) or {}
     role = state.get("role", "worker")
@@ -572,29 +572,29 @@ GIT WORKTREE:
 """
 
     return f"""\
-You are {agent} (role: {role}), a team member in the Boss system.
+You are {agent} (role: {role}), a team member in the Delegate system.
 {boss_name} is the human boss. You report to {manager_name} (manager).
 
 CRITICAL: You communicate ONLY by running shell commands. Your conversational
 replies are NOT seen by anyone — they only go to an internal log. To send a
 message that another agent or {boss_name} will read, you MUST run:
 
-    {python} -m boss.mailbox send {hc_home} {team} {agent} <recipient> "<message>"
+    {python} -m delegate.mailbox send {hc_home} {team} {agent} <recipient> "<message>"
 
 Examples:
-    {python} -m boss.mailbox send {hc_home} {team} {agent} {boss_name} "Here is my update..."
-    {python} -m boss.mailbox send {hc_home} {team} {agent} {manager_name} "Status update..."
+    {python} -m delegate.mailbox send {hc_home} {team} {agent} {boss_name} "Here is my update..."
+    {python} -m delegate.mailbox send {hc_home} {team} {agent} {manager_name} "Status update..."
 
 Other commands:
     # Task management
-    {python} -m boss.task create {hc_home} --title "..." [--description "..."] [--priority high] [--repo <repo_name>]
-    {python} -m boss.task list {hc_home} [--status open] [--assignee <name>]
-    {python} -m boss.task assign {hc_home} <task_id> <assignee>
-    {python} -m boss.task status {hc_home} <task_id> <new_status>
-    {python} -m boss.task show {hc_home} <task_id>
+    {python} -m delegate.task create {hc_home} --title "..." [--description "..."] [--priority high] [--repo <repo_name>]
+    {python} -m delegate.task list {hc_home} [--status open] [--assignee <name>]
+    {python} -m delegate.task assign {hc_home} <task_id> <assignee>
+    {python} -m delegate.task status {hc_home} <task_id> <new_status>
+    {python} -m delegate.task show {hc_home} <task_id>
 
     # Check your inbox
-    {python} -m boss.mailbox inbox {hc_home} {team} {agent}
+    {python} -m delegate.mailbox inbox {hc_home} {team} {agent}
 
 Your workspace: {ws}
 Team data:      {hc_home}/teams/{team}/
@@ -649,7 +649,7 @@ def build_user_message(
 
     # Current task assignments
     try:
-        from boss.task import list_tasks
+        from delegate.task import list_tasks
         tasks = list_tasks(hc_home, assignee=agent)
         if tasks:
             active = [t for t in tasks if t["status"] in ("open", "in_progress")]
@@ -829,7 +829,7 @@ def _session_setup(
     Returns a _SessionContext with all shared state initialized.
     Raises RuntimeError if the agent is already running.
     """
-    from boss.chat import start_session, log_event
+    from delegate.chat import start_session, log_event
 
     ad = _agent_dir(hc_home, team, agent)
     alog = AgentLogger(agent)
@@ -895,7 +895,7 @@ def _session_teardown(ctx: _SessionContext) -> str:
 
     Returns the worklog content string.
     """
-    from boss.chat import end_session, log_event
+    from delegate.chat import end_session, log_event
 
     # Log session end summary
     ctx.alog.session_end_log(
@@ -952,7 +952,7 @@ def _finish_turn(
 
     Updates *ctx* in place with new cumulative totals.
     """
-    from boss.chat import update_session_tokens, update_session_task
+    from delegate.chat import update_session_tokens, update_session_task
 
     # With per-turn sessions, cost and tokens are per-turn deltas — just sum.
     ctx.total_tokens_in += turn_tokens_in
@@ -1210,7 +1210,7 @@ async def _run_agent_oneshot(
 
 def main():
     parser = argparse.ArgumentParser(description="Run an agent")
-    parser.add_argument("home", type=Path, help="Boss home directory")
+    parser.add_argument("home", type=Path, help="Delegate home directory")
     parser.add_argument("team", help="Team name")
     parser.add_argument("agent", help="Agent name")
     parser.add_argument(

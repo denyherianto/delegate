@@ -3,9 +3,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from boss.task import create_task, change_status, get_task, update_task, format_task_id
-from boss.web import create_app
-from boss.mailbox import read_inbox
+from delegate.task import create_task, change_status, get_task, update_task, format_task_id
+from delegate.web import create_app
+from delegate.mailbox import read_inbox
 
 TEAM = "testteam"
 
@@ -85,7 +85,7 @@ class TestApproveEndpoint:
     def test_approve_logs_event(self, client, needs_merge_task, tmp_team):
         client.post(f"/tasks/{needs_merge_task['id']}/approve")
 
-        from boss.chat import get_messages
+        from delegate.chat import get_messages
         events = get_messages(tmp_team, msg_type="event")
         assert any("approved" in e["content"] for e in events)
 
@@ -173,7 +173,7 @@ class TestRejectEndpoint:
             json={"reason": "Fails tests"},
         )
 
-        from boss.chat import get_messages
+        from delegate.chat import get_messages
         events = get_messages(tmp_team, msg_type="event")
         assert any("rejected" in e["content"] and "Fails tests" in e["content"] for e in events)
 

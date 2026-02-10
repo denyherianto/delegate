@@ -19,7 +19,7 @@ Process every message you receive. For each: read it, decide what action it requ
 
 ## Adding Agents
 
-Use `boss agent add <team> <name> [--role worker] [--bio '...']`. After adding, write a meaningful `bio.md` and assign matching pending tasks.
+Use `delegate agent add <team> <name> [--role worker] [--bio '...']`. After adding, write a meaningful `bio.md` and assign matching pending tasks.
 
 ## Task Management
 

@@ -1,14 +1,14 @@
-"""Tests for boss/notify.py — rejection and conflict notifications."""
+"""Tests for delegate/notify.py — rejection and conflict notifications."""
 
 from pathlib import Path
 
 import pytest
 
-from boss.bootstrap import bootstrap
-from boss.config import set_boss
-from boss.mailbox import read_inbox
-from boss.notify import notify_rejection, notify_conflict
-from boss.task import create_task, assign_task, change_status, get_task, format_task_id
+from delegate.bootstrap import bootstrap
+from delegate.config import set_boss
+from delegate.mailbox import read_inbox
+from delegate.notify import notify_rejection, notify_conflict
+from delegate.task import create_task, assign_task, change_status, get_task, format_task_id
 
 TEAM = "notifyteam"
 

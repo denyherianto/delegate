@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from boss.task import create_task, change_status, assign_task
-from boss.web import create_app
+from delegate.task import create_task, change_status, assign_task
+from delegate.web import create_app
 
 TEAM = "testteam"
 
@@ -63,7 +63,7 @@ class TestLastActiveAt:
 
     def test_last_active_at_from_worklog(self, client, tmp_team):
         """Creating a worklog file should update last_active_at."""
-        from boss.paths import agent_dir
+        from delegate.paths import agent_dir
         ad = agent_dir(tmp_team, TEAM, "alice")
         logs_dir = ad / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
@@ -83,7 +83,7 @@ class TestLastActiveAt:
 
     def test_last_active_at_uses_most_recent_worklog(self, client, tmp_team):
         """last_active_at should reflect the most recently modified worklog."""
-        from boss.paths import agent_dir
+        from delegate.paths import agent_dir
         ad = agent_dir(tmp_team, TEAM, "bob")
         logs_dir = ad / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)

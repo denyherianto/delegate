@@ -16,8 +16,8 @@ Response format (from QA):
         Meaning: tests failed or coverage insufficient, task returned to author.
 
 Usage:
-    python -m boss.qa review <home> <team> --repo <repo_name> --branch <branch_name>
-    python -m boss.qa process-inbox <home> <team>
+    python -m delegate.qa review <home> <team> --repo <repo_name> --branch <branch_name>
+    python -m delegate.qa process-inbox <home> <team>
 """
 
 import argparse
@@ -27,12 +27,12 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from boss.paths import agent_dir as _resolve_agent_dir
-from boss.mailbox import send, read_inbox, mark_inbox_read, Message
-from boss.chat import log_event
-from boss.task import list_tasks, set_task_branch, change_status, get_task, format_task_id
-from boss.config import get_repo_test_cmd, get_repo_pipeline
-from boss.bootstrap import get_member_by_role
+from delegate.paths import agent_dir as _resolve_agent_dir
+from delegate.mailbox import send, read_inbox, mark_inbox_read, Message
+from delegate.chat import log_event
+from delegate.task import list_tasks, set_task_branch, change_status, get_task, format_task_id
+from delegate.config import get_repo_test_cmd, get_repo_pipeline
+from delegate.bootstrap import get_member_by_role
 
 logger = logging.getLogger(__name__)
 
@@ -80,13 +80,13 @@ def parse_review_request(msg: Message) -> ReviewRequest | None:
 def checkout_branch(hc_home: Path, team: str, repo_name: str, branch: str) -> Path:
     """Create a QA worktree for reviewing a branch.
 
-    Uses the repo symlink in ``~/.boss/repos/<repo_name>`` to create
+    Uses the repo symlink in ``~/.delegate/repos/<repo_name>`` to create
     a worktree in QA's workspace directory.  If the worktree already exists,
     just switch to the branch.
 
     Returns the path to the worktree directory.
     """
-    from boss.repo import get_repo_path
+    from delegate.repo import get_repo_path
 
     repo_dir = get_repo_path(hc_home, repo_name)
     real_repo = repo_dir.resolve()

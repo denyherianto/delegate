@@ -1,10 +1,10 @@
-"""Tests for boss/router.py — the daemon's message routing logic."""
+"""Tests for delegate/router.py — the daemon's message routing logic."""
 
 import pytest
 
-from boss.mailbox import send, read_inbox, read_outbox, Message, deliver
-from boss.chat import get_messages
-from boss.router import route_once, BossQueue
+from delegate.mailbox import send, read_inbox, read_outbox, Message, deliver
+from delegate.chat import get_messages
+from delegate.router import route_once, BossQueue
 
 TEAM = "testteam"
 
@@ -74,7 +74,7 @@ class TestRouteOnce:
 
     def test_route_to_boss(self, tmp_team):
         """Messages to 'boss' are delivered to boss's inbox AND queued."""
-        from boss.config import get_boss
+        from delegate.config import get_boss
         boss_name = get_boss(tmp_team) or "nikhil"
         dq = BossQueue()
         send(tmp_team, TEAM, "manager", boss_name, "Question for boss")
@@ -93,7 +93,7 @@ class TestRouteOnce:
 
     def test_route_from_boss(self, tmp_team):
         """Boss's outbox is scanned like any other agent."""
-        from boss.config import get_boss
+        from delegate.config import get_boss
         boss_name = get_boss(tmp_team) or "nikhil"
         send(tmp_team, TEAM, boss_name, "manager", "Start the project")
         routed = route_once(tmp_team, TEAM, boss_name=boss_name)

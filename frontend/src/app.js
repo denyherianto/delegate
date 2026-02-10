@@ -23,7 +23,7 @@ function renderMarkdown(text) {
 // =====================================================================
 let _currentTeam = "";
 let _teams = [];
-let _isMuted = localStorage.getItem("boss-muted") === "true";
+let _isMuted = localStorage.getItem("delegate-muted") === "true";
 let _audioCtx = null;
 let _lastMsgTimestamp = "";
 let _prevTaskStatuses = {};
@@ -262,7 +262,7 @@ document.addEventListener("click", function (e) {
 // =====================================================================
 function toggleMute() {
   _isMuted = !_isMuted;
-  localStorage.setItem("boss-muted", _isMuted ? "true" : "false");
+  localStorage.setItem("delegate-muted", _isMuted ? "true" : "false");
   _updateMuteBtn();
 }
 
@@ -338,18 +338,18 @@ function playTaskSound() {
 // Theme toggle (light/dark/system)
 // =====================================================================
 function initTheme() {
-  const pref = localStorage.getItem("boss-theme"); // "light", "dark", or null (system)
+  const pref = localStorage.getItem("delegate-theme"); // "light", "dark", or null (system)
   applyTheme(pref);
 }
 
 function cycleTheme() {
-  const current = localStorage.getItem("boss-theme");
+  const current = localStorage.getItem("delegate-theme");
   let next;
   if (current === null) next = "light";
   else if (current === "light") next = "dark";
   else next = null; // back to system
-  if (next) localStorage.setItem("boss-theme", next);
-  else localStorage.removeItem("boss-theme");
+  if (next) localStorage.setItem("delegate-theme", next);
+  else localStorage.removeItem("delegate-theme");
   applyTheme(next);
 }
 

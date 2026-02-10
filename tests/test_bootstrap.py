@@ -1,13 +1,13 @@
-"""Tests for boss/bootstrap.py."""
+"""Tests for delegate/bootstrap.py."""
 
 import sqlite3
 
 import pytest
 import yaml
 
-from boss.bootstrap import bootstrap, add_agent, AGENT_SUBDIRS, get_member_by_role
-from boss.config import set_boss, get_boss
-from boss.paths import (
+from delegate.bootstrap import bootstrap, add_agent, AGENT_SUBDIRS, get_member_by_role
+from delegate.config import set_boss, get_boss
+from delegate.paths import (
     team_dir, agents_dir, agent_dir, tasks_dir, db_path,
     roster_path, boss_person_dir, base_charter_dir,
 )

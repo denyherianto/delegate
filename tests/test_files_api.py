@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from boss.web import create_app
+from delegate.web import create_app
 
 TEAM = "testteam"
 
@@ -11,7 +11,7 @@ TEAM = "testteam"
 @pytest.fixture
 def shared_tree(tmp_team):
     """Create a mock shared/ directory structure inside the bootstrapped team."""
-    from boss.paths import shared_dir
+    from delegate.paths import shared_dir
 
     base = shared_dir(tmp_team, TEAM)
     base.mkdir(exist_ok=True)
@@ -176,7 +176,7 @@ class TestReadSharedFile:
 
     def test_read_large_file_truncated(self, shared_tree):
         """Files larger than 1MB should be truncated."""
-        from boss.paths import shared_dir
+        from delegate.paths import shared_dir
 
         base = shared_dir(shared_tree, TEAM)
         large_file = base / "large.txt"

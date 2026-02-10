@@ -1,8 +1,8 @@
-"""Tests for boss/mailbox.py."""
+"""Tests for delegate/mailbox.py."""
 
 import pytest
 
-from boss.mailbox import (
+from delegate.mailbox import (
     Message,
     send,
     read_inbox,

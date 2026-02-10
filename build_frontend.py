@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Build the boss frontend assets.
+"""Build the Delegate frontend assets.
 
-Runs esbuild to bundle JS/CSS from frontend/src/ into boss/static/.
+Runs esbuild to bundle JS/CSS from frontend/src/ into delegate/static/.
 Automatically runs ``npm install`` in frontend/ if node_modules is missing.
 
 Usage:

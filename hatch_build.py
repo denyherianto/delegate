@@ -1,7 +1,7 @@
 """Hatch build hook — builds frontend assets before creating the wheel.
 
 When ``hatch build`` or ``pip install .`` runs, this hook ensures that
-``boss/static/`` contains the latest bundled JS/CSS/HTML from ``frontend/``.
+``delegate/static/`` contains the latest bundled JS/CSS/HTML from ``frontend/``.
 
 Requires Node.js >= 18 on the build machine.  End users installing from
 a pre-built wheel do NOT need Node.js — the assets are already bundled.
@@ -53,4 +53,4 @@ class CustomBuildHook(BuildHookInterface):
             cwd=str(frontend_dir),
             check=True,
         )
-        self.app.display_info("Frontend build complete → boss/static/")
+        self.app.display_info("Frontend build complete → delegate/static/")

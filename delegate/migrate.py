@@ -1,17 +1,17 @@
-"""Migrate existing myteam/.standup state to the new ~/.boss structure.
+"""Migrate existing myteam/.standup state to the new ~/.delegate structure.
 
 Migration steps:
-1. Create ~/.boss/ structure
-2. Copy tasks/ to ~/.boss/tasks/
-3. Copy db.sqlite to ~/.boss/db.sqlite
-4. Copy charter/additional.md to ~/.boss/teams/<name>/override.md
-5. Copy roster.md to ~/.boss/teams/<name>/roster.md
-6. Move team/ to ~/.boss/teams/<name>/agents/ (excluding boss)
+1. Create ~/.delegate/ structure
+2. Copy tasks/ to ~/.delegate/tasks/
+3. Copy db.sqlite to ~/.delegate/db.sqlite
+4. Copy charter/additional.md to ~/.delegate/teams/<name>/override.md
+5. Copy roster.md to ~/.delegate/teams/<name>/roster.md
+6. Move team/ to ~/.delegate/teams/<name>/agents/ (excluding boss)
 7. Extract boss name from state.yaml and write to config.yaml
 8. Update state.yaml: remove stale boss entries; set qa role
 
 Usage:
-    boss migrate <old_root> <team_name> [--home ~/.boss]
+    boss migrate <old_root> <team_name> [--home ~/.delegate]
 """
 
 import argparse
@@ -21,7 +21,7 @@ from pathlib import Path
 
 import yaml
 
-from boss.paths import (
+from delegate.paths import (
     home as _default_home,
     tasks_dir,
     db_path,
@@ -30,8 +30,8 @@ from boss.paths import (
     roster_path,
     boss_person_dir,
 )
-from boss.bootstrap import MAILDIR_SUBDIRS
-from boss.config import set_boss
+from delegate.bootstrap import MAILDIR_SUBDIRS
+from delegate.config import set_boss
 
 logger = logging.getLogger(__name__)
 
@@ -41,12 +41,12 @@ def migrate(
     team_name: str,
     hc_home: Path | None = None,
 ) -> dict:
-    """Migrate old .standup state to the new ~/.boss structure.
+    """Migrate old .standup state to the new ~/.delegate structure.
 
     Args:
         old_root: Path to the old project root containing .standup/
         team_name: Name for the team in the new structure
-        hc_home: Boss home (default: ~/.boss)
+        hc_home: Delegate home (default: ~/.delegate)
 
     Returns:
         Migration report dict with counts and details.
@@ -160,7 +160,7 @@ def migrate(
         report["boss_name"] = boss_name
         logger.info("Set boss to: %s", boss_name)
 
-        # Create boss's global mailbox at ~/.boss/boss/
+        # Create boss's global mailbox at ~/.delegate/boss/
         dd = boss_person_dir(hc_home)
         dd.mkdir(parents=True, exist_ok=True)
         for subdir in MAILDIR_SUBDIRS:
@@ -221,12 +221,12 @@ def print_migration_report(report: dict) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Migrate .standup state to ~/.boss")
+    parser = argparse.ArgumentParser(description="Migrate .standup state to ~/.delegate")
     parser.add_argument("old_root", type=Path, help="Path to old project root (with .standup/)")
     parser.add_argument("team_name", help="Name for the team in the new structure")
     parser.add_argument(
         "--home", type=Path, default=None,
-        help="Boss home directory (default: ~/.boss)",
+        help="Delegate home directory (default: ~/.delegate)",
     )
     args = parser.parse_args()
 

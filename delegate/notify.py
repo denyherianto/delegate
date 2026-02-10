@@ -9,7 +9,7 @@ Notification types:
     CONFLICT   — daemon merge worker detected a merge conflict
 
 Usage:
-    from boss.notify import notify_rejection, notify_conflict
+    from delegate.notify import notify_rejection, notify_conflict
     notify_rejection(hc_home, team, task, reason="Code quality issues")
     notify_conflict(hc_home, team, task, conflict_details="...")
 """
@@ -18,10 +18,10 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from boss.bootstrap import get_member_by_role
-from boss.config import get_boss
-from boss.mailbox import Message, deliver
-from boss.task import format_task_id
+from delegate.bootstrap import get_member_by_role
+from delegate.config import get_boss
+from delegate.mailbox import Message, deliver
+from delegate.task import format_task_id
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ def notify_rejection(
     Called when a task is rejected via POST /tasks/{id}/reject.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         team: Team name.
         task: The task dict (must include id, title, assignee, status).
         reason: Human-provided rejection reason.
@@ -116,7 +116,7 @@ def notify_conflict(
     the task status to 'conflict'.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         team: Team name.
         task: The task dict (must include id, title, branch, assignee).
         conflict_details: Details about the conflict (files, error output, etc.).

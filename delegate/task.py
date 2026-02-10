@@ -1,15 +1,15 @@
 """File-based task management — global across all teams.
 
-Tasks are stored as individual YAML files under ``~/.boss/tasks/``.
+Tasks are stored as individual YAML files under ``~/.delegate/tasks/``.
 
 Usage:
-    python -m boss.task create <home> --title "Build API" [--priority high]
-    python -m boss.task list <home> [--status open] [--assignee alice]
-    python -m boss.task update <home> <task_id> [--title ...] [--description ...] [--priority ...]
-    python -m boss.task assign <home> <task_id> <assignee>
-    python -m boss.task reviewer <home> <task_id> <reviewer>
-    python -m boss.task status <home> <task_id> <status>
-    python -m boss.task show <home> <task_id>
+    python -m delegate.task create <home> --title "Build API" [--priority high]
+    python -m delegate.task list <home> [--status open] [--assignee alice]
+    python -m delegate.task update <home> <task_id> [--title ...] [--description ...] [--priority ...]
+    python -m delegate.task assign <home> <task_id> <assignee>
+    python -m delegate.task reviewer <home> <task_id> <reviewer>
+    python -m delegate.task status <home> <task_id> <status>
+    python -m delegate.task show <home> <task_id>
 """
 
 import argparse
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import yaml
 
-from boss.paths import tasks_dir as _resolve_tasks_dir
+from delegate.paths import tasks_dir as _resolve_tasks_dir
 
 
 VALID_STATUSES = ("open", "in_progress", "review", "done", "needs_merge", "merged", "rejected", "conflict")
@@ -126,7 +126,7 @@ def create_task(
     path = _task_path(td, task_id)
     path.write_text(yaml.dump(task, default_flow_style=False, sort_keys=False))
 
-    from boss.chat import log_event
+    from delegate.chat import log_event
     log_event(hc_home, f"{format_task_id(task_id)} created \u2014 {title}")
 
     return task
@@ -172,7 +172,7 @@ def assign_task(hc_home: Path, task_id: int, assignee: str) -> dict:
     """Assign a task to an agent."""
     task = update_task(hc_home, task_id, assignee=assignee)
 
-    from boss.chat import log_event
+    from delegate.chat import log_event
     log_event(hc_home, f"{format_task_id(task_id)} assigned to {assignee.capitalize()}")
 
     return task
@@ -182,7 +182,7 @@ def set_reviewer(hc_home: Path, task_id: int, reviewer: str) -> dict:
     """Set the reviewer for a task."""
     task = update_task(hc_home, task_id, reviewer=reviewer)
 
-    from boss.chat import log_event
+    from delegate.chat import log_event
     log_event(hc_home, f"{format_task_id(task_id)} reviewer \u2192 {reviewer.capitalize()}")
 
     return task
@@ -218,7 +218,7 @@ def _backfill_branch_metadata(hc_home: Path, task: dict, updates: dict) -> None:
     branch = updates.get("branch") or task.get("branch", "")
     if not task.get("base_sha") and "base_sha" not in updates and branch:
         try:
-            from boss.paths import repo_path as _repo_path
+            from delegate.paths import repo_path as _repo_path
             git_cwd = str(_repo_path(hc_home, repo_name))
             result = subprocess.run(
                 ["git", "merge-base", "main", branch],
@@ -274,7 +274,7 @@ def change_status(hc_home: Path, task_id: int, status: str) -> dict:
     task = update_task(hc_home, task_id, **updates)
 
     new_status = status.replace("_", " ").title()
-    from boss.chat import log_event
+    from delegate.chat import log_event
     log_event(hc_home, f"{format_task_id(task_id)} {old_status} \u2192 {new_status}")
 
     return task
@@ -307,7 +307,7 @@ def get_task_diff(hc_home: Path, task_id: int) -> str:
     """Return the git diff for the task's branch.
 
     If the task has a ``repo`` field, diffs are run against the repo
-    (via symlink in ``~/.boss/repos/<repo>/``).  Otherwise falls
+    (via symlink in ``~/.delegate/repos/<repo>/``).  Otherwise falls
     back to ``hc_home`` as the git working directory.
 
     If ``base_sha`` is set on the task, uses ``base_sha...branch`` (three-dot
@@ -322,7 +322,7 @@ def get_task_diff(hc_home: Path, task_id: int) -> str:
     # Determine git cwd — prefer the repo (symlink) if set
     repo_name = task.get("repo", "")
     if repo_name:
-        from boss.paths import repo_path as _repo_path
+        from delegate.paths import repo_path as _repo_path
         git_cwd = str(_repo_path(hc_home, repo_name))
     else:
         git_cwd = str(hc_home)

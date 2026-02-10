@@ -1,4 +1,4 @@
-"""Tests for boss/merge.py — merge worker logic.
+"""Tests for delegate/merge.py — merge worker logic.
 
 Tests the new merge flow:
     1. rebase onto main
@@ -14,18 +14,18 @@ from unittest.mock import patch, MagicMock
 import pytest
 import yaml
 
-from boss.task import (
+from delegate.task import (
     create_task,
     change_status,
     update_task,
     get_task,
 )
-from boss.config import (
+from delegate.config import (
     add_repo, get_repo_approval, get_repo_test_cmd, update_repo_test_cmd, set_boss,
     get_repo_pipeline, set_repo_pipeline, add_pipeline_step, remove_pipeline_step,
 )
-from boss.merge import merge_task, merge_once, _run_tests, _run_pipeline, _other_unmerged_tasks_on_branch, MergeResult
-from boss.bootstrap import bootstrap
+from delegate.merge import merge_task, merge_once, _run_tests, _run_pipeline, _other_unmerged_tasks_on_branch, MergeResult
+from delegate.bootstrap import bootstrap
 
 
 SAMPLE_TEAM = "myteam"
@@ -33,7 +33,7 @@ SAMPLE_TEAM = "myteam"
 
 @pytest.fixture
 def hc_home(tmp_path):
-    """Create a fully bootstrapped boss home directory."""
+    """Create a fully bootstrapped delegate home directory."""
     hc = tmp_path / "hc_home"
     hc.mkdir()
     set_boss(hc, "nikhil")
@@ -124,7 +124,7 @@ class TestMergeTask:
         task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001")
         update_task(hc_home, task["id"], approval_status="approved")
 
-        with patch("boss.merge.notify_conflict") as mock_notify:
+        with patch("delegate.merge.notify_conflict") as mock_notify:
             result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
 
         assert result.success is False
@@ -430,7 +430,7 @@ class TestMergeBaseAndTip:
         task = _make_needs_merge_task(hc_home, repo="myrepo", branch="alice/T0001")
         update_task(hc_home, task["id"], approval_status="approved")
 
-        with patch("boss.merge.notify_conflict"):
+        with patch("delegate.merge.notify_conflict"):
             result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
 
         assert result.success is False
@@ -785,7 +785,7 @@ class TestRunPipeline:
         task = _make_needs_merge_task(hc_home, repo="myrepo", branch=branch)
         update_task(hc_home, task["id"], approval_status="approved")
 
-        with patch("boss.merge.notify_conflict"):
+        with patch("delegate.merge.notify_conflict"):
             result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
 
         assert result.success is False

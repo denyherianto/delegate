@@ -1,13 +1,13 @@
-"""Tests for boss/repo.py — repo registration via symlinks and worktrees."""
+"""Tests for delegate/repo.py — repo registration via symlinks and worktrees."""
 
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from boss.bootstrap import bootstrap
-from boss.config import set_boss, add_repo
-from boss.repo import (
+from delegate.bootstrap import bootstrap
+from delegate.config import set_boss, add_repo
+from delegate.repo import (
     register_repo,
     update_repo_path,
     list_repos,
@@ -16,7 +16,7 @@ from boss.repo import (
     remove_agent_worktree,
     get_worktree_path,
 )
-from boss.task import create_task, update_task, get_task
+from delegate.task import create_task, update_task, get_task
 
 
 TEAM = "myteam"
@@ -24,7 +24,7 @@ TEAM = "myteam"
 
 @pytest.fixture
 def hc_home(tmp_path):
-    """Create a fully bootstrapped boss home directory."""
+    """Create a fully bootstrapped delegate home directory."""
     hc = tmp_path / "hc_home"
     hc.mkdir()
     set_boss(hc, "nikhil")

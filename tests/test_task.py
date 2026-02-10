@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from boss.task import (
+from delegate.task import (
     create_task,
     get_task,
     update_task,
@@ -287,20 +287,20 @@ class TestEventLogging:
     """Verify that task operations are logged to the chat event stream."""
 
     def test_create_task_logs_event(self, tmp_team):
-        from boss.chat import get_messages
+        from delegate.chat import get_messages
         create_task(tmp_team, title="Build API", project="backend", priority="high")
         events = get_messages(tmp_team, msg_type="event")
         assert any("T0001 created" in e["content"] for e in events)
 
     def test_assign_task_logs_event(self, tmp_team):
-        from boss.chat import get_messages
+        from delegate.chat import get_messages
         t = create_task(tmp_team, title="Build API")
         assign_task(tmp_team, t["id"], "alice")
         events = get_messages(tmp_team, msg_type="event")
         assert any("assigned to Alice" in e["content"] for e in events)
 
     def test_change_status_logs_event(self, tmp_team):
-        from boss.chat import get_messages
+        from delegate.chat import get_messages
         t = create_task(tmp_team, title="Build API")
         change_status(tmp_team, t["id"], "in_progress")
         events = get_messages(tmp_team, msg_type="event")
@@ -354,7 +354,7 @@ class TestBranchAndCommits:
         result = get_task_diff(tmp_team, task["id"])
         assert result == "(no branch set)"
 
-    @patch("boss.task.subprocess.run")
+    @patch("delegate.task.subprocess.run")
     def test_get_task_diff_with_branch(self, mock_run, tmp_team):
         task = create_task(tmp_team, title="Feature X")
         set_task_branch(tmp_team, task["id"], "alice/backend/0001-feature-x")
@@ -371,7 +371,7 @@ class TestBranchAndCommits:
         call_args = mock_run.call_args
         assert call_args[0][0] == ["git", "diff", "main...alice/backend/0001-feature-x"]
 
-    @patch("boss.task.subprocess.run")
+    @patch("delegate.task.subprocess.run")
     def test_get_task_diff_no_fallback(self, mock_run, tmp_team):
         task = create_task(tmp_team, title="Feature X")
         set_task_branch(tmp_team, task["id"], "alice/backend/0001-feature-x")
@@ -386,7 +386,7 @@ class TestBranchAndCommits:
         diff = get_task_diff(tmp_team, task["id"])
         assert diff == "(no diff available)"
 
-    @patch("boss.task.subprocess.run")
+    @patch("delegate.task.subprocess.run")
     def test_get_task_diff_no_diff_available(self, mock_run, tmp_team):
         task = create_task(tmp_team, title="Feature X")
         set_task_branch(tmp_team, task["id"], "alice/backend/0001-feature-x")
@@ -464,7 +464,7 @@ class TestMergeQueueFields:
 class TestBranchMetadataBackfill:
     """Tests that branch and base_sha are backfilled on status transitions."""
 
-    @patch("boss.task.subprocess.run")
+    @patch("delegate.task.subprocess.run")
     def test_review_backfills_branch_when_empty(self, mock_run, tmp_team):
         """Transitioning to review should backfill branch from assignee + task_id."""
         task = create_task(tmp_team, title="Feature X", repo="myrepo")
@@ -480,7 +480,7 @@ class TestBranchMetadataBackfill:
         updated = change_status(tmp_team, task["id"], "review")
         assert updated["branch"] == "alice/T0001"
 
-    @patch("boss.task.subprocess.run")
+    @patch("delegate.task.subprocess.run")
     def test_review_backfills_base_sha_when_empty(self, mock_run, tmp_team):
         """Transitioning to review should backfill base_sha via git merge-base."""
         task = create_task(tmp_team, title="Feature X", repo="myrepo")
@@ -517,7 +517,7 @@ class TestBranchMetadataBackfill:
         assert updated["branch"] == ""
         assert updated["base_sha"] == ""
 
-    @patch("boss.task.subprocess.run")
+    @patch("delegate.task.subprocess.run")
     def test_needs_merge_backfills_branch(self, mock_run, tmp_team):
         """Transitioning to needs_merge should also backfill branch."""
         task = create_task(tmp_team, title="Feature X", repo="myrepo")

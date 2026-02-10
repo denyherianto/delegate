@@ -1,14 +1,14 @@
 """SQLite-based chat, event log, and session tracking.
 
 Central log of all routed messages, system events, and agent sessions.
-The database lives at ``~/.boss/db.sqlite`` (global across all teams).
+The database lives at ``~/.delegate/db.sqlite`` (global across all teams).
 """
 
 import argparse
 import sqlite3
 from pathlib import Path
 
-from boss.paths import db_path, home as default_home
+from delegate.paths import db_path, home as default_home
 
 
 DB_SCHEMA = """
@@ -201,7 +201,7 @@ def get_task_stats(hc_home: Path, task_id: int) -> dict:
 
 def get_agent_stats(hc_home: Path, agent: str) -> dict:
     """Get aggregated stats for an agent from sessions and tasks."""
-    from boss.task import list_tasks
+    from delegate.task import list_tasks
 
     conn = _connect(hc_home)
     row = conn.execute(
@@ -239,7 +239,7 @@ def get_agent_stats(hc_home: Path, agent: str) -> dict:
 
 def get_project_stats(hc_home: Path, project: str) -> dict:
     """Get aggregated stats for all tasks in a project."""
-    from boss.task import list_tasks
+    from delegate.task import list_tasks
 
     tasks = list_tasks(hc_home, project=project)
     task_ids = [t["id"] for t in tasks]

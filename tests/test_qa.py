@@ -1,4 +1,4 @@
-"""Tests for boss/qa.py — QA agent and review workflow."""
+"""Tests for delegate/qa.py — QA agent and review workflow."""
 
 import subprocess
 import sys
@@ -7,9 +7,9 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from boss.bootstrap import bootstrap
-from boss.config import set_boss
-from boss.qa import (
+from delegate.bootstrap import bootstrap
+from delegate.config import set_boss
+from delegate.qa import (
     parse_review_request,
     run_tests,
     handle_review_request,
@@ -20,9 +20,9 @@ from boss.qa import (
     ReviewResult,
     MIN_COVERAGE_PERCENT,
 )
-from boss.mailbox import Message, deliver, read_inbox, read_outbox
-from boss.chat import get_messages
-from boss.task import create_task, change_status, get_task, assign_task, format_task_id
+from delegate.mailbox import Message, deliver, read_inbox, read_outbox
+from delegate.chat import get_messages
+from delegate.task import create_task, change_status, get_task, assign_task, format_task_id
 
 TEAM = "qateam"
 
@@ -267,7 +267,7 @@ class TestCheckTestCoverage:
         assert passed
         assert "No Python project" in output
 
-    @patch("boss.qa.subprocess.run")
+    @patch("delegate.qa.subprocess.run")
     def test_coverage_above_threshold(self, mock_run):
         """Coverage above minimum should pass."""
         mock_result = MagicMock()
@@ -282,7 +282,7 @@ class TestCheckTestCoverage:
         assert passed
         assert "80%" in output
 
-    @patch("boss.qa.subprocess.run")
+    @patch("delegate.qa.subprocess.run")
     def test_coverage_below_threshold(self, mock_run):
         """Coverage below minimum should fail."""
         mock_result = MagicMock()
@@ -297,7 +297,7 @@ class TestCheckTestCoverage:
         assert "40%" in output
         assert "below minimum" in output
 
-    @patch("boss.qa.subprocess.run")
+    @patch("delegate.qa.subprocess.run")
     def test_coverage_tools_not_available(self, mock_run):
         """When pytest-cov is not installed, should pass gracefully."""
         mock_result = MagicMock()
@@ -311,7 +311,7 @@ class TestCheckTestCoverage:
         assert passed
         assert "not available" in output.lower() or "skipping" in output.lower()
 
-    @patch("boss.qa.subprocess.run")
+    @patch("delegate.qa.subprocess.run")
     def test_coverage_timeout(self, mock_run):
         """Timeout should fail."""
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="pytest", timeout=300)
@@ -330,7 +330,7 @@ class TestTaskStatusTransitions:
         req = ReviewRequest(repo=repo_path, branch=branch_name, requester="alice")
 
         # Mock coverage check to pass (avoid needing pytest-cov in test repo)
-        with patch("boss.qa.check_test_coverage", return_value=(True, "Coverage: 85% (minimum: 60%)")):
+        with patch("delegate.qa.check_test_coverage", return_value=(True, "Coverage: 85% (minimum: 60%)")):
             result = handle_review_request(hc_home, TEAM, req, test_command=f"{sys.executable} -m pytest -v")
 
         assert result.approved
@@ -367,7 +367,7 @@ class TestTaskStatusTransitions:
         req = ReviewRequest(repo=repo_path, branch=branch_name, requester="alice")
 
         # Mock coverage check to fail
-        with patch("boss.qa.check_test_coverage", return_value=(False, "Coverage: 30% is below minimum 60%.")):
+        with patch("delegate.qa.check_test_coverage", return_value=(False, "Coverage: 30% is below minimum 60%.")):
             result = handle_review_request(hc_home, TEAM, req, test_command=f"{sys.executable} -m pytest -v")
 
         assert not result.approved
@@ -380,7 +380,7 @@ class TestTaskStatusTransitions:
         hc_home, repo_path = qa_team
         req = ReviewRequest(repo=repo_path, branch="feature-xyz", requester="alice")
 
-        with patch("boss.qa.check_test_coverage", return_value=(True, "Coverage OK")):
+        with patch("delegate.qa.check_test_coverage", return_value=(True, "Coverage OK")):
             result = handle_review_request(hc_home, TEAM, req, test_command=f"{sys.executable} -m pytest -v")
 
         assert result.approved  # should still pass, just no task status update
@@ -392,7 +392,7 @@ class TestUpdatedReviewMessages:
         hc_home, repo_path = qa_team
         req = ReviewRequest(repo=repo_path, branch="feature-xyz", requester="alice")
 
-        with patch("boss.qa.check_test_coverage", return_value=(True, "Coverage: 85%")):
+        with patch("delegate.qa.check_test_coverage", return_value=(True, "Coverage: 85%")):
             result = handle_review_request(hc_home, TEAM, req, test_command=f"{sys.executable} -m pytest -v")
 
         assert result.approved

@@ -19,11 +19,11 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from boss.config import get_repo_approval, get_repo_test_cmd, get_repo_pipeline
-from boss.notify import notify_conflict
-from boss.task import get_task, change_status, update_task, list_tasks, format_task_id
-from boss.chat import log_event
-from boss.repo import get_repo_path, remove_agent_worktree
+from delegate.config import get_repo_approval, get_repo_test_cmd, get_repo_pipeline
+from delegate.notify import notify_conflict
+from delegate.task import get_task, change_status, update_task, list_tasks, format_task_id
+from delegate.chat import log_event
+from delegate.repo import get_repo_path, remove_agent_worktree
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +238,7 @@ def merge_task(
     """Execute the full merge sequence for a task.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         team: Team name.
         task_id: Task ID.
         skip_tests: Skip test execution (for emergencies).

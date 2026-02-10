@@ -3,20 +3,20 @@
 This module contains the routing logic as callable functions (one poll cycle)
 so it can be tested without running the full daemon event loop.
 
-The actual event loop is in boss/daemon.py.
+The actual event loop is in delegate/daemon.py.
 """
 
 import logging
 from pathlib import Path
 
-from boss.paths import agents_dir as _agents_dir
-from boss.mailbox import (
+from delegate.paths import agents_dir as _agents_dir
+from delegate.mailbox import (
     Message,
     read_outbox,
     deliver,
     mark_outbox_routed,
 )
-from boss.chat import log_message, log_event
+from delegate.chat import log_message, log_event
 
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,7 @@ def route_once(
 
     # Resolve boss name if not provided
     if boss_name is None:
-        from boss.config import get_boss
+        from delegate.config import get_boss
         boss_name = get_boss(hc_home)
 
     # --- Boss outbox: route messages to agents in this team ---

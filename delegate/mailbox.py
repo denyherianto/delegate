@@ -13,9 +13,9 @@ Message file format:
     <message body>
 
 Usage:
-    python -m boss.mailbox send <home> <team> <sender> <recipient> <message>
-    python -m boss.mailbox inbox <home> <team> <agent> [--unread]
-    python -m boss.mailbox outbox <home> <team> <agent> [--pending]
+    python -m delegate.mailbox send <home> <team> <sender> <recipient> <message>
+    python -m delegate.mailbox inbox <home> <team> <agent> [--unread]
+    python -m delegate.mailbox outbox <home> <team> <agent> [--pending]
 """
 
 import argparse
@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from boss.paths import agent_dir as _resolve_agent_dir
+from delegate.paths import agent_dir as _resolve_agent_dir
 
 
 @dataclass
@@ -62,11 +62,11 @@ def _agent_dir(hc_home: Path, team: str, agent: str) -> Path:
     """Return the mailbox directory for an agent (or the boss).
 
     If *agent* matches the org-wide boss name, the global boss
-    mailbox at ``~/.boss/boss/`` is returned instead of a
+    mailbox at ``~/.delegate/boss/`` is returned instead of a
     team-scoped agent directory.
     """
-    from boss.config import get_boss
-    from boss.paths import boss_person_dir as _boss_person_dir
+    from delegate.config import get_boss
+    from delegate.paths import boss_person_dir as _boss_person_dir
 
     boss = get_boss(hc_home)
     if boss and agent == boss:

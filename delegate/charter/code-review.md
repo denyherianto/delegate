@@ -2,7 +2,7 @@
 
 ## Workspace Isolation
 
-Each agent works in their own git worktree, created automatically for tasks with a registered repo. Worktrees live in `~/.boss/teams/<team>/agents/<agent>/worktrees/<repo>-T<NNNN>/`. Registered repos are symlinks in `~/.boss/repos/` pointing to the real local repo. No clones — worktrees are created directly against the local repo.
+Each agent works in their own git worktree, created automatically for tasks with a registered repo. Worktrees live in `~/.delegate/teams/<team>/agents/<agent>/worktrees/<repo>-T<NNNN>/`. Registered repos are symlinks in `~/.delegate/repos/` pointing to the real local repo. No clones — worktrees are created directly against the local repo.
 
 ## Branches
 

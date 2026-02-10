@@ -1,4 +1,4 @@
-"""FastAPI web application for the boss UI.
+"""FastAPI web application for the Delegate UI.
 
 Provides:
     GET  /            — HTML single-page app
@@ -7,7 +7,7 @@ Provides:
     GET  /tasks/{id}/stats — task stats (elapsed, agent time, tokens)
     GET  /tasks/{id}/diff — task diff
     GET  /messages    — get chat/event log (JSON, global)
-    POST /messages    — boss sends a message to a team's manager
+    POST /messages    — user sends a message to a team's manager
     GET  /teams/{team}/agents       — list agents for a team
     GET  /teams/{team}/agents/{name}/stats  — agent stats
     GET  /teams/{team}/agents/{name}/inbox  — agent inbox messages
@@ -35,17 +35,17 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from boss.paths import (
+from delegate.paths import (
     home as _default_home,
     agents_dir as _agents_dir,
     agent_dir as _agent_dir,
     shared_dir as _shared_dir,
     teams_dir as _teams_dir,
 )
-from boss.config import get_boss
-from boss.task import list_tasks as _list_tasks, get_task as _get_task, get_task_diff as _get_task_diff, update_task as _update_task, change_status as _change_status, VALID_STATUSES, format_task_id
-from boss.chat import get_messages as _get_messages, get_task_stats as _get_task_stats, get_agent_stats as _get_agent_stats, log_event as _log_event
-from boss.mailbox import send as _send, read_inbox as _read_inbox, read_outbox as _read_outbox
+from delegate.config import get_boss
+from delegate.task import list_tasks as _list_tasks, get_task as _get_task, get_task_diff as _get_task_diff, update_task as _update_task, change_status as _change_status, VALID_STATUSES, format_task_id
+from delegate.chat import get_messages as _get_messages, get_task_stats as _get_task_stats, get_agent_stats as _get_agent_stats, log_event as _log_event
+from delegate.mailbox import send as _send, read_inbox as _read_inbox, read_outbox as _read_outbox
 logger = logging.getLogger(__name__)
 
 
@@ -160,9 +160,9 @@ async def _daemon_loop(
     default_token_budget: int | None,
 ) -> None:
     """Route messages, spawn agents, and process merges on a fixed interval (all teams)."""
-    from boss.router import route_once
-    from boss.orchestrator import orchestrate_once, spawn_agent_subprocess
-    from boss.merge import merge_once
+    from delegate.router import route_once
+    from delegate.orchestrator import orchestrate_once, spawn_agent_subprocess
+    from delegate.merge import merge_once
 
     logger.info("Daemon loop started — polling every %.1fs", interval)
 
@@ -201,7 +201,7 @@ async def _daemon_loop(
 
 def _find_frontend_dir() -> Path | None:
     """Locate the ``frontend/`` source directory (only exists in dev checkouts)."""
-    # Walk upward from boss/ looking for frontend/build.js
+    # Walk upward from delegate/ looking for frontend/build.js
     candidate = Path(__file__).resolve().parent.parent / "frontend"
     if (candidate / "build.js").is_file():
         return candidate
@@ -243,18 +243,18 @@ async def _lifespan(app: FastAPI):
     The esbuild watcher is started automatically whenever a ``frontend/``
     source directory is detected (i.e. running from a source checkout).
     In a pip-installed deployment there is no ``frontend/`` and the watcher
-    is silently skipped — the pre-built assets in ``boss/static/`` are used.
+    is silently skipped — the pre-built assets in ``delegate/static/`` are used.
     """
     hc_home = app.state.hc_home
-    enable = os.environ.get("BOSS_DAEMON", "").lower() in ("1", "true", "yes")
+    enable = os.environ.get("DELEGATE_DAEMON", "").lower() in ("1", "true", "yes")
 
     task = None
     esbuild_proc: subprocess.Popen | None = None
 
     if enable:
-        interval = float(os.environ.get("BOSS_INTERVAL", "1.0"))
-        max_concurrent = int(os.environ.get("BOSS_MAX_CONCURRENT", "256"))
-        budget_str = os.environ.get("BOSS_TOKEN_BUDGET")
+        interval = float(os.environ.get("DELEGATE_INTERVAL", "1.0"))
+        max_concurrent = int(os.environ.get("DELEGATE_MAX_CONCURRENT", "256"))
+        budget_str = os.environ.get("DELEGATE_TOKEN_BUDGET")
         token_budget = int(budget_str) if budget_str else None
 
         task = asyncio.create_task(
@@ -296,10 +296,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     """
     if hc_home is None:
         hc_home = _default_home(
-            override=Path(os.environ["BOSS_HOME"]) if "BOSS_HOME" in os.environ else None
+            override=Path(os.environ["DELEGATE_HOME"]) if "DELEGATE_HOME" in os.environ else None
         )
 
-    app = FastAPI(title="Boss Boss UI", lifespan=_lifespan)
+    app = FastAPI(title="Delegate UI", lifespan=_lifespan)
     app.state.hc_home = hc_home
 
     # --- Team endpoints ---
@@ -405,7 +405,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                                approval_status="rejected")
 
         # Send notification to manager via the notify module
-        from boss.notify import notify_rejection
+        from delegate.notify import notify_rejection
         notify_rejection(hc_home, _first_team(hc_home), task, reason=body.reason)
 
         _log_event(hc_home, f"{format_task_id(task_id)} rejected \u2014 {body.reason}")

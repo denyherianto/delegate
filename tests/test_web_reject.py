@@ -1,4 +1,4 @@
-"""Tests for the POST /tasks/{id}/reject notification in boss/web.py.
+"""Tests for the POST /tasks/{id}/reject notification in delegate/web.py.
 
 These tests focus on the structured TASK_REJECTED notification delivered
 to the manager's inbox when a task is rejected.  The endpoint itself
@@ -9,9 +9,9 @@ in test_approval_api.py.
 import pytest
 from fastapi.testclient import TestClient
 
-from boss.web import create_app
-from boss.task import create_task, change_status, assign_task, get_task, format_task_id
-from boss.mailbox import read_inbox
+from delegate.web import create_app
+from delegate.task import create_task, change_status, assign_task, get_task, format_task_id
+from delegate.mailbox import read_inbox
 
 TEAM = "testteam"
 

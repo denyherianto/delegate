@@ -2,7 +2,7 @@ const esbuild = require("esbuild");
 const fs = require("fs");
 const path = require("path");
 
-const outdir = path.resolve(__dirname, "../boss/static");
+const outdir = path.resolve(__dirname, "../delegate/static");
 const watch = process.argv.includes("--watch");
 
 async function build() {

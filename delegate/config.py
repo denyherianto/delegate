@@ -1,4 +1,4 @@
-"""Org-wide configuration stored in ``~/.boss/config.yaml``.
+"""Org-wide configuration stored in ``~/.delegate/config.yaml``.
 
 Manages:
 - boss name (single human boss across all teams)
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from boss.paths import config_path
+from delegate.paths import config_path
 
 
 def _read(hc_home: Path) -> dict:
@@ -45,7 +45,7 @@ def set_boss(hc_home: Path, name: str) -> None:
 # --- Source repo (for self-update) ---
 
 def get_source_repo(hc_home: Path) -> Path | None:
-    """Return path to boss's own source repo, or None."""
+    """Return path to delegate's own source repo, or None."""
     val = _read(hc_home).get("source_repo")
     return Path(val) if val else None
 
@@ -74,7 +74,7 @@ def add_repo(
     """Register a repo in config.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         name: Repo name.
         source: Local path or remote URL.
         approval: Merge approval mode — 'auto' or 'manual' (default: 'manual').
@@ -95,7 +95,7 @@ def update_repo_approval(hc_home: Path, name: str, approval: str) -> None:
     """Update only the approval setting for an existing repo.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         name: Repo name (must already exist in config).
         approval: 'auto' or 'manual'.
     """
@@ -134,7 +134,7 @@ def update_repo_test_cmd(hc_home: Path, name: str, test_cmd: str) -> None:
     """Update the test command for an existing repo.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         name: Repo name (must already exist in config).
         test_cmd: Shell command string to run tests.
     """
@@ -177,7 +177,7 @@ def set_repo_pipeline(hc_home: Path, name: str, pipeline: list[dict]) -> None:
     """Set the full pipeline for an existing repo.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         name: Repo name (must already exist in config).
         pipeline: List of ``{name: str, run: str}`` step dicts.
     """
@@ -197,7 +197,7 @@ def add_pipeline_step(hc_home: Path, repo_name: str, step_name: str, run: str) -
     pipeline first.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         repo_name: Repo name (must already exist in config).
         step_name: Unique name for the step.
         run: Shell command string for the step.
@@ -236,7 +236,7 @@ def remove_pipeline_step(hc_home: Path, repo_name: str, step_name: str) -> None:
     """Remove a named step from a repo's pipeline.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         repo_name: Repo name (must already exist in config).
         step_name: Name of the step to remove.
 

@@ -8,9 +8,9 @@ from unittest.mock import patch, MagicMock
 import pytest
 import yaml
 
-from boss.task import format_task_id
-from boss.paths import base_charter_dir, boss_person_dir
-from boss.eval import (
+from delegate.task import format_task_id
+from delegate.paths import base_charter_dir, boss_person_dir
+from delegate.eval import (
     # T0031 — eval runner
     load_benchmark_specs,
     seed_tasks,
@@ -410,8 +410,8 @@ class TestLintViolations:
         mock_result.stdout = "foo.py:1:1: F841 local variable 'x' is assigned to but never used\nfoo.py:2:1: E302 expected 2 blank lines\n"
         mock_result.stderr = ""
 
-        with patch("boss.eval.shutil.which", return_value="/usr/bin/ruff"), \
-             patch("boss.eval.subprocess.run", return_value=mock_result):
+        with patch("delegate.eval.shutil.which", return_value="/usr/bin/ruff"), \
+             patch("delegate.eval.subprocess.run", return_value=mock_result):
             count = _count_lint_violations(tmp_path, ["foo.py"])
         assert count == 2
 
@@ -424,8 +424,8 @@ class TestLintViolations:
         mock_result.stdout = ""
         mock_result.stderr = ""
 
-        with patch("boss.eval.shutil.which", return_value="/usr/bin/ruff"), \
-             patch("boss.eval.subprocess.run", return_value=mock_result):
+        with patch("delegate.eval.shutil.which", return_value="/usr/bin/ruff"), \
+             patch("delegate.eval.subprocess.run", return_value=mock_result):
             count = _count_lint_violations(tmp_path, ["foo.py"])
         assert count == 0
 
@@ -433,7 +433,7 @@ class TestLintViolations:
         """Returns None when ruff is not installed."""
         (tmp_path / "foo.py").write_text("x = 1\n")
 
-        with patch("boss.eval.shutil.which", return_value=None):
+        with patch("delegate.eval.shutil.which", return_value=None):
             count = _count_lint_violations(tmp_path, ["foo.py"])
         assert count is None
 
@@ -455,8 +455,8 @@ class TestTypeErrors:
         mock_result.stdout = 'foo.py:1:10 - error: Expression of type "str" is incompatible\n0 warnings, 1 error\n'
         mock_result.stderr = ""
 
-        with patch("boss.eval.shutil.which", return_value="/usr/bin/pyright"), \
-             patch("boss.eval.subprocess.run", return_value=mock_result):
+        with patch("delegate.eval.shutil.which", return_value="/usr/bin/pyright"), \
+             patch("delegate.eval.subprocess.run", return_value=mock_result):
             count = _count_type_errors(tmp_path, ["foo.py"])
         assert count == 2  # both lines contain "error"
 
@@ -464,7 +464,7 @@ class TestTypeErrors:
         """Returns None when neither pyright nor mypy is installed."""
         (tmp_path / "foo.py").write_text("x = 1\n")
 
-        with patch("boss.eval.shutil.which", return_value=None):
+        with patch("delegate.eval.shutil.which", return_value=None):
             count = _count_type_errors(tmp_path, ["foo.py"])
         assert count is None
 
@@ -492,8 +492,8 @@ class TestComplexityScore:
         )
         mock_result.stderr = ""
 
-        with patch("boss.eval.shutil.which", return_value="/usr/bin/radon"), \
-             patch("boss.eval.subprocess.run", return_value=mock_result):
+        with patch("delegate.eval.shutil.which", return_value="/usr/bin/radon"), \
+             patch("delegate.eval.subprocess.run", return_value=mock_result):
             score = _compute_complexity(tmp_path, ["foo.py"])
         assert score == 1.0
 
@@ -501,7 +501,7 @@ class TestComplexityScore:
         """Returns None when radon is not installed."""
         (tmp_path / "foo.py").write_text("def f(): pass\n")
 
-        with patch("boss.eval.shutil.which", return_value=None):
+        with patch("delegate.eval.shutil.which", return_value=None):
             score = _compute_complexity(tmp_path, ["foo.py"])
         assert score is None
 
@@ -525,8 +525,8 @@ class TestDiffSize:
         )
         mock_result.stderr = ""
 
-        with patch("boss.eval.shutil.which", return_value="/usr/bin/git"), \
-             patch("boss.eval.subprocess.run", return_value=mock_result):
+        with patch("delegate.eval.shutil.which", return_value="/usr/bin/git"), \
+             patch("delegate.eval.subprocess.run", return_value=mock_result):
             size = _get_diff_size(tmp_path)
         assert size == 230  # 200 + 30
 
@@ -537,14 +537,14 @@ class TestDiffSize:
         mock_result.stdout = " 1 file changed, 50 insertions(+)\n"
         mock_result.stderr = ""
 
-        with patch("boss.eval.shutil.which", return_value="/usr/bin/git"), \
-             patch("boss.eval.subprocess.run", return_value=mock_result):
+        with patch("delegate.eval.shutil.which", return_value="/usr/bin/git"), \
+             patch("delegate.eval.subprocess.run", return_value=mock_result):
             size = _get_diff_size(tmp_path)
         assert size == 50
 
     def test_git_not_available(self, tmp_path):
         """Returns None when git is not available."""
-        with patch("boss.eval.shutil.which", return_value=None):
+        with patch("delegate.eval.shutil.which", return_value=None):
             size = _get_diff_size(tmp_path)
         assert size is None
 
@@ -559,11 +559,11 @@ class TestCollectMetrics:
 
     def test_returns_all_expected_keys(self, run_dir):
         """collect_metrics returns all documented metric keys."""
-        with patch("boss.eval._get_changed_files", return_value=[]), \
-             patch("boss.eval._get_diff_size", return_value=0), \
-             patch("boss.eval._count_lint_violations", return_value=0), \
-             patch("boss.eval._count_type_errors", return_value=None), \
-             patch("boss.eval._compute_complexity", return_value=None):
+        with patch("delegate.eval._get_changed_files", return_value=[]), \
+             patch("delegate.eval._get_diff_size", return_value=0), \
+             patch("delegate.eval._count_lint_violations", return_value=0), \
+             patch("delegate.eval._count_type_errors", return_value=None), \
+             patch("delegate.eval._compute_complexity", return_value=None):
             metrics = collect_metrics(run_dir, run_dir=run_dir)
 
         expected_keys = {
@@ -578,11 +578,11 @@ class TestCollectMetrics:
 
     def test_computes_messages_per_task(self, run_dir):
         """messages_per_task = total_messages / (completed + failed)."""
-        with patch("boss.eval._get_changed_files", return_value=[]), \
-             patch("boss.eval._get_diff_size", return_value=0), \
-             patch("boss.eval._count_lint_violations", return_value=0), \
-             patch("boss.eval._count_type_errors", return_value=None), \
-             patch("boss.eval._compute_complexity", return_value=None):
+        with patch("delegate.eval._get_changed_files", return_value=[]), \
+             patch("delegate.eval._get_diff_size", return_value=0), \
+             patch("delegate.eval._count_lint_violations", return_value=0), \
+             patch("delegate.eval._count_type_errors", return_value=None), \
+             patch("delegate.eval._compute_complexity", return_value=None):
             metrics = collect_metrics(run_dir)
 
         # 4 chat messages / 3 total tasks = 1.33
@@ -592,11 +592,11 @@ class TestCollectMetrics:
         """All metric values are numbers or None (JSON-safe)."""
         import json
 
-        with patch("boss.eval._get_changed_files", return_value=[]), \
-             patch("boss.eval._get_diff_size", return_value=0), \
-             patch("boss.eval._count_lint_violations", return_value=0), \
-             patch("boss.eval._count_type_errors", return_value=None), \
-             patch("boss.eval._compute_complexity", return_value=None):
+        with patch("delegate.eval._get_changed_files", return_value=[]), \
+             patch("delegate.eval._get_diff_size", return_value=0), \
+             patch("delegate.eval._count_lint_violations", return_value=0), \
+             patch("delegate.eval._count_type_errors", return_value=None), \
+             patch("delegate.eval._compute_complexity", return_value=None):
             metrics = collect_metrics(run_dir)
 
         # Should not raise
@@ -615,11 +615,11 @@ class TestCollectMetrics:
         (standup / "tasks").mkdir()
         _create_db(standup / "db.sqlite")
 
-        with patch("boss.eval._get_changed_files", return_value=[]), \
-             patch("boss.eval._get_diff_size", return_value=0), \
-             patch("boss.eval._count_lint_violations", return_value=0), \
-             patch("boss.eval._count_type_errors", return_value=None), \
-             patch("boss.eval._compute_complexity", return_value=None):
+        with patch("delegate.eval._get_changed_files", return_value=[]), \
+             patch("delegate.eval._get_diff_size", return_value=0), \
+             patch("delegate.eval._count_lint_violations", return_value=0), \
+             patch("delegate.eval._count_type_errors", return_value=None), \
+             patch("delegate.eval._compute_complexity", return_value=None):
             metrics = collect_metrics(root)
 
         assert metrics["tasks_completed"] == 0
@@ -804,7 +804,7 @@ class TestJudgeDiff:
 
     def test_returns_scores_with_avg(self):
         """judge_diff returns all dimensions + avg + reasoning."""
-        with patch("boss.eval._call_llm", return_value=_SAMPLE_JUDGE_JSON):
+        with patch("delegate.eval._call_llm", return_value=_SAMPLE_JUDGE_JSON):
             result = judge_diff("diff content", "task spec")
 
         assert result["correctness"] == 4
@@ -817,7 +817,7 @@ class TestJudgeDiff:
 
     def test_retries_on_parse_failure(self):
         """Retries once when the first response fails to parse."""
-        with patch("boss.eval._call_llm", side_effect=[
+        with patch("delegate.eval._call_llm", side_effect=[
             "not valid json",
             _SAMPLE_JUDGE_JSON,
         ]):
@@ -827,7 +827,7 @@ class TestJudgeDiff:
 
     def test_raises_after_two_failures(self):
         """Raises ValueError when both attempts fail."""
-        with patch("boss.eval._call_llm", return_value="not json"):
+        with patch("delegate.eval._call_llm", return_value="not json"):
             with pytest.raises(ValueError, match="Failed to parse"):
                 judge_diff("diff", "spec")
 
@@ -840,7 +840,7 @@ class TestJudgeDiff:
             captured_calls.append(system)
             return _SAMPLE_JUDGE_JSON
 
-        with patch("boss.eval._call_llm", side_effect=mock_llm):
+        with patch("delegate.eval._call_llm", side_effect=mock_llm):
             judge_diff("diff", "spec", rubric=custom_rubric)
 
         assert custom_rubric in captured_calls[0]
@@ -853,7 +853,7 @@ class TestJudgeDiff:
             captured_calls.append(system)
             return _SAMPLE_JUDGE_JSON
 
-        with patch("boss.eval._call_llm", side_effect=mock_llm):
+        with patch("delegate.eval._call_llm", side_effect=mock_llm):
             judge_diff("diff", "spec")
 
         # Check the system prompt includes the default rubric content
@@ -880,8 +880,8 @@ class TestJudgeRun:
 
     def test_scores_all_tasks(self, judge_run_dir):
         """judge_run scores every task in the run directory."""
-        with patch("boss.eval._call_llm", return_value=_SAMPLE_JUDGE_JSON), \
-             patch("boss.eval._get_full_diff", return_value="some diff"):
+        with patch("delegate.eval._call_llm", return_value=_SAMPLE_JUDGE_JSON), \
+             patch("delegate.eval._get_full_diff", return_value="some diff"):
             results = judge_run(judge_run_dir, reps=1)
 
         assert "T0001" in results["tasks"]
@@ -898,8 +898,8 @@ class TestJudgeRun:
             call_count[0] += 1
             return responses[idx]
 
-        with patch("boss.eval._call_llm", side_effect=mock_llm), \
-             patch("boss.eval._get_full_diff", return_value="some diff"):
+        with patch("delegate.eval._call_llm", side_effect=mock_llm), \
+             patch("delegate.eval._get_full_diff", return_value="some diff"):
             results = judge_run(judge_run_dir, reps=2)
 
         # T0001 should have averaged scores from the two different responses
@@ -909,8 +909,8 @@ class TestJudgeRun:
 
     def test_overall_averages_across_tasks(self, judge_run_dir):
         """Overall scores average across all tasks."""
-        with patch("boss.eval._call_llm", return_value=_SAMPLE_JUDGE_JSON), \
-             patch("boss.eval._get_full_diff", return_value="some diff"):
+        with patch("delegate.eval._call_llm", return_value=_SAMPLE_JUDGE_JSON), \
+             patch("delegate.eval._get_full_diff", return_value="some diff"):
             results = judge_run(judge_run_dir, reps=1)
 
         overall = results["overall"]
@@ -944,8 +944,8 @@ class TestJudgeRun:
                 return "bad json"
             return _SAMPLE_JUDGE_JSON
 
-        with patch("boss.eval._call_llm", side_effect=mock_llm), \
-             patch("boss.eval._get_full_diff", return_value="diff"):
+        with patch("delegate.eval._call_llm", side_effect=mock_llm), \
+             patch("delegate.eval._get_full_diff", return_value="diff"):
             results = judge_run(judge_run_dir, reps=2)
 
         assert "T0001" not in results["tasks"]
@@ -958,8 +958,8 @@ class TestJudgeRun:
             call_count[0] += 1
             return _SAMPLE_JUDGE_JSON
 
-        with patch("boss.eval._call_llm", side_effect=mock_llm), \
-             patch("boss.eval._get_full_diff", return_value="diff"):
+        with patch("delegate.eval._call_llm", side_effect=mock_llm), \
+             patch("delegate.eval._get_full_diff", return_value="diff"):
             judge_run(judge_run_dir, reps=3)
 
         # 2 tasks × 3 reps = 6 calls
@@ -1073,7 +1073,7 @@ class TestSeedTasks:
 
     def test_creates_tasks(self, tmp_path, specs_dir):
         """Creates tasks from benchmark specs."""
-        from boss.bootstrap import bootstrap
+        from delegate.bootstrap import bootstrap
         root = tmp_path / "team"
         bootstrap(root, team_name="eval", manager="mgr", agents=["alice"])
 
@@ -1086,7 +1086,7 @@ class TestSeedTasks:
 
     def test_task_ids_are_unique(self, tmp_path, specs_dir):
         """Each seeded task gets a unique ID."""
-        from boss.bootstrap import bootstrap
+        from delegate.bootstrap import bootstrap
         root = tmp_path / "team"
         bootstrap(root, team_name="eval", manager="mgr", agents=["alice"])
 

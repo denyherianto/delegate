@@ -9,12 +9,12 @@ Each member has Maildir-style inbox/outbox (`inbox/new/`, `inbox/cur/`, `outbox/
 Your conversational text is NOT delivered to anyone — it only goes to an internal log. The ONLY way to communicate is the mailbox send command:
 
 ```
-python -m boss.mailbox send <home> <team> <your_name> <recipient> "<message>"
+python -m delegate.mailbox send <home> <team> <your_name> <recipient> "<message>"
 ```
 
 For every message you receive, respond by running the send command. Do not just compose a reply — actually execute the command.
 
-Check inbox: `python -m boss.mailbox inbox <home> <team> <your_name>`
+Check inbox: `python -m delegate.mailbox inbox <home> <team> <your_name>`
 
 ## When to Message
 

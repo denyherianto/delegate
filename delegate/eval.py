@@ -6,11 +6,11 @@ Only files that differ from the default need to be included; missing files
 fall back to the default charter.
 
 Usage:
-    python -m boss.eval list-variants
-    python -m boss.eval load-variant <variant_name>
-    python -m boss.eval bootstrap --home <dir> --team <name> --variant <name> --manager <m> --agents a,b
-    python -m boss.eval metrics --run-dir /path/to/run
-    python -m boss.eval judge --run-dir /path/to/run [--reps 3]
+    python -m delegate.eval list-variants
+    python -m delegate.eval load-variant <variant_name>
+    python -m delegate.eval bootstrap --home <dir> --team <name> --variant <name> --manager <m> --agents a,b
+    python -m delegate.eval metrics --run-dir /path/to/run
+    python -m delegate.eval judge --run-dir /path/to/run [--reps 3]
 """
 
 import argparse
@@ -29,16 +29,16 @@ from pathlib import Path
 
 import yaml
 
-from boss.bootstrap import bootstrap
-from boss.paths import (
+from delegate.bootstrap import bootstrap
+from delegate.paths import (
     tasks_dir as _tasks_dir,
     db_path as _db_path,
     agents_dir as _agents_dir,
     team_dir as _team_dir,
     base_charter_dir,
 )
-from boss.config import set_boss, get_boss
-from boss.task import format_task_id
+from delegate.config import set_boss, get_boss
+from delegate.task import format_task_id
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ def bootstrap_with_variant(
     sim-boss can have an inbox/outbox.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         team_name: Name for the eval team.
         variant_name: Name of the charter variant to apply.
         manager: Name of the manager agent.
@@ -632,7 +632,7 @@ def judge_run(hc_home: Path, reps: int = 3, run_dir: Path | None = None) -> dict
     multiple times (reps), and averages the scores.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         reps: Number of independent judge calls per task (averaged).
         run_dir: Optional working directory for git diff.
 
@@ -826,13 +826,13 @@ def seed_tasks(hc_home: Path, specs: list[dict]) -> list[dict]:
     """Create tasks from benchmark specs via the task system.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         specs: List of benchmark spec dicts.
 
     Returns:
         List of created task dicts (with IDs assigned).
     """
-    from boss.task import create_task
+    from delegate.task import create_task
 
     created = []
     for spec in specs:
@@ -998,11 +998,11 @@ def _run_daemon_loop(
 ) -> None:
     """Run the daemon loop (router + orchestrator) in a thread.
 
-    This replicates the logic from boss/web.py:_daemon_loop but runs
+    This replicates the logic from delegate/web.py:_daemon_loop but runs
     synchronously in a thread instead of as an async task.
     """
-    from boss.router import route_once
-    from boss.orchestrator import orchestrate_once, spawn_agent_subprocess
+    from delegate.router import route_once
+    from delegate.orchestrator import orchestrate_once, spawn_agent_subprocess
 
     def _spawn(h: Path, t: str, a: str) -> None:
         spawn_agent_subprocess(h, t, a, token_budget=token_budget)
@@ -1035,7 +1035,7 @@ def _poll_tasks_done(hc_home: Path, task_count: int, timeout: float) -> bool:
 
     Returns True if all tasks completed, False on timeout.
     """
-    from boss.task import list_tasks
+    from delegate.task import list_tasks
 
     start = time.monotonic()
     while time.monotonic() - start < timeout:
@@ -1159,7 +1159,7 @@ def run_eval(
             return results
 
         # 6. Start the sim-boss in a background thread
-        from boss.sim_boss import start_sim_boss_thread
+        from delegate.sim_boss import start_sim_boss_thread
 
         sim_thread, sim_stop = start_sim_boss_thread(
             hc_home, team, task_specs, poll_interval=2.0,
@@ -1183,7 +1183,7 @@ def run_eval(
         logger.info("Eval daemon started")
 
         # Send a kick message from boss to manager to start work
-        from boss.mailbox import send as mailbox_send
+        from delegate.mailbox import send as mailbox_send
 
         task_list_msg = "Here are the tasks for this eval run:\n"
         for task in created_tasks:
@@ -1369,7 +1369,7 @@ def main():
         "bootstrap",
         help="Bootstrap a team with a charter variant applied",
     )
-    p_boot.add_argument("--home", type=Path, required=True, help="Boss home directory")
+    p_boot.add_argument("--home", type=Path, required=True, help="Delegate home directory")
     p_boot.add_argument("--team", default=EVAL_TEAM, help=f"Team name (default: {EVAL_TEAM})")
     p_boot.add_argument("--variant", required=True, help="Charter variant name")
     p_boot.add_argument("--manager", required=True, help="Manager name")

@@ -10,14 +10,14 @@ import os
 import pytest
 import yaml
 
-from boss.bootstrap import bootstrap
-from boss.config import set_boss, get_boss
-from boss.mailbox import send, read_inbox, read_outbox, deliver, Message
-from boss.router import route_once, BossQueue
-from boss.orchestrator import orchestrate_once, get_agents_needing_spawn
-from boss.chat import get_messages, log_event
-from boss.task import create_task, get_task, change_status, assign_task, format_task_id
-from boss.paths import (
+from delegate.bootstrap import bootstrap
+from delegate.config import set_boss, get_boss
+from delegate.mailbox import send, read_inbox, read_outbox, deliver, Message
+from delegate.router import route_once, BossQueue
+from delegate.orchestrator import orchestrate_once, get_agents_needing_spawn
+from delegate.chat import get_messages, log_event
+from delegate.task import create_task, get_task, change_status, assign_task, format_task_id
+from delegate.paths import (
     boss_person_dir,
     agent_dir,
     agents_dir,

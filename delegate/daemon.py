@@ -1,9 +1,9 @@
 """Daemon management — start/stop the background web UI + routing loop.
 
-The daemon runs uvicorn serving the FastAPI app (boss.web) with
+The daemon runs uvicorn serving the FastAPI app (delegate.web) with
 the message router and agent orchestrator running as background tasks.
 
-The daemon PID is written to ``~/.boss/daemon.pid``.
+The daemon PID is written to ``~/.delegate/daemon.pid``.
 
 Functions:
     start_daemon(hc_home, port, ...) — start in background, write PID
@@ -18,7 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from boss.paths import daemon_pid_path
+from delegate.paths import daemon_pid_path
 
 logger = logging.getLogger(__name__)
 
@@ -68,13 +68,13 @@ def start_daemon(
 
     # Set environment variables for the web app
     env = os.environ.copy()
-    env["BOSS_HOME"] = str(hc_home)
-    env["BOSS_DAEMON"] = "1"
-    env["BOSS_INTERVAL"] = str(interval)
-    env["BOSS_MAX_CONCURRENT"] = str(max_concurrent)
-    env["BOSS_PORT"] = str(port)
+    env["DELEGATE_HOME"] = str(hc_home)
+    env["DELEGATE_DAEMON"] = "1"
+    env["DELEGATE_INTERVAL"] = str(interval)
+    env["DELEGATE_MAX_CONCURRENT"] = str(max_concurrent)
+    env["DELEGATE_PORT"] = str(port)
     if token_budget is not None:
-        env["BOSS_TOKEN_BUDGET"] = str(token_budget)
+        env["DELEGATE_TOKEN_BUDGET"] = str(token_budget)
 
     if foreground:
         # Run in current process (blocking)
@@ -86,7 +86,7 @@ def start_daemon(
 
         try:
             uvicorn.run(
-                "boss.web:create_app",
+                "delegate.web:create_app",
                 factory=True,
                 host="0.0.0.0",
                 port=port,
@@ -99,7 +99,7 @@ def start_daemon(
     # Spawn background process
     cmd = [
         sys.executable, "-m", "uvicorn",
-        "boss.web:create_app",
+        "delegate.web:create_app",
         "--factory",
         "--host", "0.0.0.0",
         "--port", str(port),

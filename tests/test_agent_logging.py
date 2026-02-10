@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from boss.agent import AgentLogger, _extract_tool_calls
+from delegate.agent import AgentLogger, _extract_tool_calls
 
 
 # ---------------------------------------------------------------------------
@@ -483,4 +483,4 @@ class TestAgentLoggerCustomLogger:
 
     def test_default_logger_name(self):
         alog = AgentLogger("bob")
-        assert alog._logger.name == "boss.agent.bob"
+        assert alog._logger.name == "delegate.agent.bob"

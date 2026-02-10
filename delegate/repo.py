@@ -1,17 +1,17 @@
 """Repository management — registration via symlinks and git worktrees.
 
-Registered repos are stored as **symlinks** in ``~/.boss/repos/<name>/``
+Registered repos are stored as **symlinks** in ``~/.delegate/repos/<name>/``
 pointing to the real local repository root.  No clones are made.
 
 Only local repos are supported (the ``.git/`` directory must exist on disk).
-If the repo has its own remote, that's fine — boss doesn't care.
+If the repo has its own remote, that's fine — delegate doesn't care.
 
-When a repo moves on disk, update the symlink with ``boss repo update``.
+When a repo moves on disk, update the symlink with ``delegate repo update``.
 
 Usage:
-    boss repo add <local_path> [--name NAME]
-    boss repo list
-    boss repo update <name> <new_path>
+    delegate repo add <local_path> [--name NAME]
+    delegate repo list
+    delegate repo update <name> <new_path>
 """
 
 import logging
@@ -19,10 +19,10 @@ import re
 import subprocess
 from pathlib import Path
 
-from boss.task import format_task_id
+from delegate.task import format_task_id
 
-from boss.paths import repos_dir as _repos_dir, repo_path as _repo_path, agent_worktrees_dir
-from boss.config import add_repo as _config_add_repo, get_repos as _config_get_repos, update_repo_approval as _config_update_approval, update_repo_test_cmd as _config_update_test_cmd
+from delegate.paths import repos_dir as _repos_dir, repo_path as _repo_path, agent_worktrees_dir
+from delegate.config import add_repo as _config_add_repo, get_repos as _config_get_repos, update_repo_approval as _config_update_approval, update_repo_test_cmd as _config_update_test_cmd
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def _derive_name(source: str) -> str:
 
 
 def _resolve_repo_dir(hc_home: Path, name: str) -> Path:
-    """Return the canonical repo path (symlink location) inside ~/.boss/repos/."""
+    """Return the canonical repo path (symlink location) inside ~/.delegate/repos/."""
     return _repo_path(hc_home, name)
 
 
@@ -52,10 +52,10 @@ def register_repo(
     approval: str | None = None,
     test_cmd: str | None = None,
 ) -> str:
-    """Register a local repository by creating a symlink in ~/.boss/repos/.
+    """Register a local repository by creating a symlink in ~/.delegate/repos/.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         source: Local path to the repository root (must contain .git/).
         name: Name for the repo (default: derived from source).
         approval: Merge approval mode — 'auto' or 'manual'.
@@ -133,7 +133,7 @@ def update_repo_path(hc_home: Path, name: str, new_path: str) -> None:
     Use this when a repo moves on disk.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         name: Repo name.
         new_path: New local path to the repository root.
 
@@ -155,7 +155,7 @@ def update_repo_path(hc_home: Path, name: str, new_path: str) -> None:
     link_path.symlink_to(new_source)
 
     # Update config
-    from boss.config import _read, _write
+    from delegate.config import _read, _write
     data = _read(hc_home)
     repos = data.get("repos", {})
     if name in repos:
@@ -175,7 +175,7 @@ def list_repos(hc_home: Path) -> dict:
 
 
 def get_repo_path(hc_home: Path, repo_name: str) -> Path:
-    """Get the canonical path to a repo (the symlink in ~/.boss/repos/).
+    """Get the canonical path to a repo (the symlink in ~/.delegate/repos/).
 
     The symlink resolves to the real repo root on disk.
     """
@@ -210,13 +210,13 @@ def create_agent_worktree(
 
     The worktree is created directly against the real repo (via symlink)
     inside the agent's directory:
-        ~/.boss/teams/<team>/agents/<agent>/worktrees/<repo_name>-T<task_id>/
+        ~/.delegate/teams/<team>/agents/<agent>/worktrees/<repo_name>-T<task_id>/
 
     Before creating the branch, fetches the latest from origin (if available)
     and records the base SHA (current main HEAD) on the task.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         team: Team name.
         repo_name: Name of the registered repo.
         agent: Agent name.
@@ -248,7 +248,7 @@ def create_agent_worktree(
     if wt_path.exists():
         # Worktree exists — still backfill base_sha if missing on the task
         try:
-            from boss.task import get_task as _get_task, update_task as _update_task
+            from delegate.task import get_task as _get_task, update_task as _update_task
             task = _get_task(hc_home, task_id)
             if not task.get("base_sha"):
                 base_sha = _get_main_head(real_repo)
@@ -270,7 +270,7 @@ def create_agent_worktree(
     # Record base SHA (current main HEAD) on the task
     try:
         base_sha = _get_main_head(real_repo)
-        from boss.task import update_task
+        from delegate.task import update_task
         update_task(hc_home, task_id, base_sha=base_sha)
         logger.info("Recorded base_sha=%s for %s", base_sha[:8], task_id)
     except Exception as exc:
@@ -298,7 +298,7 @@ def remove_agent_worktree(
     """Remove an agent's worktree for a task.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         team: Team name.
         repo_name: Name of the registered repo.
         agent: Agent name.

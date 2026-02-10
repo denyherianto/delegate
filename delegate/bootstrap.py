@@ -1,10 +1,10 @@
-"""Bootstrap a new boss team.
+"""Bootstrap a new delegate team.
 
-Creates the team directory structure under ``~/.boss/teams/<team_name>/``.
+Creates the team directory structure under ``~/.delegate/teams/<team_name>/``.
 The boss is NOT created as an agent — they are configured org-wide in config.yaml.
 
 Usage:
-    python -m boss.bootstrap <home> <team_name> --manager edison --agents alice,bob [--qa sarah]
+    python -m delegate.bootstrap <home> <team_name> --manager edison --agents alice,bob [--qa sarah]
 """
 
 import argparse
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from boss.paths import (
+from delegate.paths import (
     team_dir as _team_dir,
     teams_dir as _teams_dir,
     agents_dir as _agents_dir,
@@ -23,7 +23,7 @@ from boss.paths import (
     boss_person_dir as _boss_person_dir,
     base_charter_dir,
 )
-from boss.config import get_boss
+from delegate.config import get_boss
 
 
 MAILDIR_SUBDIRS = [
@@ -126,7 +126,7 @@ def _get_all_agent_names(hc_home: Path, exclude_team: str | None = None) -> set[
     """Get all agent names across all existing teams.
 
     Args:
-        hc_home: Boss home directory.
+        hc_home: Delegate home directory.
         exclude_team: Team to exclude (e.g. the team being created/updated).
 
     Returns:
@@ -164,7 +164,7 @@ def bootstrap(
     Agent names must be globally unique across all teams.
 
     Args:
-        hc_home: Boss home directory (~/.boss).
+        hc_home: Delegate home directory (~/.delegate).
         team_name: Name for the new team.
         manager: Name of the manager agent.
         agents: Additional worker agent names.
@@ -267,7 +267,7 @@ def bootstrap(
 
     # --- Boss mailbox (org-wide, outside any team) ---
     # Ensure a boss name is configured (default to "boss" if not set).
-    from boss.config import set_boss
+    from delegate.config import set_boss
     boss_name = get_boss(hc_home)
     if not boss_name:
         boss_name = "boss"
@@ -293,7 +293,7 @@ def add_agent(
     team's roster.md.
 
     Args:
-        hc_home: Boss home directory (~/.boss).
+        hc_home: Delegate home directory (~/.delegate).
         team_name: Name of the existing team.
         agent_name: Name for the new agent.
         role: Agent role (default ``"worker"``).
@@ -387,8 +387,8 @@ def get_member_by_role(hc_home: Path, team: str, role: str) -> str | None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Bootstrap a boss team")
-    parser.add_argument("home", type=Path, help="Boss home directory (~/.boss)")
+    parser = argparse.ArgumentParser(description="Bootstrap a delegate team")
+    parser.add_argument("home", type=Path, help="Delegate home directory (~/.delegate)")
     parser.add_argument("team_name", help="Name for the team")
     parser.add_argument(
         "--manager", required=True,

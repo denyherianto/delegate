@@ -1,17 +1,17 @@
-"""Boss CLI entry point using Click.
+"""Delegate CLI entry point using Click.
 
 Commands:
-    boss doctor                        — verify runtime dependencies
-    boss daemon start [--port N]       — start background daemon
-    boss daemon stop                   — stop running daemon
-    boss team create <name> ...        — create a new team
-    boss team list                     — list existing teams
-    boss agent add <team> <name>       — add an agent to a team
-    boss config set boss <name>    — set org-wide boss name
-    boss config set source-repo <path> — set boss source repo path
-    boss repo add <path_or_url> [--name N]  — register a repository
-    boss repo list                     — list registered repos
-    boss self-update                   — update boss from source repo
+    delegate doctor                        — verify runtime dependencies
+    delegate daemon start [--port N]       — start background daemon
+    delegate daemon stop                   — stop running daemon
+    delegate team create <name> ...        — create a new team
+    delegate team list                     — list existing teams
+    delegate agent add <team> <name>       — add an agent to a team
+    delegate config set boss <name>    — set org-wide boss name
+    delegate config set source-repo <path> — set delegate source repo path
+    delegate repo add <path_or_url> [--name N]  — register a repository
+    delegate repo list                     — list registered repos
+    delegate self-update                   — update delegate from source repo
 """
 
 import subprocess
@@ -20,35 +20,35 @@ from pathlib import Path
 
 import click
 
-from boss.paths import home as _home, teams_dir as _teams_dir
+from delegate.paths import home as _home, teams_dir as _teams_dir
 
 
 def _get_home(ctx: click.Context) -> Path:
-    """Resolve boss home from context or default."""
+    """Resolve delegate home from context or default."""
     return _home(ctx.obj.get("home_override") if ctx.obj else None)
 
 
 @click.group()
 @click.option(
     "--home", "home_override", type=click.Path(path_type=Path), default=None,
-    envvar="BOSS_HOME",
-    help="Override boss home directory (default: ~/.boss).",
+    envvar="DELEGATE_HOME",
+    help="Override delegate home directory (default: ~/.delegate).",
 )
 @click.pass_context
 def main(ctx: click.Context, home_override: Path | None) -> None:
-    """Boss — agentic team management system."""
+    """Delegate — agentic team management system."""
     ctx.ensure_object(dict)
     ctx.obj["home_override"] = home_override
 
 
 # ──────────────────────────────────────────────────────────────
-# boss doctor
+# delegate doctor
 # ──────────────────────────────────────────────────────────────
 
 @main.command()
 def doctor() -> None:
     """Verify that all runtime dependencies are installed."""
-    from boss.doctor import run_doctor, print_doctor_report
+    from delegate.doctor import run_doctor, print_doctor_report
 
     checks = run_doctor()
     ok = print_doctor_report(checks)
@@ -57,12 +57,12 @@ def doctor() -> None:
 
 
 # ──────────────────────────────────────────────────────────────
-# boss daemon start / stop
+# delegate daemon start / stop
 # ──────────────────────────────────────────────────────────────
 
 @main.group()
 def daemon() -> None:
-    """Manage the boss daemon (web UI + agent orchestration)."""
+    """Manage the delegate daemon (web UI + agent orchestration)."""
     pass
 
 
@@ -81,8 +81,8 @@ def daemon_start(
     token_budget: int | None,
     foreground: bool,
 ) -> None:
-    """Start the boss daemon."""
-    from boss.daemon import start_daemon, is_running
+    """Start the delegate daemon."""
+    from delegate.daemon import start_daemon, is_running
 
     hc_home = _get_home(ctx)
     alive, pid = is_running(hc_home)
@@ -108,8 +108,8 @@ def daemon_start(
 @daemon.command("stop")
 @click.pass_context
 def daemon_stop(ctx: click.Context) -> None:
-    """Stop the running boss daemon."""
-    from boss.daemon import stop_daemon
+    """Stop the running delegate daemon."""
+    from delegate.daemon import stop_daemon
 
     hc_home = _get_home(ctx)
     stopped = stop_daemon(hc_home)
@@ -123,7 +123,7 @@ def daemon_stop(ctx: click.Context) -> None:
 @click.pass_context
 def daemon_status(ctx: click.Context) -> None:
     """Check if the daemon is running."""
-    from boss.daemon import is_running
+    from delegate.daemon import is_running
 
     hc_home = _get_home(ctx)
     alive, pid = is_running(hc_home)
@@ -134,7 +134,7 @@ def daemon_status(ctx: click.Context) -> None:
 
 
 # ──────────────────────────────────────────────────────────────
-# boss team create / list
+# delegate team create / list
 # ──────────────────────────────────────────────────────────────
 
 @main.group()
@@ -159,7 +159,7 @@ def team_create(
     interactive: bool,
 ) -> None:
     """Create a new team."""
-    from boss.bootstrap import bootstrap
+    from delegate.bootstrap import bootstrap
 
     hc_home = _get_home(ctx)
     worker_agents = [a.strip() for a in agents.split(",") if a.strip()]
@@ -198,7 +198,7 @@ def team_list(ctx: click.Context) -> None:
 
 
 # ──────────────────────────────────────────────────────────────
-# boss agent add
+# delegate agent add
 # ──────────────────────────────────────────────────────────────
 
 @main.group()
@@ -224,7 +224,7 @@ def agent_add(ctx: click.Context, team: str, name: str, role: str, bio: str | No
 
     TEAM is the team name.  NAME is the new agent's name.
     """
-    from boss.bootstrap import add_agent
+    from delegate.bootstrap import add_agent
 
     hc_home = _get_home(ctx)
     try:
@@ -236,7 +236,7 @@ def agent_add(ctx: click.Context, team: str, name: str, role: str, bio: str | No
 
 
 # ──────────────────────────────────────────────────────────────
-# boss config set boss / source-repo
+# delegate config set boss / source-repo
 # ──────────────────────────────────────────────────────────────
 
 @main.group()
@@ -256,7 +256,7 @@ def config_set() -> None:
 @click.pass_context
 def config_set_boss(ctx: click.Context, name: str) -> None:
     """Set the org-wide boss name."""
-    from boss.config import set_boss
+    from delegate.config import set_boss
 
     hc_home = _get_home(ctx)
     set_boss(hc_home, name)
@@ -267,8 +267,8 @@ def config_set_boss(ctx: click.Context, name: str) -> None:
 @click.argument("path", type=click.Path(path_type=Path))
 @click.pass_context
 def config_set_source_repo(ctx: click.Context, path: Path) -> None:
-    """Set the path to the boss source repository (for self-update)."""
-    from boss.config import set_source_repo
+    """Set the path to the delegate source repository (for self-update)."""
+    from delegate.config import set_source_repo
 
     hc_home = _get_home(ctx)
     set_source_repo(hc_home, path.resolve())
@@ -279,7 +279,7 @@ def config_set_source_repo(ctx: click.Context, path: Path) -> None:
 @click.pass_context
 def config_show(ctx: click.Context) -> None:
     """Show the current configuration."""
-    from boss.config import get_boss, get_source_repo, get_repos
+    from delegate.config import get_boss, get_source_repo, get_repos
 
     hc_home = _get_home(ctx)
     boss = get_boss(hc_home) or "(not set)"
@@ -295,7 +295,7 @@ def config_show(ctx: click.Context) -> None:
 
 
 # ──────────────────────────────────────────────────────────────
-# boss repo add / list
+# delegate repo add / list
 # ──────────────────────────────────────────────────────────────
 
 @main.group()
@@ -321,7 +321,7 @@ def repo() -> None:
 @click.pass_context
 def repo_add(ctx: click.Context, path_or_url: str, repo_name: str | None, approval: str | None, test_cmd: str | None) -> None:
     """Register a repository (local path or remote URL)."""
-    from boss.repo import register_repo
+    from delegate.repo import register_repo
 
     hc_home = _get_home(ctx)
     name = register_repo(hc_home, path_or_url, name=repo_name, approval=approval, test_cmd=test_cmd)
@@ -332,7 +332,7 @@ def repo_add(ctx: click.Context, path_or_url: str, repo_name: str | None, approv
 @click.pass_context
 def repo_list(ctx: click.Context) -> None:
     """List registered repositories."""
-    from boss.repo import list_repos
+    from delegate.repo import list_repos
 
     hc_home = _get_home(ctx)
     repos = list_repos(hc_home)
@@ -345,7 +345,7 @@ def repo_list(ctx: click.Context) -> None:
         click.echo(f"  - {name}: {meta.get('source', '?')}")
 
 
-# ── boss repo pipeline add / list / remove ──
+# ── delegate repo pipeline add / list / remove ──
 
 @repo.group("pipeline")
 def repo_pipeline() -> None:
@@ -360,7 +360,7 @@ def repo_pipeline() -> None:
 @click.pass_context
 def repo_pipeline_add(ctx: click.Context, repo_name: str, step_name: str, run_cmd: str) -> None:
     """Add a named step to a repo's pipeline."""
-    from boss.config import add_pipeline_step
+    from delegate.config import add_pipeline_step
 
     hc_home = _get_home(ctx)
     try:
@@ -377,7 +377,7 @@ def repo_pipeline_add(ctx: click.Context, repo_name: str, step_name: str, run_cm
 @click.pass_context
 def repo_pipeline_list(ctx: click.Context, repo_name: str) -> None:
     """List pipeline steps for a repo."""
-    from boss.config import get_repo_pipeline
+    from delegate.config import get_repo_pipeline
 
     hc_home = _get_home(ctx)
     pipeline = get_repo_pipeline(hc_home, repo_name)
@@ -396,7 +396,7 @@ def repo_pipeline_list(ctx: click.Context, repo_name: str) -> None:
 @click.pass_context
 def repo_pipeline_remove(ctx: click.Context, repo_name: str, step_name: str) -> None:
     """Remove a named step from a repo's pipeline."""
-    from boss.config import remove_pipeline_step
+    from delegate.config import remove_pipeline_step
 
     hc_home = _get_home(ctx)
     try:
@@ -407,7 +407,7 @@ def repo_pipeline_remove(ctx: click.Context, repo_name: str, step_name: str) -> 
 
 
 # ──────────────────────────────────────────────────────────────
-# boss migrate
+# delegate migrate
 # ──────────────────────────────────────────────────────────────
 
 @main.command()
@@ -415,12 +415,12 @@ def repo_pipeline_remove(ctx: click.Context, repo_name: str, step_name: str) -> 
 @click.argument("team_name")
 @click.pass_context
 def migrate(ctx: click.Context, old_root: Path, team_name: str) -> None:
-    """Migrate old .standup state to the new ~/.boss structure.
+    """Migrate old .standup state to the new ~/.delegate structure.
 
     OLD_ROOT is the directory containing .standup/ (e.g. /path/to/myteam).
     TEAM_NAME is the name for the team in the new structure.
     """
-    from boss.migrate import migrate as run_migrate, print_migration_report
+    from delegate.migrate import migrate as run_migrate, print_migration_report
 
     hc_home = _get_home(ctx)
     report = run_migrate(old_root.resolve(), team_name, hc_home=hc_home)
@@ -428,23 +428,23 @@ def migrate(ctx: click.Context, old_root: Path, team_name: str) -> None:
 
 
 # ──────────────────────────────────────────────────────────────
-# boss self-update
+# delegate self-update
 # ──────────────────────────────────────────────────────────────
 
 @main.command("self-update")
 @click.pass_context
 def self_update(ctx: click.Context) -> None:
-    """Update boss from the source repository.
+    """Update delegate from the source repository.
 
     Runs 'git pull' in the source repo and reinstalls the package.
     """
-    from boss.config import get_source_repo
+    from delegate.config import get_source_repo
 
     hc_home = _get_home(ctx)
     source_repo = get_source_repo(hc_home)
     if source_repo is None:
         click.echo("Error: No source repo configured.")
-        click.echo("Set one with: boss config set source-repo /path/to/boss")
+        click.echo("Set one with: delegate config set source-repo /path/to/delegate")
         raise SystemExit(1)
 
     if not source_repo.is_dir():
@@ -465,7 +465,7 @@ def self_update(ctx: click.Context) -> None:
     click.echo(result.stdout.strip())
 
     # Step 2: reinstall
-    click.echo("Reinstalling boss...")
+    click.echo("Reinstalling delegate...")
     install_cmd = [sys.executable, "-m", "pip", "install", "-e", str(source_repo)]
 
     # Prefer uv if available
@@ -478,7 +478,7 @@ def self_update(ctx: click.Context) -> None:
         click.echo(f"Install failed:\n{result.stderr}")
         raise SystemExit(1)
 
-    click.echo("Boss updated successfully. ✓")
+    click.echo("Delegate updated successfully. ✓")
 
 
 if __name__ == "__main__":
