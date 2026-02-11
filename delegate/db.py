@@ -217,13 +217,24 @@ def ensure_schema(hc_home: Path, team: str) -> None:
 
     Safe to call repeatedly — each migration runs at most once.
     Call this at daemon startup or lazily before first DB access.
+
+    Each migration step is wrapped in an explicit transaction so that all
+    statements (including DDL) plus the version bump are applied atomically.
+    SQLite supports transactional DDL — if any statement fails the entire
+    migration is rolled back and no version is recorded.
     """
     path = db_path(hc_home, team)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
+
+    # Use isolation_level=None (autocommit) so Python's sqlite3 module
+    # does not silently start or commit transactions behind our back.
+    # We manage BEGIN / COMMIT / ROLLBACK explicitly.
+    conn = sqlite3.connect(str(path), isolation_level=None)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
 
     # Bootstrap the meta table (always idempotent).
+    conn.execute("BEGIN")
     conn.execute("""\
         CREATE TABLE IF NOT EXISTS schema_meta (
             version    INTEGER PRIMARY KEY,
@@ -231,18 +242,27 @@ def ensure_schema(hc_home: Path, team: str) -> None:
                        DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
         )
     """)
-    conn.commit()
+    conn.execute("COMMIT")
 
     current = _current_version(conn)
     pending = MIGRATIONS[current:]
 
     for i, sql in enumerate(pending, start=current + 1):
         logger.info("Applying migration V%d to team DB …", i)
-        conn.executescript(sql)
-        conn.execute(
-            "INSERT INTO schema_meta (version) VALUES (?)", (i,)
-        )
-        conn.commit()
+        stmts = [s.strip() for s in sql.split(";") if s.strip()]
+        try:
+            # BEGIN IMMEDIATE acquires a write-lock up front, preventing
+            # other writers from sneaking in between statements.
+            conn.execute("BEGIN IMMEDIATE")
+            for stmt in stmts:
+                conn.execute(stmt)
+            conn.execute(
+                "INSERT INTO schema_meta (version) VALUES (?)", (i,)
+            )
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
         logger.info("Migration V%d applied", i)
 
     conn.close()
