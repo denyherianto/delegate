@@ -317,13 +317,16 @@ def _slugify(title: str, max_len: int = 40) -> str:
     return slug[:max_len].rstrip("-")
 
 
-def _branch_name(team: str, task_id: int, title: str = "") -> str:
+def _branch_name(hc_home: Path, team: str, task_id: int, title: str = "") -> str:
     """Compute the branch name for a task.
 
-    Format: ``delegate/<team>/T<task_id>``
-    The team-scoped prefix keeps branches organized across teams.
+    Format: ``delegate/<team_id>/T<task_id>``
+    Uses the team's unique instance ID so that deleting and recreating a team
+    with the same name won't collide with leftover branches.
     """
-    return f"delegate/{team}/{format_task_id(task_id)}"
+    from delegate.paths import get_team_id
+    tid = get_team_id(hc_home, team)
+    return f"delegate/{tid}/{format_task_id(task_id)}"
 
 
 def setup_task_worktree(
@@ -344,7 +347,7 @@ def setup_task_worktree(
 
     task_id = task["id"]
     title = task.get("title", "")
-    branch = _branch_name(team, task_id, title)
+    branch = _branch_name(hc_home, team, task_id, title)
     primary_wt: Path | None = None
 
     from delegate.repo import create_agent_worktree
@@ -441,7 +444,7 @@ def _ensure_task_branch_metadata(
 
     # Backfill branch name (use team-scoped naming)
     if not task.get("branch"):
-        branch = _branch_name(team, task_id, task.get("title", ""))
+        branch = _branch_name(hc_home, team, task_id, task.get("title", ""))
         updates["branch"] = branch
         needs_update = True
         logger.warning(

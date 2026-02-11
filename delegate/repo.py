@@ -241,7 +241,9 @@ def create_agent_worktree(
 
     # Default branch name
     if branch is None:
-        branch = f"delegate/{team}/{format_task_id(task_id)}"
+        from delegate.paths import get_team_id
+        tid = get_team_id(hc_home, team)
+        branch = f"delegate/{tid}/{format_task_id(task_id)}"
 
     # Worktree destination
     wt_dir = agent_worktrees_dir(hc_home, team, agent)
