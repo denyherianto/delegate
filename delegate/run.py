@@ -1,7 +1,7 @@
 """Daemon entry point — starts the web UI + daemon loop via uvicorn.
 
 Usage:
-    python -m delegate.run <home> <team> [--port 8000] [--kick "message"]
+    python -m delegate.run <home> <team> [--port 3548] [--kick "message"]
     python -m delegate.run <home> <team> --no-reload   # disable auto-restart
 
 Auto-reload is enabled by default: uvicorn watches `delegate/` for file
@@ -30,7 +30,7 @@ def main():
     parser.add_argument("home", type=Path, help="Delegate home directory (~/.delegate)")
     parser.add_argument("team", help="Default team name (for kick message)")
     parser.add_argument("--interval", type=float, default=1.0, help="Poll interval in seconds")
-    parser.add_argument("--port", type=int, default=8000, help="Web UI port")
+    parser.add_argument("--port", type=int, default=3548, help="Web UI port")
     parser.add_argument("--max-concurrent", type=int, default=32, help="Max concurrent agents")
     parser.add_argument(
         "--token-budget", type=int, default=None,

@@ -63,7 +63,7 @@ def doctor() -> None:
 # ──────────────────────────────────────────────────────────────
 
 @main.command()
-@click.option("--port", type=int, default=8000, help="Port for the web UI (default: 8000).")
+@click.option("--port", type=int, default=3548, help="Port for the web UI (default: 3548).")
 @click.option("--interval", type=float, default=1.0, help="Poll interval in seconds.")
 @click.option("--max-concurrent", type=int, default=32, help="Max concurrent agents.")
 @click.option("--token-budget", type=int, default=None, help="Default token budget per agent session.")

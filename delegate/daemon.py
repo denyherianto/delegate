@@ -48,7 +48,7 @@ def is_running(hc_home: Path) -> tuple[bool, int | None]:
 
 def start_daemon(
     hc_home: Path,
-    port: int = 8000,
+    port: int = 3548,
     interval: float = 1.0,
     max_concurrent: int = 32,
     token_budget: int | None = None,
