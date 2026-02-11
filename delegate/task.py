@@ -19,6 +19,7 @@ Usage:
 
 import argparse
 import json
+import logging
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,21 +27,22 @@ from pathlib import Path
 from delegate.db import get_connection, task_row_to_dict, _JSON_COLUMNS
 
 
-VALID_STATUSES = ("todo", "in_progress", "in_review", "in_approval", "merging", "done", "rejected", "merge_failed")
+VALID_STATUSES = ("todo", "in_progress", "in_review", "in_approval", "merging", "done", "rejected", "merge_failed", "cancelled")
 VALID_PRIORITIES = ("low", "medium", "high", "critical")
 VALID_APPROVAL_STATUSES = ("", "pending", "approved", "rejected")
 
 # Allowed status transitions: from_status -> set of valid to_statuses
 VALID_TRANSITIONS = {
-    "todo": {"in_progress"},
-    "in_progress": {"in_review"},
-    "in_review": {"in_approval", "in_progress"},
-    "in_approval": {"merging", "rejected"},
-    "merging": {"done", "merge_failed", "in_approval"},
-    "rejected": {"in_progress"},
-    "merge_failed": {"in_progress", "in_approval"},
-    # done is the sole terminal state — no transitions out
+    "todo": {"in_progress", "cancelled"},
+    "in_progress": {"in_review", "cancelled"},
+    "in_review": {"in_approval", "in_progress", "cancelled"},
+    "in_approval": {"merging", "rejected", "cancelled"},
+    "merging": {"done", "merge_failed", "in_approval", "cancelled"},
+    "rejected": {"in_progress", "cancelled"},
+    "merge_failed": {"in_progress", "in_approval", "cancelled"},
+    # Terminal states — no transitions out
     "done": set(),
+    "cancelled": set(),
 }
 
 # All columns in the tasks table (used for field validation on update).
@@ -437,7 +439,7 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_
 
     old_status = current.replace("_", " ").title()
     updates: dict = {"status": status}
-    if status == "done":
+    if status in ("done", "cancelled"):
         updates["completed_at"] = _now()
 
     # Safety net: backfill branch/base_sha when entering in_review or in_approval
@@ -511,6 +513,93 @@ def transition_task(hc_home: Path, team: str, task_id: int, new_status: str, new
     )
 
     return task
+
+
+def cancel_task(hc_home: Path, team: str, task_id: int) -> dict:
+    """Cancel a task and clean up its worktrees and branches.
+
+    Sets status to ``cancelled``, clears the assignee, and removes
+    associated Git worktrees and feature branches (best-effort).
+
+    If an agent is mid-turn on the task, the cleanup is still safe:
+    the runtime will notice the task is cancelled when it finishes and
+    won't dispatch further turns.  Git worktree removal only deletes
+    the working directory — in-flight git processes may see errors but
+    won't corrupt anything.
+    """
+    task = get_task(hc_home, team, task_id)
+
+    if task["status"] in ("done", "cancelled"):
+        raise ValueError(
+            f"Task {format_task_id(task_id)} is already '{task['status']}' and cannot be cancelled."
+        )
+
+    # Transition to cancelled and clear assignee
+    updated = change_status(hc_home, team, task_id, "cancelled", suppress_log=True)
+    updated = assign_task(hc_home, team, task_id, "", suppress_log=True)
+
+    from delegate.chat import log_event
+    log_event(
+        hc_home, team,
+        f"{format_task_id(task_id)} cancelled",
+        task_id=task_id,
+    )
+
+    # Best-effort cleanup of worktrees and branches
+    _cleanup_cancelled_task(hc_home, team, task)
+
+    return updated
+
+
+def _cleanup_cancelled_task(hc_home: Path, team: str, task: dict) -> None:
+    """Remove worktrees and feature branch for a cancelled task (best-effort)."""
+    _log = logging.getLogger(__name__)
+
+    branch: str = task.get("branch", "")
+    repos: list[str] = task.get("repo", [])
+
+    if not repos or not branch:
+        return
+
+    for repo_name in repos:
+        try:
+            from delegate.repo import get_repo_path, remove_task_worktree
+            repo_dir = get_repo_path(hc_home, team, repo_name)
+            real_repo = str(repo_dir.resolve())
+
+            # Remove agent worktree
+            try:
+                remove_task_worktree(hc_home, team, repo_name, task["id"])
+            except Exception as exc:
+                _log.warning(
+                    "Could not remove worktree for %s (%s): %s",
+                    format_task_id(task["id"]), repo_name, exc,
+                )
+
+            # Delete the feature branch (best-effort; -D to force)
+            if branch:
+                import subprocess
+                subprocess.run(
+                    ["git", "branch", "-D", branch],
+                    cwd=real_repo,
+                    capture_output=True,
+                    check=False,
+                )
+                subprocess.run(
+                    ["git", "worktree", "prune"],
+                    cwd=real_repo,
+                    capture_output=True,
+                    check=False,
+                )
+                _log.info(
+                    "Cleaned up branch %s for cancelled %s in %s",
+                    branch, format_task_id(task["id"]), repo_name,
+                )
+        except Exception as exc:
+            _log.warning(
+                "Cleanup error for cancelled %s (%s): %s",
+                format_task_id(task["id"]), repo_name, exc,
+            )
 
 
 def set_task_branch(hc_home: Path, team: str, task_id: int, branch_name: str) -> dict:

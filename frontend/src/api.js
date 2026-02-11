@@ -120,6 +120,19 @@ export async function retryMerge(team, taskId) {
   return r.json();
 }
 
+// --- Cancel Task ---
+
+export async function cancelTask(team, taskId) {
+  const r = await fetch(`/teams/${team}/tasks/${taskId}/cancel`, {
+    method: "POST",
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
 // --- Approve / Reject ---
 
 export async function approveTask(team, taskId, summary = "") {

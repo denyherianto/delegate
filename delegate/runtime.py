@@ -314,6 +314,20 @@ async def run_turn(
         except Exception:
             logger.debug("Could not resolve task %s", current_task_id)
 
+    # --- Skip cancelled/done tasks: mark messages processed and return ---
+    if current_task and current_task.get("status") in ("cancelled", "done"):
+        logger.info(
+            "Task %s is %s — discarding %d message(s) for %s",
+            format_task_id(current_task_id), current_task["status"],
+            len(batch), agent,
+        )
+        msg_ids = [m.filename for m in batch if m.filename]
+        if msg_ids:
+            mark_seen_batch(hc_home, team, msg_ids)
+            mark_processed_batch(hc_home, team, msg_ids)
+        log_caller.reset(_prev_caller)
+        return result
+
     # --- Workspace resolution ---
     workspace, workspace_paths = _resolve_workspace(
         hc_home, team, agent, current_task,

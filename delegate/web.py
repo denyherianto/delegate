@@ -644,6 +644,25 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         updated = transition_task(hc_home, team, task_id, "in_approval", manager)
         return updated
 
+    @app.post("/teams/{team}/tasks/{task_id}/cancel")
+    def cancel_task_endpoint(team: str, task_id: int):
+        """Cancel a task.
+
+        Sets status to ``cancelled``, clears the assignee, and
+        performs best-effort cleanup of worktrees and branches.
+        """
+        try:
+            _get_task(hc_home, team, task_id)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        try:
+            from delegate.task import cancel_task
+            updated = cancel_task(hc_home, team, task_id)
+            return updated
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     # --- Message endpoints (team-scoped) ---
 
     @app.get("/teams/{team}/messages")

@@ -112,6 +112,39 @@ function RetryMergeButton({ task }) {
   );
 }
 
+function CancelButton({ task }) {
+  const [loading, setLoading] = useState(false);
+  const team = currentTeam.value;
+
+  const handleCancel = async () => {
+    if (loading) return;
+    if (!confirm(`Cancel ${taskIdStr(task.id)}? Worktrees and branches will be cleaned up.`)) return;
+    setLoading(true);
+    try {
+      await api.cancelTask(team, task.id);
+      const refreshed = await api.fetchTasks(team);
+      tasks.value = refreshed;
+    } catch (err) {
+      alert("Cancel failed: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: "8px" }}>
+      <button
+        class="cancel-btn"
+        onClick={handleCancel}
+        disabled={loading}
+        style={{ width: "100%" }}
+      >
+        {loading ? "Cancelling..." : "Cancel Task"}
+      </button>
+    </div>
+  );
+}
+
 // Module-level variable for badge→tab communication
 let setTabFromBadge = null;
 
@@ -729,6 +762,8 @@ function DetailsTab({ task, stats, currentReview }) {
       <ApprovalBadge task={t} currentReview={currentReview} />
       {/* Retry merge button */}
       {t.status === "merge_failed" && <RetryMergeButton task={t} />}
+      {/* Cancel button — available for all non-terminal states */}
+      {t.status !== "done" && t.status !== "cancelled" && <CancelButton task={t} />}
     </div>
   );
 }

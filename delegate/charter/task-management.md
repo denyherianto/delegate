@@ -17,7 +17,7 @@ python -m delegate.task detach <home> <task_id> <file_path>
 python -m delegate.task comment <home> <team> <task_id> <your_name> "<body>"
 ```
 
-Statuses: `todo` → `in_progress` → `in_review` → `in_approval` → `merging` → `done`. Also: `rejected` (→ `in_progress`), `merge_failed` (→ `in_progress` or retry → `in_approval`).
+Statuses: `todo` → `in_progress` → `in_review` → `in_approval` → `merging` → `done`. Also: `rejected` (→ `in_progress`), `merge_failed` (→ `in_progress` or retry → `in_approval`), `cancelled` (terminal — boss can cancel from any non-terminal state).
 
 Tasks are stored per-team in SQLite. Associate with one or more repos using `--repo` (repeatable for multi-repo tasks).
 

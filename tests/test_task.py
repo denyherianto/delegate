@@ -12,6 +12,7 @@ from delegate.task import (
     update_task,
     assign_task,
     change_status,
+    cancel_task,
     list_tasks,
     set_task_branch,
     get_task_diff,
@@ -737,3 +738,94 @@ class TestTaskTimeline:
         assert c["content"] == "Testing shape"
         assert c["recipient"] == ""
         assert c["task_id"] == task["id"]
+
+
+class TestCancelTask:
+    """Tests for cancel_task() — status transitions and cleanup."""
+
+    def test_cancel_from_todo(self, tmp_team):
+        """A task in 'todo' can be cancelled."""
+        task = create_task(tmp_team, TEAM, title="Cancel me", assignee="alice")
+        updated = cancel_task(tmp_team, TEAM, task["id"])
+        assert updated["status"] == "cancelled"
+
+    def test_cancel_from_in_progress(self, tmp_team):
+        """A task in 'in_progress' can be cancelled."""
+        task = create_task(tmp_team, TEAM, title="Cancel IP", assignee="alice")
+        change_status(tmp_team, TEAM, task["id"], "in_progress")
+        updated = cancel_task(tmp_team, TEAM, task["id"])
+        assert updated["status"] == "cancelled"
+
+    def test_cancel_sets_completed_at(self, tmp_team):
+        """Cancelling sets completed_at."""
+        task = create_task(tmp_team, TEAM, title="Timestamp", assignee="alice")
+        updated = cancel_task(tmp_team, TEAM, task["id"])
+        refreshed = get_task(tmp_team, TEAM, task["id"])
+        assert refreshed["completed_at"] is not None
+
+    def test_cancel_clears_assignee(self, tmp_team):
+        """Cancelling clears the assignee."""
+        task = create_task(tmp_team, TEAM, title="Clear", assignee="alice")
+        cancel_task(tmp_team, TEAM, task["id"])
+        refreshed = get_task(tmp_team, TEAM, task["id"])
+        assert refreshed["assignee"] == ""
+
+    def test_cancel_done_task_raises(self, tmp_team):
+        """Cannot cancel a task that is already done."""
+        task = create_task(tmp_team, TEAM, title="Done", assignee="alice")
+        change_status(tmp_team, TEAM, task["id"], "in_progress")
+        with patch("delegate.task._validate_review_gate"):
+            change_status(tmp_team, TEAM, task["id"], "in_review")
+        change_status(tmp_team, TEAM, task["id"], "in_approval")
+        change_status(tmp_team, TEAM, task["id"], "merging")
+        change_status(tmp_team, TEAM, task["id"], "done")
+        with pytest.raises(ValueError, match="already 'done'"):
+            cancel_task(tmp_team, TEAM, task["id"])
+
+    def test_cancel_already_cancelled_raises(self, tmp_team):
+        """Cannot cancel a task that is already cancelled."""
+        task = create_task(tmp_team, TEAM, title="Twice", assignee="alice")
+        cancel_task(tmp_team, TEAM, task["id"])
+        with pytest.raises(ValueError, match="already 'cancelled'"):
+            cancel_task(tmp_team, TEAM, task["id"])
+
+    def test_cancelled_is_terminal(self, tmp_team):
+        """A cancelled task cannot transition to any other status."""
+        task = create_task(tmp_team, TEAM, title="Terminal", assignee="alice")
+        cancel_task(tmp_team, TEAM, task["id"])
+        with pytest.raises(ValueError, match="terminal"):
+            change_status(tmp_team, TEAM, task["id"], "in_progress")
+
+    def test_cancel_from_merge_failed(self, tmp_team):
+        """A task in 'merge_failed' can be cancelled."""
+        task = create_task(tmp_team, TEAM, title="Merge Fail", assignee="alice")
+        change_status(tmp_team, TEAM, task["id"], "in_progress")
+        with patch("delegate.task._validate_review_gate"):
+            change_status(tmp_team, TEAM, task["id"], "in_review")
+        change_status(tmp_team, TEAM, task["id"], "in_approval")
+        change_status(tmp_team, TEAM, task["id"], "merging")
+        change_status(tmp_team, TEAM, task["id"], "merge_failed")
+        updated = cancel_task(tmp_team, TEAM, task["id"])
+        assert updated["status"] == "cancelled"
+
+    def test_cancel_from_rejected(self, tmp_team):
+        """A task in 'rejected' can be cancelled."""
+        task = create_task(tmp_team, TEAM, title="Rejected", assignee="alice")
+        change_status(tmp_team, TEAM, task["id"], "in_progress")
+        with patch("delegate.task._validate_review_gate"):
+            change_status(tmp_team, TEAM, task["id"], "in_review")
+        change_status(tmp_team, TEAM, task["id"], "in_approval")
+        change_status(tmp_team, TEAM, task["id"], "rejected")
+        updated = cancel_task(tmp_team, TEAM, task["id"])
+        assert updated["status"] == "cancelled"
+
+    def test_cancel_logs_event(self, tmp_team):
+        """Cancelling a task logs an event."""
+        from delegate.chat import get_task_timeline
+
+        task = create_task(tmp_team, TEAM, title="Log", assignee="alice")
+        cancel_task(tmp_team, TEAM, task["id"])
+        timeline = get_task_timeline(tmp_team, TEAM, task["id"])
+        events = [item for item in timeline if item["type"] == "event"]
+        cancelled_events = [e for e in events if "cancelled" in e["content"].lower()]
+        assert len(cancelled_events) == 1
