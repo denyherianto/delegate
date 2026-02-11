@@ -320,13 +320,13 @@ def _slugify(title: str, max_len: int = 40) -> str:
 def _branch_name(hc_home: Path, team: str, task_id: int, title: str = "") -> str:
     """Compute the branch name for a task.
 
-    Format: ``delegate/<team_id>/T<task_id>``
-    Uses the team's unique instance ID so that deleting and recreating a team
-    with the same name won't collide with leftover branches.
+    Format: ``delegate/<team_id>/<team>/T<task_id>``
+    The team_id (6-char hex) prevents collisions when a team is deleted and
+    recreated; the team name keeps branches human-readable.
     """
     from delegate.paths import get_team_id
     tid = get_team_id(hc_home, team)
-    return f"delegate/{tid}/{format_task_id(task_id)}"
+    return f"delegate/{tid}/{team}/{format_task_id(task_id)}"
 
 
 def setup_task_worktree(

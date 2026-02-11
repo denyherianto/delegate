@@ -296,7 +296,7 @@ def _backfill_branch_metadata(hc_home: Path, team: str, task: dict, updates: dic
     if not task.get("branch") and "branch" not in updates:
         from delegate.paths import get_team_id
         tid = get_team_id(hc_home, team)
-        branch = f"delegate/{tid}/{format_task_id(task_id)}"
+        branch = f"delegate/{tid}/{team}/{format_task_id(task_id)}"
         updates["branch"] = branch
         _log.warning(
             "Backfilling branch=%s on task %s during status change — "
