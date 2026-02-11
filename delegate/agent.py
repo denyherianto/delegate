@@ -1338,7 +1338,30 @@ async def run_agent_loop(
         raise
 
     finally:
-        worklog_content = _session_teardown(ctx)
+        try:
+            worklog_content = _session_teardown(ctx)
+        except Exception:
+            # Teardown must never prevent the process from exiting cleanly.
+            # If it fails, log the error and ensure the PID is cleared so
+            # the orchestrator doesn't think we're still alive.
+            ctx.alog.logger.exception("Session teardown failed")
+            try:
+                from delegate.chat import end_session
+                end_session(
+                    ctx.hc_home, ctx.team, ctx.session_id,
+                    tokens_in=ctx.total_tokens_in,
+                    tokens_out=ctx.total_tokens_out,
+                    cost_usd=ctx.total_cost_usd,
+                )
+            except Exception:
+                ctx.alog.logger.exception("Fallback end_session also failed")
+            try:
+                state = _read_state(ctx.ad)
+                state["pid"] = None
+                _write_state(ctx.ad, state)
+            except Exception:
+                ctx.alog.logger.exception("Fallback PID clear also failed")
+            worklog_content = ""
 
     return worklog_content
 
@@ -1426,7 +1449,26 @@ async def _run_agent_oneshot(
         raise
 
     finally:
-        _session_teardown(ctx)
+        try:
+            _session_teardown(ctx)
+        except Exception:
+            ctx.alog.logger.exception("Session teardown failed (oneshot)")
+            try:
+                from delegate.chat import end_session
+                end_session(
+                    ctx.hc_home, ctx.team, ctx.session_id,
+                    tokens_in=ctx.total_tokens_in,
+                    tokens_out=ctx.total_tokens_out,
+                    cost_usd=ctx.total_cost_usd,
+                )
+            except Exception:
+                pass
+            try:
+                state = _read_state(ctx.ad)
+                state["pid"] = None
+                _write_state(ctx.ad, state)
+            except Exception:
+                pass
 
 
 def main():

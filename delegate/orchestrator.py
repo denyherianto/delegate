@@ -14,7 +14,7 @@ import yaml
 
 from delegate.paths import agents_dir as _agents_dir, agent_dir as _agent_dir
 from delegate.mailbox import has_unread
-from delegate.chat import log_event
+from delegate.chat import log_event, close_orphaned_sessions
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,15 @@ def check_and_clear_stale_pids(hc_home: Path, team: str) -> list[str]:
             )
             state["pid"] = None
             _write_state(ad, state)
+
+            # Close any orphaned DB sessions left by the dead process
+            closed = close_orphaned_sessions(hc_home, team, agent)
+            if closed:
+                logger.info(
+                    "Closed %d orphaned session(s) | agent=%s | team=%s",
+                    closed, agent, team,
+                )
+
             cleared.append(agent)
 
     if cleared:

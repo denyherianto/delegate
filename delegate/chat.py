@@ -115,6 +115,29 @@ def end_session(
     conn.close()
 
 
+def close_orphaned_sessions(hc_home: Path, team: str, agent: str) -> int:
+    """Close any sessions for *agent* that have ended_at IS NULL.
+
+    Called by the orchestrator when a stale PID is detected — the agent
+    process died without running ``_session_teardown``, leaving the DB
+    session open.  We stamp ``ended_at`` so it doesn't look "active" forever.
+
+    Returns the number of sessions closed.
+    """
+    conn = get_connection(hc_home, team)
+    cursor = conn.execute(
+        """UPDATE sessions SET
+            ended_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+            duration_seconds = (julianday('now') - julianday(started_at)) * 86400
+        WHERE agent = ? AND ended_at IS NULL""",
+        (agent,),
+    )
+    closed = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return closed
+
+
 def update_session_task(hc_home: Path, team: str, session_id: int, task_id: int) -> None:
     """Update the task_id on a running session."""
     conn = get_connection(hc_home, team)
