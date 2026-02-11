@@ -5,7 +5,7 @@ Commands:
     delegate start [--port N]                        — start daemon (web UI + agents)
     delegate stop                                    — stop running daemon
     delegate status                                  — check if daemon is running
-    delegate team create <name> --manager M --agents a:role,b --repo /path  — create a new team
+    delegate team add <name> --manager M --agents a:role,b --repo /path     — add a new team
     delegate team list                               — list existing teams
     delegate agent add <team> <name>                 — add an agent to a team
     delegate config set boss <name>                  — set org-wide boss name
@@ -149,7 +149,7 @@ def status(ctx: click.Context) -> None:
 
 
 # ──────────────────────────────────────────────────────────────
-# delegate team create / list
+# delegate team add / list
 # ──────────────────────────────────────────────────────────────
 
 @main.group()
@@ -158,7 +158,7 @@ def team() -> None:
     pass
 
 
-@team.command("create")
+@team.command("add")
 @click.argument("name")
 @click.option("--manager", required=True, help="Name of the manager agent.")
 @click.option(
@@ -174,7 +174,7 @@ def team() -> None:
 )
 @click.option("--interactive", is_flag=True, help="Prompt for bios and charter overrides.")
 @click.pass_context
-def team_create(
+def team_add(
     ctx: click.Context,
     name: str,
     manager: str,
@@ -182,7 +182,7 @@ def team_create(
     repos: tuple[str, ...],
     interactive: bool,
 ) -> None:
-    """Create a new team."""
+    """Add a new team."""
     from delegate.bootstrap import bootstrap
     from delegate.repo import register_repo
 
