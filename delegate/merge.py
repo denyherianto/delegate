@@ -8,13 +8,18 @@ The merge sequence for a task in ``in_approval`` with an approved review
 3. If conflict: remove temp worktree/branch, set task to ``conflict``, notify.
 4. Run pre-merge script / tests inside the temp worktree.
 5. If tests fail: remove temp worktree/branch, set task to ``conflict``, notify.
-6. ``git update-ref refs/heads/main <temp-tip> <main-tip>``  — atomic CAS.
+6. Fast-forward main:
+   - If user has ``main`` checked out AND dirty → **fail** (protect work).
+   - If user has ``main`` checked out AND clean → ``git merge --ff-only``
+     (updates ref AND working tree).
+   - If user is on another branch → ``git update-ref`` with CAS (ref-only).
 7. Set task to ``done``.
 8. Clean up: remove temp worktree/branch, feature branch, agent worktree.
 
 Key invariants:
-- The **main repo working directory is never touched**.  All git operations
-  run inside a disposable worktree under ``~/.delegate/teams/<team>/worktrees/``.
+- The **main repo working directory is never touched** during rebase/test.
+  The only time the working tree may advance is when the user has ``main``
+  checked out cleanly — then ``merge --ff-only`` updates it in lockstep.
 - The **feature branch and agent worktree are never modified** during the
   merge attempt.  Only on success are they cleaned up.  On failure, the
   agent could resume work without any manual recovery.
@@ -246,20 +251,18 @@ _run_pipeline = _run_pre_merge
 # ---------------------------------------------------------------------------
 
 def _ff_merge(repo_dir: str, branch: str) -> tuple[bool, str]:
-    """Fast-forward merge the branch into main using atomic update-ref.
+    """Fast-forward merge the branch into main.
 
-    Uses ``git update-ref`` with a compare-and-swap (CAS) to atomically
-    advance main to the tip of *branch*.  This operates purely on refs —
-    no working tree is touched.
+    Behaviour depends on the user's checkout state in the main repo:
+
+    - **main checked out + dirty** → fail (protect uncommitted work).
+    - **main checked out + clean** → ``git merge --ff-only`` (updates ref
+      AND working tree so the user doesn't see phantom dirty files).
+    - **other branch checked out** → ``git update-ref`` with CAS (ref-only,
+      user's working tree is untouched).
 
     Returns ``(success, output)``.
     """
-    # Get current main tip for CAS
-    main_result = _run_git(["rev-parse", "main"], cwd=repo_dir)
-    if main_result.returncode != 0:
-        return False, f"Could not resolve main: {main_result.stderr}"
-    main_tip = main_result.stdout.strip()
-
     # Get branch tip
     branch_result = _run_git(["rev-parse", branch], cwd=repo_dir)
     if branch_result.returncode != 0:
@@ -267,19 +270,47 @@ def _ff_merge(repo_dir: str, branch: str) -> tuple[bool, str]:
     branch_tip = branch_result.stdout.strip()
 
     # Verify branch is a descendant of main (fast-forward check)
-    ancestor_check = _run_git(["merge-base", "--is-ancestor", "main", branch], cwd=repo_dir)
+    ancestor_check = _run_git(
+        ["merge-base", "--is-ancestor", "main", branch], cwd=repo_dir,
+    )
     if ancestor_check.returncode != 0:
         return False, f"Fast-forward not possible: {branch} is not a descendant of main"
 
-    # Atomic CAS: update main to branch tip only if main is still at main_tip
-    result = _run_git(
-        ["update-ref", "refs/heads/main", branch_tip, main_tip],
-        cwd=repo_dir,
-    )
-    if result.returncode != 0:
-        return False, f"Atomic update-ref failed (concurrent push?): {result.stderr}"
+    # Check what the user has checked out in the main repo
+    head_result = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_dir)
+    user_branch = head_result.stdout.strip() if head_result.returncode == 0 else ""
 
-    return True, f"main fast-forwarded to {branch_tip[:12]}"
+    if user_branch == "main":
+        # User is on main — check for uncommitted changes
+        status_result = _run_git(["status", "--porcelain"], cwd=repo_dir)
+        dirty = status_result.stdout.strip()
+        if dirty:
+            return False, (
+                "Main repo has uncommitted changes on main — "
+                "commit or stash them before merging.\n"
+                f"Dirty files:\n{dirty[:500]}"
+            )
+
+        # Clean main checkout: use merge --ff-only to update ref + working tree
+    result = _run_git(["merge", "--ff-only", branch], cwd=repo_dir)
+    if result.returncode != 0:
+        return False, f"Fast-forward merge failed: {result.stderr}"
+        return True, f"main fast-forwarded to {branch_tip[:12]} (working tree updated)"
+
+    else:
+        # User is on another branch: move ref only via atomic CAS
+        main_result = _run_git(["rev-parse", "main"], cwd=repo_dir)
+        if main_result.returncode != 0:
+            return False, f"Could not resolve main: {main_result.stderr}"
+        main_tip = main_result.stdout.strip()
+
+        result = _run_git(
+            ["update-ref", "refs/heads/main", branch_tip, main_tip],
+            cwd=repo_dir,
+        )
+        if result.returncode != 0:
+            return False, f"Atomic update-ref failed (concurrent push?): {result.stderr}"
+        return True, f"main fast-forwarded to {branch_tip[:12]} (ref-only, user on {user_branch})"
 
 
 # ---------------------------------------------------------------------------

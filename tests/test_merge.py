@@ -182,36 +182,116 @@ class TestMergeTask:
         assert result.success is False
         assert "no repo" in result.message.lower()
 
-    def test_main_repo_untouched_during_merge(self, hc_home, tmp_path):
-        """The main repo working directory should never be modified during merge."""
+    def test_main_repo_untouched_when_user_on_other_branch(self, hc_home, tmp_path):
+        """When the user is on a non-main branch, the working directory is untouched."""
         repo = _setup_git_repo(tmp_path)
         branch = "alice/T0001"
         _make_feature_branch(repo, branch)
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
-        # Record main repo state before merge
-        pre_head = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=str(repo), capture_output=True, text=True,
-        ).stdout.strip()
+        # Switch user to a different branch so update-ref path is used
+        subprocess.run(
+            ["git", "checkout", "-b", "user/work"],
+            cwd=str(repo), capture_output=True, check=True,
+        )
 
         # Add a dirty file to the main repo
         (repo / "dirty_file.txt").write_text("user's uncommitted work\n")
 
         task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
-        assert result.success is True
+        assert result.success is True, f"Merge failed: {result.message}"
 
-        # Main repo should still be on the same branch
+        # Main repo should still be on user/work
         post_head = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=str(repo), capture_output=True, text=True,
         ).stdout.strip()
-        assert post_head == pre_head, "Merge worker changed the checked-out branch in main repo"
+        assert post_head == "user/work", "Merge worker changed the checked-out branch"
 
         # Dirty file should still be there
         assert (repo / "dirty_file.txt").exists(), "Merge worker disturbed main repo working directory"
         assert (repo / "dirty_file.txt").read_text() == "user's uncommitted work\n"
+
+    def test_dirty_main_checkout_blocks_merge(self, hc_home, tmp_path):
+        """When user has main checked out with uncommitted changes, merge fails."""
+        repo = _setup_git_repo(tmp_path)
+        branch = "alice/T0001"
+        _make_feature_branch(repo, branch)
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        # User is on main (default after setup) — add dirty file
+        (repo / "dirty_file.txt").write_text("user's uncommitted work\n")
+
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
+
+        with patch("delegate.merge.notify_conflict"):
+            result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
+
+        assert result.success is False
+        assert "uncommitted" in result.message.lower()
+
+        updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
+        assert updated["status"] == "conflict"
+
+        # Dirty file should be preserved
+        assert (repo / "dirty_file.txt").exists()
+        assert (repo / "dirty_file.txt").read_text() == "user's uncommitted work\n"
+
+    def test_clean_main_checkout_updates_working_tree(self, hc_home, tmp_path):
+        """When user has main checked out cleanly, merge --ff-only updates the working tree."""
+        repo = _setup_git_repo(tmp_path)
+        branch = "alice/T0001"
+        _make_feature_branch(repo, branch, filename="new_feature.py", content="# feature\n")
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        # User is on main (default after setup) and repo is clean
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
+        result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
+        assert result.success is True, f"Merge failed: {result.message}"
+
+        # Working tree should have the merged file (ff-only updates it)
+        assert (repo / "new_feature.py").exists(), "Working tree not updated after ff-only merge"
+        assert (repo / "new_feature.py").read_text() == "# feature\n"
+
+        # User should still be on main
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(repo), capture_output=True, text=True,
+        ).stdout.strip()
+        assert head == "main"
+
+    def test_other_branch_checkout_uses_ref_only(self, hc_home, tmp_path):
+        """When user is on a different branch, update-ref advances main
+        without checking out main or running merge --ff-only."""
+        repo = _setup_git_repo(tmp_path)
+        branch = "alice/T0001"
+        _make_feature_branch(repo, branch, filename="new_feature.py", content="# feature\n")
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        # Switch user to a different branch
+        subprocess.run(
+            ["git", "checkout", "-b", "user/work"],
+            cwd=str(repo), capture_output=True, check=True,
+        )
+
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
+        result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
+        assert result.success is True, f"Merge failed: {result.message}"
+
+        # User should still be on user/work (merge worker never checked out main)
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(repo), capture_output=True, text=True,
+        ).stdout.strip()
+        assert head == "user/work", f"Merge changed checked-out branch to {head}"
+
+        # Main ref should point to the merged commit
+        show = subprocess.run(
+            ["git", "show", "main:new_feature.py"],
+            cwd=str(repo), capture_output=True, text=True,
+        )
+        assert show.returncode == 0, "main ref should include the merged feature"
 
     def test_feature_branch_untouched_on_failure(self, hc_home, tmp_path):
         """On merge failure, the feature branch should remain at its original tip."""
