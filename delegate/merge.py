@@ -177,6 +177,8 @@ def _run_pre_merge(
             return ok, output if not ok else f"Pre-merge script passed:\n{output}"
         except subprocess.TimeoutExpired:
             return False, "Pre-merge script timed out after 600 seconds."
+        except OSError as exc:
+            return False, f"Pre-merge script failed to start: {exc}"
         finally:
             _run_git(["checkout", "main"], cwd=repo_dir)
 
