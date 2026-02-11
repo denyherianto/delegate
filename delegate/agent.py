@@ -32,7 +32,7 @@ from typing import Any
 import yaml
 
 from delegate.paths import agent_dir as _resolve_agent_dir, agents_dir, base_charter_dir
-from delegate.mailbox import read_inbox, mark_seen_batch, mark_processed, has_unread, recent_processed
+from delegate.mailbox import read_inbox, mark_seen_batch, mark_processed_batch, has_unread, recent_processed
 from delegate.task import format_task_id
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,11 @@ DEFAULT_IDLE_TIMEOUT = 600
 # Context window: how many recent processed messages to include per turn
 CONTEXT_MSGS_SAME_SENDER = 5   # from the primary sender of the new message
 CONTEXT_MSGS_OTHERS = 3         # most recent from anyone else
+
+# Maximum unread messages to include in a single turn.  The agent is told to
+# act on ALL of them, and ALL are marked processed after the turn completes.
+# Any remaining messages are queued for the next turn.
+MAX_MESSAGES_PER_TURN = 3
 
 # Model mapping by seniority
 SENIORITY_MODELS = {
@@ -724,9 +729,19 @@ def build_user_message(
     team: str,
     agent: str,
     include_context: bool = False,
-) -> str:
-    """Build the user message from unread inbox messages + assigned tasks."""
-    parts = []
+) -> tuple[str, list[str]]:
+    """Build the user message from unread inbox messages + assigned tasks.
+
+    Returns ``(prompt_text, included_msg_ids)`` where *included_msg_ids* is
+    the list of message IDs (as strings) that were included in the prompt.
+    After the turn completes, exactly these IDs should be marked as processed.
+
+    At most ``MAX_MESSAGES_PER_TURN`` unread messages are included.  The agent
+    is told to act on ALL of them.  Remaining messages stay unprocessed and
+    will be picked up in a subsequent turn.
+    """
+    parts: list[str] = []
+    included_msg_ids: list[str] = []
 
     # Previous session context (cold start only)
     if include_context:
@@ -738,8 +753,13 @@ def build_user_message(
             )
 
     # --- Recent conversation history (processed messages for context) ---
-    messages = read_inbox(hc_home, team, agent, unread_only=True)
+    all_unread = read_inbox(hc_home, team, agent, unread_only=True)
+    # Take at most K messages for this turn
+    messages = all_unread[:MAX_MESSAGES_PER_TURN]
+    remaining = len(all_unread) - len(messages)
+
     if messages:
+        included_msg_ids = [m.filename for m in messages if m.filename]
         primary_sender = messages[0].sender
 
         # Fetch recent processed messages from the primary sender
@@ -759,20 +779,23 @@ def build_user_message(
             for msg in sorted(history_same + history_others, key=lambda m: m.id or 0):
                 parts.append(f"[{msg.time}] From {msg.sender}:\n{msg.body}\n")
 
-    # --- New messages — act on the first, read the rest for context ---
+    # --- New messages — act on ALL of them ---
     if messages:
         parts.append(f"=== NEW MESSAGES ({len(messages)}) ===")
         for i, msg in enumerate(messages, 1):
-            if i == 1:
-                parts.append(f">>> ACTION REQUIRED — Message {i}/{len(messages)} <<<")
-            else:
-                parts.append(f"--- Upcoming message {i}/{len(messages)} (for context only) ---")
+            parts.append(f">>> Message {i}/{len(messages)} <<<")
             parts.append(f"[{msg.time}] From {msg.sender}:\n{msg.body}")
+        if remaining > 0:
+            parts.append(
+                f"\n({remaining} more message(s) queued — they will arrive in your next turn.)"
+            )
         parts.append(
-            "\n\U0001f449 Respond to the ACTION REQUIRED message above (message 1). "
-            "You may read the other messages for context and adapt your "
-            "response accordingly, but only take action on message 1. "
-            "The remaining messages will be delivered for action in subsequent turns."
+            "\n\U0001f449 Respond to ALL messages above. Where possible, consolidate "
+            "replies to the same sender into a single message. Do NOT send "
+            "acknowledgment-only messages (e.g. \"Got it\", \"Thanks\", \"Standing by\"). "
+            "The system automatically shows delivery and read status to senders. "
+            "Only send a message when you have substantive information, a question, "
+            "or a deliverable."
         )
     else:
         parts.append("No new messages.")
@@ -793,7 +816,7 @@ def build_user_message(
     except Exception:
         pass
 
-    return "\n".join(parts)
+    return "\n".join(parts), included_msg_ids
 
 
 def build_reflection_message(hc_home: Path, team: str, agent: str) -> str:
@@ -1106,8 +1129,14 @@ def _finish_turn(
     turn_tokens_out: int,
     turn_cost: float,
     turn_tools: list[str],
+    msg_ids_to_process: list[str] | None = None,
 ) -> None:
     """Post-response turn wrap-up: accumulate totals, log, persist, mark mail.
+
+    *msg_ids_to_process* is the exact list of message IDs that were included
+    in the prompt for this turn.  All of them are marked as processed so
+    they won't appear again.  If ``None`` (e.g. reflection turns), no
+    messages are marked.
 
     Updates *ctx* in place with new cumulative totals.
     """
@@ -1140,12 +1169,12 @@ def _finish_turn(
         cost_usd=ctx.total_cost_usd,
     )
 
-    # Mark the first unread message as processed (one-at-a-time)
-    _first = read_inbox(ctx.hc_home, ctx.team, ctx.agent, unread_only=True)
-    if _first and _first[0].filename:
-        msg_id = _first[0].filename
-        mark_processed(ctx.hc_home, ctx.team, msg_id)
-        ctx.alog.mail_marked_read(msg_id)
+    # Mark exactly the messages that were in the prompt as processed
+    if msg_ids_to_process:
+        from delegate.mailbox import mark_processed_batch
+        mark_processed_batch(ctx.hc_home, ctx.team, msg_ids_to_process)
+        for mid in msg_ids_to_process:
+            ctx.alog.mail_marked_read(mid)
 
     # Re-check task association (may set up worktree if task acquired a repo)
     if ctx.current_task_id is None:
@@ -1212,15 +1241,13 @@ async def run_agent_loop(
         try:
             # --- First turn ---
             turn = 1
-            user_msg = build_user_message(hc_home, team, agent, include_context=True)
+            user_msg, turn_msg_ids = build_user_message(hc_home, team, agent, include_context=True)
             ctx.worklog_lines.append(f"\n## Turn {turn}\n{user_msg}")
 
-            # Log incoming messages and mark them as seen
-            messages = read_inbox(hc_home, team, agent, unread_only=True)
-            seen_ids = [m.filename for m in messages if m.filename]
-            if seen_ids:
-                mark_seen_batch(hc_home, team, seen_ids)
-            for inbox_msg in messages:
+            # Mark included messages as seen
+            if turn_msg_ids:
+                mark_seen_batch(hc_home, team, turn_msg_ids)
+            for inbox_msg in read_inbox(hc_home, team, agent, unread_only=True)[:len(turn_msg_ids)]:
                 ctx.alog.message_received(inbox_msg.sender, len(inbox_msg.body))
 
             ctx.alog.turn_start(turn, user_msg)
@@ -1238,7 +1265,8 @@ async def run_agent_loop(
                     turn_tools, ctx.worklog_lines,
                 )
 
-            _finish_turn(ctx, turn, turn_tokens_in, turn_tokens_out, turn_cost, turn_tools)
+            _finish_turn(ctx, turn, turn_tokens_in, turn_tokens_out, turn_cost, turn_tools,
+                         msg_ids_to_process=turn_msg_ids)
 
             # --- Event loop: wait for new inbox messages ---
             while True:
@@ -1250,17 +1278,16 @@ async def run_agent_loop(
                     break
 
                 turn = ctx.turn + 1
-                # Always include context — each turn is a fresh session
-                user_msg = build_user_message(hc_home, team, agent, include_context=True)
+                # build_user_message returns (text, msg_ids) — IDs are captured
+                # here and passed through so _finish_turn marks exactly these.
+                user_msg, turn_msg_ids = build_user_message(hc_home, team, agent, include_context=True)
                 ctx.worklog_lines.append(f"\n## Turn {turn}\n{user_msg}")
 
-                # Log incoming messages and mark them as seen
-                messages = read_inbox(hc_home, team, agent, unread_only=True)
-                seen_ids = [m.filename for m in messages if m.filename]
-                if seen_ids:
-                    mark_seen_batch(hc_home, team, seen_ids)
-                for inbox_msg in messages:
-                    ctx.alog.message_received(inbox_msg.sender, len(inbox_msg.body))
+                # Mark included messages as seen
+                if turn_msg_ids:
+                    mark_seen_batch(hc_home, team, turn_msg_ids)
+                    for mid in turn_msg_ids:
+                        ctx.alog.info("Message %s included in turn %d", mid, turn)
 
                 ctx.alog.turn_start(turn, user_msg)
 
@@ -1276,7 +1303,8 @@ async def run_agent_loop(
                         turn_tools, ctx.worklog_lines,
                     )
 
-                _finish_turn(ctx, turn, turn_tokens_in, turn_tokens_out, turn_cost, turn_tools)
+                _finish_turn(ctx, turn, turn_tokens_in, turn_tokens_out, turn_cost, turn_tools,
+                             msg_ids_to_process=turn_msg_ids)
 
                 # After processing a real message, coin-flip for a reflection turn
                 if _check_reflection_due():
@@ -1350,7 +1378,7 @@ async def _run_agent_oneshot(
             current_task=ctx.current_task,
             workspace_path=ctx.workspace,
         )
-        user_message = build_user_message(hc_home, team, agent)
+        user_message, turn_msg_ids = build_user_message(hc_home, team, agent)
 
         options_kwargs: dict[str, Any] = dict(
             system_prompt=system_prompt,
@@ -1369,9 +1397,10 @@ async def _run_agent_oneshot(
             "\n## Conversation\n",
         ])
 
-        # Log incoming messages
-        messages = read_inbox(hc_home, team, agent, unread_only=True)
-        for inbox_msg in messages:
+        # Mark included messages as seen
+        if turn_msg_ids:
+            mark_seen_batch(hc_home, team, turn_msg_ids)
+        for inbox_msg in read_inbox(hc_home, team, agent, unread_only=True)[:len(turn_msg_ids)]:
             ctx.alog.message_received(inbox_msg.sender, len(inbox_msg.body))
 
         ctx.alog.turn_start(1, user_message)
@@ -1387,7 +1416,8 @@ async def _run_agent_oneshot(
                 turn_tools, ctx.worklog_lines,
             )
 
-        _finish_turn(ctx, 1, turn_tokens_in, turn_tokens_out, turn_cost, turn_tools)
+        _finish_turn(ctx, 1, turn_tokens_in, turn_tokens_out, turn_cost, turn_tools,
+                     msg_ids_to_process=turn_msg_ids)
 
         return "\n".join(ctx.worklog_lines)
 

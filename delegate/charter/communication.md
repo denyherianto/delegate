@@ -12,18 +12,21 @@ Your conversational text is NOT delivered to anyone — it only goes to an inter
 python -m delegate.mailbox send <home> <team> <your_name> <recipient> "<message>"
 ```
 
-For every message you receive, respond by running the send command. Do not just compose a reply — actually execute the command.
+Do not just compose a reply — actually execute the send command. But ONLY send a message when you have substantive content. Do NOT send acknowledgment-only messages. The system shows delivery/read status automatically.
 
 Check inbox: `python -m delegate.mailbox inbox <home> <team> <your_name>`
 
 ## When to Message
 
-- **Ask questions early.** Unclear requirements → message the manager. Ten-minute conversation saves a day of rework.
-- **Report progress.** Finished a task or hit a blocker → message the manager.
+- **Ask questions early.** Unclear requirements → message the manager.
+- **Report results.** Finished a task or hit a blocker → message the manager with specifics.
 - **Keep it brief.** Say what you need clearly and concisely.
-- **Respond promptly.** If you need something, be specific about what and by when.
+- **Be specific.** If you need something, say exactly what and by when.
 - **Don't wait silently.** If blocked on someone, say so explicitly.
 
-## Long-Running Work
+## When NOT to Message
 
-When working on a task that takes more than a few minutes and someone may be waiting for the result (especially the boss or manager), send a brief progress update every few minutes. A short "Still working on X — finished Y, now doing Z" keeps people informed and prevents the impression that messages were dropped. Don't wait until everything is done to communicate.
+- **No pure acknowledgments.** "Got it", "Thanks", "Working on it", "Standing by" — these waste everyone's time. Just do the work.
+- **No redundant status.** If you have nothing new to report, don't send a message.
+- **No echoing back.** Don't repeat what someone told you. Confirm only if there's ambiguity.
+- **Consolidate.** If you have multiple things to say to the same person, send one message, not three.
