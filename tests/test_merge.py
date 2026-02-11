@@ -491,18 +491,22 @@ class TestMergeOnce:
         assert results[0].success is True
 
     def test_manual_approved_processes(self, hc_home, tmp_path):
-        """Manual tasks with approval_status='approved' should be processed."""
+        """Manual tasks with an approved review should be processed."""
         repo = _setup_git_repo(tmp_path)
         _make_feature_branch(repo, "alice/T0001")
 
         from delegate.paths import repos_dir
+        from delegate.review import get_current_review, set_verdict
         rd = repos_dir(hc_home, SAMPLE_TEAM)
         rd.mkdir(parents=True, exist_ok=True)
         (rd / "myrepo").symlink_to(repo)
         add_repo(hc_home, SAMPLE_TEAM, "myrepo", str(repo), approval="manual")
 
         task = _make_in_approval_task(hc_home, repo="myrepo", branch="alice/T0001")
-        update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
+        # Approve via the reviews table (not the deprecated approval_status field)
+        # change_status to in_approval already creates a review (attempt=1)
+        review = get_current_review(hc_home, SAMPLE_TEAM, task["id"])
+        set_verdict(hc_home, SAMPLE_TEAM, task["id"], review["id"], "approved")
 
         results = merge_once(hc_home, SAMPLE_TEAM)
         assert len(results) == 1
@@ -669,7 +673,6 @@ class TestRunPreMerge:
         set_pre_merge_script(hc_home, SAMPLE_TEAM, "myrepo", "false")
 
         task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
-        update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
 
         with patch("delegate.merge.notify_conflict"):
             result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
@@ -679,6 +682,47 @@ class TestRunPreMerge:
 
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
         assert updated["status"] == "conflict"
+
+    def test_pre_merge_failure_rolls_back_branch(self, hc_home, tmp_path):
+        """After pre-merge failure, the branch should be at its pre-rebase tip."""
+        repo = _setup_git_repo(tmp_path)
+        branch = "alice/T0001"
+        _make_feature_branch(repo, branch)
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        # Add a second commit to main so the rebase actually moves the branch
+        (repo / "extra.txt").write_text("extra\n")
+        subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "main moves ahead"], cwd=str(repo), capture_output=True, check=True)
+
+        # Record branch tip BEFORE merge attempt
+        pre_tip = subprocess.run(
+            ["git", "rev-parse", branch], cwd=str(repo), capture_output=True, text=True
+        ).stdout.strip()
+
+        set_pre_merge_script(hc_home, SAMPLE_TEAM, "myrepo", "false")
+
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
+
+        with patch("delegate.merge.notify_conflict"):
+            result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
+
+        assert result.success is False
+
+        # Branch should be rolled back to its original tip
+        post_tip = subprocess.run(
+            ["git", "rev-parse", branch], cwd=str(repo), capture_output=True, text=True
+        ).stdout.strip()
+        assert post_tip == pre_tip, f"Branch was not rolled back: {post_tip} != {pre_tip}"
+
+        # main should be unaffected
+        main_tip = subprocess.run(
+            ["git", "rev-parse", "main"], cwd=str(repo), capture_output=True, text=True
+        ).stdout.strip()
+        current_branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=str(repo), capture_output=True, text=True
+        ).stdout.strip()
+        assert current_branch == "main"
 
     def test_merge_with_script_success(self, hc_home, tmp_path):
         """merge_task should succeed when pre-merge script passes."""
