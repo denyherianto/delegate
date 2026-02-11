@@ -86,9 +86,21 @@ function AgentView({ agentName }) {
     }).catch(() => {});
   }, [agentName, team]);
 
+  // Auto-refresh inbox every 5s while the inbox tab is active
+  useEffect(() => {
+    if (tab !== "inbox" || !agentName || !team) return;
+    const id = setInterval(() => {
+      api.fetchAgentTab(team, agentName, "inbox").then(d => {
+        setTabData(prev => ({ ...prev, inbox: d }));
+      }).catch(() => {});
+    }, 5000);
+    return () => clearInterval(id);
+  }, [tab, agentName, team]);
+
   const switchTab = useCallback((t) => {
     setTab(t);
-    if (!tabData[t]) {
+    // Always re-fetch inbox (status changes frequently); cache other tabs
+    if (t === "inbox" || !tabData[t]) {
       api.fetchAgentTab(team, agentName, t).then(d => {
         setTabData(prev => ({ ...prev, [t]: d }));
       }).catch(() => {});
