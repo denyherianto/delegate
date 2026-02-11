@@ -157,6 +157,60 @@ class TestWorktree:
         remove_agent_worktree(hc_home, TEAM, repo_name, "alice", 2)
         assert not wt_path.exists()
 
+    def test_remove_worktree_prunes_when_directory_missing(self, hc_home, local_repo):
+        """Verify git worktree prune runs even when worktree directory is already gone."""
+        register_repo(hc_home, TEAM, str(local_repo))
+        repo_name = local_repo.name
+        real_repo = get_repo_path(hc_home, TEAM, repo_name).resolve()
+
+        # Create and then manually delete the worktree directory (not via git)
+        wt_path = create_agent_worktree(
+            hc_home, TEAM, repo_name, "alice", task_id=5, branch="alice/T0005",
+        )
+        assert wt_path.is_dir()
+
+        # Manually delete directory to simulate the bug scenario
+        import shutil
+        shutil.rmtree(wt_path)
+        assert not wt_path.exists()
+
+        # Verify git still sees the worktree in metadata
+        result = subprocess.run(
+            ["git", "worktree", "list"],
+            cwd=str(real_repo),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert "alice/T0005" in result.stdout
+
+        # Call remove_agent_worktree — should prune even though dir is gone
+        remove_agent_worktree(hc_home, TEAM, repo_name, "alice", 5)
+
+        # Verify git metadata is cleaned up
+        result = subprocess.run(
+            ["git", "worktree", "list"],
+            cwd=str(real_repo),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert "alice/T0005" not in result.stdout
+
+        # Clean up the branch so we can reuse the name
+        subprocess.run(
+            ["git", "branch", "-D", "alice/T0005"],
+            cwd=str(real_repo),
+            capture_output=True,
+            check=False,
+        )
+
+        # Verify we can now create a new worktree with the same branch name
+        wt_path2 = create_agent_worktree(
+            hc_home, TEAM, repo_name, "alice", task_id=6, branch="alice/T0005",
+        )
+        assert wt_path2.is_dir()
+
     def test_idempotent_create(self, hc_home, local_repo):
         register_repo(hc_home, TEAM, str(local_repo))
         repo_name = local_repo.name

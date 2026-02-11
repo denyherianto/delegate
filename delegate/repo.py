@@ -281,6 +281,14 @@ def create_task_worktree(
     except Exception as exc:
         logger.warning("Could not record base_sha for %s: %s", task_id, exc)
 
+    # Defensive prune to clean up any stale worktree metadata before creating
+    subprocess.run(
+        ["git", "worktree", "prune"],
+        cwd=str(real_repo),
+        capture_output=True,
+        check=False,
+    )
+
     # Create worktree with a new branch off main
     subprocess.run(
         ["git", "worktree", "add", str(wt_path), "-b", branch, "main"],
@@ -311,24 +319,25 @@ def remove_task_worktree(
     real_repo = repo_dir.resolve()
     wt_path = task_worktree_dir(hc_home, team, repo_name, task_id)
 
-    if not wt_path.exists():
-        logger.info("Worktree already removed: %s", wt_path)
-        return
-
-    # Remove worktree via git
-    if real_repo.is_dir():
-        subprocess.run(
-            ["git", "worktree", "remove", str(wt_path), "--force"],
-            cwd=str(real_repo),
-            capture_output=True,
-            check=False,
-        )
+    # Remove worktree via git if directory exists
+    if wt_path.exists():
+        if real_repo.is_dir():
+            subprocess.run(
+                ["git", "worktree", "remove", str(wt_path), "--force"],
+                cwd=str(real_repo),
+                capture_output=True,
+                check=False,
+            )
+        else:
+            # Repo gone — just remove directory
+            import shutil
+            shutil.rmtree(wt_path, ignore_errors=True)
+        logger.info("Removed worktree at %s", wt_path)
     else:
-        # Repo gone — just remove directory
-        import shutil
-        shutil.rmtree(wt_path, ignore_errors=True)
+        logger.info("Worktree already removed: %s", wt_path)
 
-    # Prune stale worktree entries
+    # Always prune stale worktree entries, even if directory was already gone
+    # This cleans up orphaned git metadata that blocks future worktree creation
     if real_repo.is_dir():
         subprocess.run(
             ["git", "worktree", "prune"],
@@ -336,8 +345,6 @@ def remove_task_worktree(
             capture_output=True,
             check=False,
         )
-
-    logger.info("Removed worktree at %s", wt_path)
 
 
 def get_task_worktree_path(
