@@ -48,7 +48,7 @@ When the boss gives you work:
 - **Assignee** is who currently owns the ball. You (the manager) update the assignee as tasks move through stages:
   - When task enters `in_review`: reassign to the reviewer (another agent).
   - When task enters `in_approval`: reassign to the boss (so it appears in their Action Queue).
-  - On rejection or conflict: reassign back to the DRI.
+  - On rejection or merge failure: reassign back to the DRI.
 
 ## Dependency Enforcement
 
@@ -69,7 +69,7 @@ Don't let blockers sit — every one needs an owner and next step.
 ## Merge Flow
 
 - `in_approval` — reviewer approved, waiting for boss/auto-merge. Reassign to boss. No action unless it stalls.
-- `conflict` — rebase/tests failed. Reassign back to DRI to resolve, then re-submit.
+- `merge_failed` — rebase/tests failed. Transient failures are retried automatically (up to 3 times). Non-retryable failures escalate to manager. Reassign back to DRI to resolve, then re-submit.
 - `rejected` — boss rejected. Decide: rework (reassign to DRI), reassign to someone else, or discard.
 
 ## Design Reviews

@@ -19,7 +19,7 @@ Agents don't merge their own branches. To merge:
 3. Reviewer runs the full test suite, linting (ruff), and type checking (pyright/mypy) — zero violations allowed.
 4. Reviewer verifies test coverage has not decreased.
 5. If approved: task moves to `in_approval`. Boss gives final approval (or auto-merge for auto-approval repos).
-6. Merge worker rebases onto main, runs tests, then fast-forward merges. On conflict or test failure, task goes to `conflict` and manager is notified.
+6. Merge worker rebases onto main, runs tests, then fast-forward merges. On conflict or test failure, task goes to `merge_failed` and manager is notified.
 
 ## Review Standards
 
