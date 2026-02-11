@@ -172,13 +172,6 @@ async def run_turn(
     result.session_id = session_id
     result.task_id = current_task_id
 
-    task_label = f" on {format_task_id(current_task_id)}" if current_task_id else ""
-    log_event(
-        hc_home, team,
-        f"{agent.capitalize()} is online{task_label} [model={model}]",
-        task_id=current_task_id,
-    )
-
     alog.session_start_log(
         task_id=current_task_id,
         model=model,
