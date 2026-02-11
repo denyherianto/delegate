@@ -14,7 +14,7 @@ python -m delegate.mailbox send <home> <team> <your_name> <recipient> "<message>
 
 Every message MUST include `--task <task_id>` unless the message is to/from the boss or is not related to any specific task. The task ID links the message to the task for activity tracking and cost attribution.
 
-For every message you receive, respond by running the send command. Do not just compose a reply — actually execute the command.
+Only reply to a message when you have new information, a question, a decision, or a deliverable. Do not send empty acknowledgments ("Got it", "Standing by", "Thanks"). If a message requires no action from you, do not reply.
 
 Check inbox: `python -m delegate.mailbox inbox <home> <team> <your_name>`
 
@@ -25,6 +25,7 @@ Check inbox: `python -m delegate.mailbox inbox <home> <team> <your_name>`
 - **Keep it brief.** Say what you need clearly and concisely.
 - **Respond promptly.** If you need something, be specific about what and by when.
 - **Don't wait silently.** If blocked on someone, say so explicitly.
+- **Don't ack.** Never send "Got it", "Standing by", or "Thanks" unless you're also conveying new information. Unnecessary messages trigger sessions for recipients, creating costly feedback loops.
 
 ## Long-Running Work
 

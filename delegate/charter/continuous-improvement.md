@@ -2,10 +2,6 @@
 
 ## For All Agents
 
-### Acknowledge Before Deep Work
-
-When you receive a message (especially from the boss or manager), send a lightweight acknowledgment immediately: "Got it, working on this now." Don't make people wait in silence while you're heads-down.
-
 ### Task Journals
 
 After completing each task, write a brief journal in `agents/<your-name>/journals/T<NNNN>.md`:
