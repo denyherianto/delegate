@@ -4,7 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from delegate.task import create_task, change_status, get_task, update_task, format_task_id
-from delegate.review import get_current_review
 from delegate.web import create_app
 from delegate.mailbox import read_inbox
 
@@ -21,7 +20,7 @@ def client(tmp_team):
 @pytest.fixture
 def in_approval_task(tmp_team):
     """Create a task in 'in_approval' status for approval/rejection testing."""
-    task = create_task(tmp_team, TEAM, title="Feature X")
+    task = create_task(tmp_team, TEAM, title="Feature X", assignee="manager")
     change_status(tmp_team, TEAM, task["id"], "in_progress")
     change_status(tmp_team, TEAM, task["id"], "in_review")
     change_status(tmp_team, TEAM, task["id"], "in_approval")
@@ -36,11 +35,12 @@ class TestApproveEndpoint:
     def test_approve_sets_approval_status(self, client, in_approval_task, tmp_team):
         resp = client.post(f"/teams/{TEAM}/tasks/{in_approval_task['id']}/approve")
         assert resp.status_code == 200
+        data = resp.json()
+        assert data["approval_status"] == "approved"
 
-        # Verdict is now in the reviews table
-        review = get_current_review(tmp_team, TEAM, in_approval_task["id"])
-        assert review is not None
-        assert review["verdict"] == "approved"
+        # Verify persisted
+        loaded = get_task(tmp_team, TEAM, in_approval_task["id"])
+        assert loaded["approval_status"] == "approved"
 
     def test_approve_returns_full_task(self, client, in_approval_task):
         resp = client.post(f"/teams/{TEAM}/tasks/{in_approval_task['id']}/approve")
@@ -62,21 +62,21 @@ class TestApproveEndpoint:
 
     def test_approve_wrong_status_400(self, client, tmp_team):
         """Cannot approve a task that is not in 'in_approval' status."""
-        task = create_task(tmp_team, TEAM, title="Todo Task")
+        task = create_task(tmp_team, TEAM, title="Todo Task", assignee="manager")
         resp = client.post(f"/teams/{TEAM}/tasks/{task['id']}/approve")
         assert resp.status_code == 400
         assert "in_approval" in resp.json()["detail"]
 
     def test_approve_in_progress_400(self, client, tmp_team):
         """Cannot approve a task in 'in_progress' status."""
-        task = create_task(tmp_team, TEAM, title="WIP Task")
+        task = create_task(tmp_team, TEAM, title="WIP Task", assignee="manager")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
         resp = client.post(f"/teams/{TEAM}/tasks/{task['id']}/approve")
         assert resp.status_code == 400
 
     def test_approve_in_review_400(self, client, tmp_team):
         """Cannot approve a task still in 'in_review' status."""
-        task = create_task(tmp_team, TEAM, title="Review Task")
+        task = create_task(tmp_team, TEAM, title="Review Task", assignee="manager")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
         change_status(tmp_team, TEAM, task["id"], "in_review")
         resp = client.post(f"/teams/{TEAM}/tasks/{task['id']}/approve")
@@ -103,14 +103,13 @@ class TestRejectEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "rejected"
+        assert data["rejection_reason"] == "Code quality issues"
+        assert data["approval_status"] == "rejected"
 
-        # Verdict is now in the reviews table, not on the task
+        # Verify persisted
         loaded = get_task(tmp_team, TEAM, in_approval_task["id"])
         assert loaded["status"] == "rejected"
-        review = get_current_review(tmp_team, TEAM, in_approval_task["id"])
-        assert review is not None
-        assert review["verdict"] == "rejected"
-        assert review["summary"] == "Code quality issues"
+        assert loaded["rejection_reason"] == "Code quality issues"
 
     def test_reject_returns_full_task(self, client, in_approval_task):
         resp = client.post(
@@ -155,7 +154,7 @@ class TestRejectEndpoint:
 
     def test_reject_invalid_transition_400(self, client, tmp_team):
         """Rejecting a task that's not in 'in_approval' should fail."""
-        task = create_task(tmp_team, TEAM, title="Todo Task")
+        task = create_task(tmp_team, TEAM, title="Todo Task", assignee="manager")
         resp = client.post(
             f"/teams/{TEAM}/tasks/{task['id']}/reject",
             json={"reason": "Not mergeable"},
@@ -189,8 +188,7 @@ class TestApprovalWorkflow:
         client.post(f"/teams/{TEAM}/tasks/{in_approval_task['id']}/approve")
         loaded = get_task(tmp_team, TEAM, in_approval_task["id"])
         assert loaded["status"] == "in_approval"
-        review = get_current_review(tmp_team, TEAM, in_approval_task["id"])
-        assert review["verdict"] == "approved"
+        assert loaded["approval_status"] == "approved"
 
     def test_reject_then_rework_cycle(self, client, in_approval_task, tmp_team):
         """Full cycle: reject -> rework (in_progress) -> in_review -> in_approval."""
@@ -212,5 +210,4 @@ class TestApprovalWorkflow:
         # Approve this time
         resp = client.post(f"/teams/{TEAM}/tasks/{in_approval_task['id']}/approve")
         assert resp.status_code == 200
-        review = get_current_review(tmp_team, TEAM, in_approval_task["id"])
-        assert review["verdict"] == "approved"
+        assert resp.json()["approval_status"] == "approved"

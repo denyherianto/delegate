@@ -15,6 +15,25 @@ import { AgentsPanel } from "./components/AgentsPanel.jsx";
 import { TaskSidePanel } from "./components/TaskSidePanel.jsx";
 import { DiffPanel } from "./components/DiffPanel.jsx";
 
+// ── Attention Banner ──
+function AttentionBanner() {
+  const allTasks = tasks.value;
+  const approvalTasks = allTasks.filter(t => t.status === "in_approval");
+  const count = approvalTasks.length;
+
+  if (count === 0) return null;
+
+  const handleClick = () => {
+    activeTab.value = "tasks";
+  };
+
+  return (
+    <div class="attention-banner" onClick={handleClick}>
+      🔴 {count} task{count !== 1 ? "s" : ""} need your attention
+    </div>
+  );
+}
+
 // ── Main App ──
 function App() {
   const tab = activeTab.value;
@@ -31,16 +50,21 @@ function App() {
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
-  // Path-based routing
+  // Path routing
   useEffect(() => {
-    const validTabs = ["chat", "tasks", "agents"];
-    const readPath = () => {
-      const path = window.location.pathname.replace(/^\/+/, "").split("/")[0];
-      if (validTabs.includes(path)) activeTab.value = path;
+    const onPath = () => {
+      const path = window.location.pathname.replace(/^\//, "");
+      const valid = ["chat", "tasks", "agents"];
+      if (valid.includes(path)) {
+        activeTab.value = path;
+      } else if (path === "") {
+        activeTab.value = "chat";
+      }
     };
-    window.addEventListener("popstate", readPath);
-    readPath();
-    return () => window.removeEventListener("popstate", readPath);
+    window.addEventListener("popstate", onPath);
+    // Init from path
+    onPath();
+    return () => window.removeEventListener("popstate", onPath);
   }, []);
 
   // Initial bootstrap: fetch config + teams
@@ -137,14 +161,28 @@ function App() {
       agentStatsMap.value = {};
       messages.value = [];
     });
+    // Immediate fetch for the new team
+    (async () => {
+      try {
+        const [taskData, agentData] = await Promise.all([
+          api.fetchTasks(team),
+          api.fetchAgents(team),
+        ]);
+        batch(() => {
+          tasks.value = taskData;
+          agents.value = agentData;
+        });
+      } catch (e) { }
+    })();
   }, [currentTeam.value]);
 
   return (
     <>
       <Sidebar />
-      <div class="main" role="main">
+      <div class="main">
         <Header />
-        <div class="content" aria-label="Main content area">
+        <AttentionBanner />
+        <div class="content">
           <ChatPanel />
           <TasksPanel />
           <AgentsPanel />

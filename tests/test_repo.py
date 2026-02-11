@@ -132,7 +132,7 @@ class TestWorktree:
         repo_name = local_repo.name
 
         # Create a task to receive the base_sha
-        task = create_task(hc_home, TEAM, title="Test task")
+        task = create_task(hc_home, TEAM, title="Test task", assignee="manager")
         update_task(hc_home, TEAM, task["id"], repo=repo_name)
 
         create_agent_worktree(
@@ -175,7 +175,7 @@ class TestWorktree:
         repo_name = local_repo.name
 
         # Create a task
-        task = create_task(hc_home, TEAM, title="Backfill test")
+        task = create_task(hc_home, TEAM, title="Backfill test", assignee="manager")
         update_task(hc_home, TEAM, task["id"], repo=repo_name)
 
         # First call creates the worktree and sets base_sha

@@ -86,21 +86,9 @@ function AgentView({ agentName }) {
     }).catch(() => {});
   }, [agentName, team]);
 
-  // Auto-refresh inbox every 5s while the inbox tab is active
-  useEffect(() => {
-    if (tab !== "inbox" || !agentName || !team) return;
-    const id = setInterval(() => {
-      api.fetchAgentTab(team, agentName, "inbox").then(d => {
-        setTabData(prev => ({ ...prev, inbox: d }));
-      }).catch(() => {});
-    }, 5000);
-    return () => clearInterval(id);
-  }, [tab, agentName, team]);
-
   const switchTab = useCallback((t) => {
     setTab(t);
-    // Always re-fetch inbox (status changes frequently); cache other tabs
-    if (t === "inbox" || !tabData[t]) {
+    if (!tabData[t]) {
       api.fetchAgentTab(team, agentName, t).then(d => {
         setTabData(prev => ({ ...prev, [t]: d }));
       }).catch(() => {});
@@ -172,7 +160,32 @@ function AgentView({ agentName }) {
     );
   };
 
-  const TABS = ["inbox", "outbox", "logs", "stats"];
+  const renderReflections = (data) => {
+    const content = data && data.content;
+    if (!content) return <div class="diff-empty">No reflections yet</div>;
+    return <div class="agent-markdown-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />;
+  };
+
+  const renderJournal = (data) => {
+    const entries = data && data.entries ? data.entries : [];
+    if (!entries.length) return <div class="diff-empty">No journal entries</div>;
+    return entries.map((e, i) => (
+      <div key={i} class="agent-log-session">
+        <div class="agent-log-header" onClick={(e) => {
+          e.target.closest(".agent-log-session").querySelector(".agent-log-arrow").classList.toggle("expanded");
+          e.target.closest(".agent-log-session").querySelector(".agent-log-content").classList.toggle("expanded");
+        }}>
+          <span class={"agent-log-arrow" + (i === 0 ? " expanded" : "")}>&#9654;</span>
+          {e.filename}
+        </div>
+        <div class={"agent-log-content" + (i === 0 ? " expanded" : "")}>
+          <div class="agent-markdown-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(e.content) }} />
+        </div>
+      </div>
+    ));
+  };
+
+  const TABS = ["inbox", "outbox", "logs", "reflections", "journal", "stats"];
   const data = tabData[tab];
 
   return (
@@ -190,6 +203,8 @@ function AgentView({ agentName }) {
           : tab === "inbox" ? renderInbox(data)
           : tab === "outbox" ? renderOutbox(data)
           : tab === "logs" ? renderLogs(data)
+          : tab === "reflections" ? renderReflections(data)
+          : tab === "journal" ? renderJournal(data)
           : renderStats(data)
         }
       </div>
@@ -208,44 +223,63 @@ function FileView({ filePath }) {
     setFileData(null); setError(null);
     let apiPath = filePath;
     if (apiPath.startsWith("shared/")) apiPath = apiPath.substring(7);
-    api.fetchFileContent(team, apiPath).then(d => setFileData(d)).catch(e => setError(e.message));
+    api.fetchFileContent(team, apiPath).then(data => {
+      setFileData(data);
+    }).catch(e => setError(e.message));
   }, [filePath, team]);
 
   const ext = filePath ? (filePath.lastIndexOf(".") !== -1 ? filePath.substring(filePath.lastIndexOf(".") + 1).toLowerCase() : "") : "";
 
-  // Show only the filename + parent dir (truncate long paths)
-  const truncatePath = (p) => {
-    if (!p) return "";
-    const parts = p.split("/");
-    if (parts.length <= 2) return p;
-    return "…/" + parts.slice(-2).join("/");
+  // Truncate file path to show from 'shared/' onwards (or from any meaningful root)
+  const truncatePath = (path) => {
+    if (!path) return path;
+    // If path contains 'shared/', show from there onwards
+    const sharedIdx = path.indexOf("shared/");
+    if (sharedIdx !== -1) return path.substring(sharedIdx);
+    // If path contains 'agents/', show from there onwards
+    const agentsIdx = path.indexOf("agents/");
+    if (agentsIdx !== -1) return path.substring(agentsIdx);
+    // Otherwise, if it's an absolute path, show just the last few segments
+    const parts = path.split("/");
+    if (parts.length > 3 && path.startsWith("/")) {
+      return parts.slice(-3).join("/");
+    }
+    return path;
   };
 
-  const renderFileContent = () => {
-    if (!fileData) return <div class="diff-empty">Loading file...</div>;
-    const { content, is_binary, content_type } = fileData;
-
-    if (is_binary) {
-      if (content_type && content_type.startsWith("image/") && content) {
-        return <div class="file-viewer-content"><img class="file-viewer-image" src={`data:${content_type};base64,${content}`} alt={filePath} /></div>;
+  const displayPath = truncatePath(filePath);
+  const breadcrumb = displayPath ? displayPath.split("/").map((p, i, arr) => (
+    <span key={i}>
+      {i < arr.length - 1
+        ? <><span class="file-breadcrumb-dir">{p}</span><span class="file-breadcrumb-sep">/</span></>
+        : <span class="file-breadcrumb-current">{p}</span>
       }
-      return <div class="diff-empty">Binary file ({content_type || "unknown type"})</div>;
-    }
+    </span>
+  )) : null;
 
-    if (ext === "md" || ext === "markdown") {
-      return <div class="file-viewer-content md-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />;
-    }
-    return <div class="file-viewer-content"><pre class="file-viewer-code"><code>{content}</code></pre></div>;
-  };
+  const modified = fileData?.modified || "";
+  const imageExts = ["png", "jpg", "jpeg", "gif", "svg", "webp"];
+  const isImage = imageExts.includes(ext);
 
   return (
     <>
-      <div class="diff-panel-title file-viewer-header">
-        <span class="file-viewer-path" title={filePath}>{truncatePath(filePath)}</span>
+      <div class="file-viewer-header">
+        <div class="diff-panel-title">{breadcrumb}</div>
+        <div class="diff-panel-branch">{modified ? "Modified " + fmtTimestamp(modified) : ""}</div>
       </div>
-      <div class="diff-panel-branch">{fileData && fileData.modified ? "Modified " + fmtTimestamp(fileData.modified) : ""}</div>
       <div class="diff-panel-body">
-        {error ? <div class="diff-empty">{error}</div> : renderFileContent()}
+        {error ? <div class="diff-empty">{error}</div>
+          : fileData === null ? <div class="diff-empty">Loading file...</div>
+          : fileData.is_binary && isImage && fileData.content
+            ? <div class="file-viewer-content file-viewer-image">
+                <img src={`data:${fileData.content_type};base64,${fileData.content}`} alt={filePath} />
+              </div>
+          : fileData.is_binary
+            ? <div class="diff-empty">Binary file ({fileData.size} bytes)</div>
+          : (ext === "md" || ext === "markdown")
+            ? <div class="file-viewer-content md-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(fileData.content) }} />
+            : <div class="file-viewer-content"><pre class="file-viewer-code"><code>{fileData.content}</code></pre></div>
+        }
       </div>
     </>
   );
@@ -274,7 +308,7 @@ export function DiffPanel() {
           {mode === "diff" && <div class="diff-panel-title">{"T" + String(target).padStart(4, "0")}</div>}
           {mode === "agent" && <div class="diff-panel-title">{cap(target || "")}</div>}
           {mode === "file" && null /* FileView renders its own title */}
-          <button class="diff-panel-close" onClick={close} aria-label="Close panel">&times;</button>
+          <button class="diff-panel-close" onClick={close}>&times;</button>
         </div>
         {mode === "diff" && <DiffView taskId={target} />}
         {mode === "agent" && <AgentView agentName={target} />}

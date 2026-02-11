@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 80" width="360" height="80">
+  <style>@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400');</style>
+  <rect width="360" height="80" rx="4" fill="#1A1A1C"/>
+  <text x="24" y="53" font-family="'JetBrains Mono', monospace" font-size="40" font-weight="400" fill="#4ADE80">&gt; delegate</text>
+</svg>

@@ -5,8 +5,9 @@ Commands:
     delegate start [--port N]                        — start daemon (web UI + agents)
     delegate stop                                    — stop running daemon
     delegate status                                  — check if daemon is running
-    delegate team add <name> --manager M --agents a:role,b --repo /path     — add a new team
+    delegate team add <name> --manager M --agents a:role,b --repo /path  — create a new team
     delegate team list                               — list existing teams
+    delegate team remove <name>                      — remove a team and all its data
     delegate agent add <team> <name>                 — add an agent to a team
     delegate config set boss <name>                  — set org-wide boss name
     delegate config set source-repo <path>           — set delegate source repo path
@@ -21,7 +22,7 @@ from pathlib import Path
 
 import click
 
-from delegate.paths import home as _home, teams_dir as _teams_dir
+from delegate.paths import home as _home, teams_dir as _teams_dir, team_dir as _team_dir
 
 
 def _get_home(ctx: click.Context) -> Path:
@@ -76,7 +77,7 @@ def start(
     token_budget: int | None,
     foreground: bool,
 ) -> None:
-    """Start the delegate daemon (web UI + agent runtime)."""
+    """Start the delegate daemon (web UI + agent orchestration)."""
     import webbrowser
     import time
     from delegate.daemon import start_daemon, is_running
@@ -91,10 +92,12 @@ def start(
         print_doctor_report(checks)
         raise SystemExit(1)
 
+    url = f"http://localhost:{port}"
+
     alive, pid = is_running(hc_home)
     if alive:
         click.echo(f"Daemon already running (PID {pid})")
-        url = f"http://localhost:{port}"
+        # Server is up — open browser immediately regardless of --foreground
         try:
             webbrowser.open(url)
         except Exception:
@@ -103,35 +106,42 @@ def start(
 
     click.echo(f"Starting daemon on port {port}...")
 
-    url = f"http://localhost:{port}"
-
     if foreground:
-        # In foreground mode, start_daemon() blocks forever (uvicorn.run),
-        # so open the browser from a background thread after a short delay.
+        # foreground blocks forever; open browser from a background thread
+        # after a short delay to let the server bind
         import threading
-        def _open_browser():
-            time.sleep(1.5)
+
+        def _open_browser() -> None:
+            time.sleep(2)
             try:
                 webbrowser.open(url)
             except Exception:
-                click.echo(f"Open {url} in your browser")
+                pass
+
         threading.Thread(target=_open_browser, daemon=True).start()
 
-    result_pid = start_daemon(
-        hc_home,
-        port=port,
-        interval=interval,
-        max_concurrent=max_concurrent,
-        token_budget=token_budget,
-        foreground=foreground,
-    )
-    if result_pid:
-        click.echo(f"Daemon started (PID {result_pid})")
-    elif not foreground:
-        click.echo("Daemon started")
+        start_daemon(
+            hc_home,
+            port=port,
+            interval=interval,
+            max_concurrent=max_concurrent,
+            token_budget=token_budget,
+            foreground=True,
+        )
+    else:
+        result_pid = start_daemon(
+            hc_home,
+            port=port,
+            interval=interval,
+            max_concurrent=max_concurrent,
+            token_budget=token_budget,
+            foreground=False,
+        )
+        if result_pid:
+            click.echo(f"Daemon started (PID {result_pid})")
+        else:
+            click.echo("Daemon started")
 
-    if not foreground:
-        # Background mode — daemon is a separate process; wait for it to bind.
         time.sleep(1.5)
         try:
             webbrowser.open(url)
@@ -168,7 +178,7 @@ def status(ctx: click.Context) -> None:
 
 
 # ──────────────────────────────────────────────────────────────
-# delegate team add / list
+# delegate team add / list / remove
 # ──────────────────────────────────────────────────────────────
 
 @main.group()
@@ -193,7 +203,7 @@ def team() -> None:
 )
 @click.option("--interactive", is_flag=True, help="Prompt for bios and charter overrides.")
 @click.pass_context
-def team_add(
+def team_create(
     ctx: click.Context,
     name: str,
     manager: str,
@@ -201,7 +211,7 @@ def team_add(
     repos: tuple[str, ...],
     interactive: bool,
 ) -> None:
-    """Add a new team."""
+    """Create a new team."""
     from delegate.bootstrap import bootstrap
     from delegate.repo import register_repo
 
@@ -266,35 +276,31 @@ def team_list(ctx: click.Context) -> None:
 
 @team.command("remove")
 @click.argument("name")
-@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
 @click.pass_context
 def team_remove(ctx: click.Context, name: str, yes: bool) -> None:
-    """Remove a team and prune its git worktrees."""
-    import shutil
-    import subprocess as _sp
+    """Remove a team and all its data.
 
-    from delegate.config import get_repos
+    This deletes the team directory (agents, worktrees, DB, repos config)
+    permanently.  It does NOT delete the actual git repositories — only the
+    symlinks/config that Delegate created.
+    """
+    import shutil
 
     hc_home = _get_home(ctx)
-    td = _teams_dir(hc_home) / name
+    td = _team_dir(hc_home, name)
     if not td.is_dir():
-        raise click.ClickException(f"Team '{name}' not found.")
+        click.echo(f"Team '{name}' does not exist.")
+        raise SystemExit(1)
 
     if not yes:
-        click.confirm(f"Remove team '{name}' and all its data?", abort=True)
+        click.confirm(
+            f"Remove team '{name}' and all its data? This cannot be undone.",
+            abort=True,
+        )
 
-    # Prune git worktrees for every registered repo
-    repos = get_repos(hc_home, name)
-    for repo_name, meta in repos.items():
-        source = meta.get("source", "")
-        repo_dir = Path(source) if source else None
-        if repo_dir and repo_dir.is_dir():
-            _sp.run(["git", "worktree", "prune"], cwd=str(repo_dir), capture_output=True, check=False)
-            click.echo(f"  Pruned worktrees in repo '{repo_name}' ({repo_dir})")
-
-    # Remove team directory
-    shutil.rmtree(td, ignore_errors=True)
-    click.echo(f"Removed team '{name}'.")
+    shutil.rmtree(td)
+    click.echo(f"Removed team '{name}'")
 
 
 # ──────────────────────────────────────────────────────────────

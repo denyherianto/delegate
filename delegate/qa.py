@@ -270,9 +270,8 @@ def _extract_task_id_from_branch(branch: str) -> int | None:
         <agent>/T<id>-<slug>           (legacy)
         <agent>/<project>/<id>-<slug>  (legacy)
     """
-    # Try current convention: delegate/<team_id>/<team>/T<id>
-    # Also matches legacy: delegate/<team>/T<id>
-    match = re.match(r"delegate/[^/]+/(?:[^/]+/)?T(\d+)(?:-|$)", branch)
+    # Try new convention: delegate/<team>/T<id>
+    match = re.match(r"delegate/[^/]+/T(\d+)(?:-|$)", branch)
     if match:
         return int(match.group(1))
     # Try legacy naming convention: <agent>/T<id> (with optional legacy slug)
@@ -425,11 +424,11 @@ def _report_result(hc_home: Path, team: str, req: ReviewRequest, result: ReviewR
     except ValueError:
         logger.warning("Could not send result to manager")
 
-    qa_task_id = _extract_task_id_from_branch(result.branch)
+    task_id = _extract_task_id_from_branch(result.branch)
     if result.approved:
-        log_event(hc_home, team, f"QA approved ({result.branch}) \u2713", task_id=qa_task_id)
+        log_event(hc_home, team, f"QA approved ({result.branch}) \u2713", task_id=task_id)
     else:
-        log_event(hc_home, team, f"QA changes requested ({result.branch})", task_id=qa_task_id)
+        log_event(hc_home, team, f"QA changes requested ({result.branch})", task_id=task_id)
 
 
 def process_inbox(hc_home: Path, team: str) -> list[ReviewResult]:

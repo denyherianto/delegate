@@ -17,11 +17,14 @@ Usage:
 """
 
 import argparse
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from delegate.db import get_connection
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -100,6 +103,19 @@ def send(
     Returns the message id as a string (for backward compatibility with
     code that expects a filename).
     """
+    # Soft validation: warn when non-boss messages lack task_id
+    if task_id is None:
+        try:
+            from delegate.config import get_boss
+            boss = get_boss(hc_home) or "boss"
+        except Exception:
+            boss = "boss"
+        if sender != boss and recipient != boss:
+            logger.warning(
+                "Message from %s to %s has no task_id — consider using --task",
+                sender, recipient,
+            )
+
     now = _now()
     conn = get_connection(hc_home, team)
     try:
@@ -261,6 +277,7 @@ def deliver(hc_home: Path, team: str, message: Message) -> str:
     """Deliver a message directly to the recipient's inbox.
 
     Equivalent to ``send()`` but takes a pre-built Message object.
+    Uses ``message.task_id`` if set.
     Used by notification helpers that construct Messages themselves.
 
     Returns the message id as a string.
@@ -270,9 +287,9 @@ def deliver(hc_home: Path, team: str, message: Message) -> str:
     try:
         cursor = conn.execute(
             """\
-            INSERT INTO mailbox (sender, recipient, body, created_at, delivered_at)
-            VALUES (?, ?, ?, ?, ?)""",
-            (message.sender, message.recipient, message.body, message.time or now, now),
+            INSERT INTO mailbox (sender, recipient, body, created_at, delivered_at, task_id)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (message.sender, message.recipient, message.body, message.time or now, now, message.task_id),
         )
         conn.commit()
         msg_id = cursor.lastrowid
@@ -315,70 +332,10 @@ def recent_processed(
     return [_row_to_message(r) for r in reversed(rows)]
 
 
-def recent_conversation(
-    hc_home: Path,
-    team: str,
-    agent: str,
-    other: str,
-    limit: int = 10,
-) -> list[Message]:
-    """Return recent messages between *agent* and *other* (bidirectional).
-
-    Includes both messages sent by *agent* TO *other* and messages received
-    by *agent* FROM *other*, ordered chronologically (oldest first).
-    Only already-processed received messages are included to avoid leaking
-    future messages into the context.
-    """
-    conn = get_connection(hc_home, team)
-    try:
-        rows = conn.execute(
-            """\
-            SELECT * FROM mailbox
-            WHERE (
-                (sender = ? AND recipient = ?)
-                OR
-                (sender = ? AND recipient = ? AND processed_at IS NOT NULL)
-            )
-            ORDER BY id DESC LIMIT ?""",
-            (agent, other, other, agent, limit),
-        ).fetchall()
-    finally:
-        conn.close()
-    # Return in chronological order (oldest first)
-    return [_row_to_message(r) for r in reversed(rows)]
-
-
-def recent_messages_from_others(
-    hc_home: Path,
-    team: str,
-    agent: str,
-    exclude_sender: str,
-    limit: int = 5,
-) -> list[Message]:
-    """Return recent processed messages from senders OTHER than *exclude_sender*.
-
-    Useful for building context about what other people have been saying to
-    the agent recently.  Results are in chronological order (oldest first).
-    """
-    conn = get_connection(hc_home, team)
-    try:
-        rows = conn.execute(
-            """\
-            SELECT * FROM mailbox
-            WHERE recipient = ? AND sender != ?
-              AND processed_at IS NOT NULL
-            ORDER BY id DESC LIMIT ?""",
-            (agent, exclude_sender, limit),
-        ).fetchall()
-    finally:
-        conn.close()
-    return [_row_to_message(r) for r in reversed(rows)]
-
-
 def has_unread(hc_home: Path, team: str, agent: str) -> bool:
     """Check if an agent has any unread delivered messages.
 
-    Fast path for the runtime — avoids fetching full message content.
+    Fast path for the orchestrator — avoids fetching full message content.
     """
     conn = get_connection(hc_home, team)
     try:
@@ -389,6 +346,22 @@ def has_unread(hc_home: Path, team: str, agent: str) -> bool:
     finally:
         conn.close()
     return row is not None
+
+
+def agents_with_unread(hc_home: Path, team: str) -> list[str]:
+    """Return all recipient names that have at least one unread message.
+
+    Single query — used by the daemon to find every agent needing a turn.
+    """
+    conn = get_connection(hc_home, team)
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT recipient FROM mailbox "
+            "WHERE delivered_at IS NOT NULL AND processed_at IS NULL",
+        ).fetchall()
+    finally:
+        conn.close()
+    return [row[0] for row in rows]
 
 
 def count_unread(hc_home: Path, team: str, agent: str) -> int:
@@ -419,6 +392,7 @@ def main():
     p_send.add_argument("sender", help="Sending agent name")
     p_send.add_argument("recipient", help="Recipient agent name")
     p_send.add_argument("message", help="Message body")
+    p_send.add_argument("--task", type=int, default=None, help="Task ID to associate with this message")
 
     # inbox
     p_inbox = sub.add_parser("inbox", help="Read inbox")
@@ -437,7 +411,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "send":
-        msg_id = send(args.home, args.team, args.sender, args.recipient, args.message)
+        msg_id = send(args.home, args.team, args.sender, args.recipient, args.message, task_id=args.task)
         print(f"Message sent: {msg_id}")
 
     elif args.command == "inbox":

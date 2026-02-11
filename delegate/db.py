@@ -183,11 +183,10 @@ CREATE INDEX IF NOT EXISTS idx_review_comments_task_attempt
     ON review_comments(task_id, attempt);
 """,
 
-    # --- V6: drop legacy approval columns from tasks ---
-    # Verdicts now live in the reviews table (keyed on task_id + attempt).
+    # --- V6: cache token columns on sessions ---
     """\
-ALTER TABLE tasks DROP COLUMN approval_status;
-ALTER TABLE tasks DROP COLUMN rejection_reason;
+ALTER TABLE sessions ADD COLUMN cache_read_tokens INTEGER DEFAULT 0;
+ALTER TABLE sessions ADD COLUMN cache_write_tokens INTEGER DEFAULT 0;
 """,
 ]
 
@@ -223,7 +222,6 @@ def ensure_schema(hc_home: Path, team: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
 
     # Bootstrap the meta table (always idempotent).
     conn.execute("""\
@@ -260,7 +258,6 @@ def get_connection(hc_home: Path, team: str) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 

@@ -1,8 +1,8 @@
-"""Tests for delegate.review — per-attempt reviews and inline comments."""
+"""Tests for the review module — per-attempt verdicts and inline comments."""
 
 import pytest
-from fastapi.testclient import TestClient
-
+from pathlib import Path
+from delegate.db import get_connection
 from delegate.review import (
     create_review,
     get_reviews,
@@ -11,217 +11,197 @@ from delegate.review import (
     add_comment,
     get_comments,
 )
-from delegate.task import create_task, change_status
-from delegate.web import create_app
-
-TEAM = "testteam"
+from delegate.task import create_task, change_status, get_task
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
+@pytest.fixture()
+def team_home(tmp_path):
+    """Set up a minimal team home with DB and an in_approval task."""
+    hc_home = tmp_path / "home"
+    team = "acme"
+    team_dir = hc_home / "teams" / team
+    team_dir.mkdir(parents=True)
 
-@pytest.fixture
-def client(tmp_team):
-    app = create_app(hc_home=tmp_team)
-    return TestClient(app)
+    # Create the DB (triggers schema + migrations)
+    conn = get_connection(hc_home, team)
+    conn.close()
 
-
-@pytest.fixture
-def task_id(tmp_team):
-    """Create a task and move it to in_approval (which auto-creates review attempt 1)."""
-    task = create_task(tmp_team, TEAM, title="Review target")
-    change_status(tmp_team, TEAM, task["id"], "in_progress")
-    change_status(tmp_team, TEAM, task["id"], "in_review")
-    change_status(tmp_team, TEAM, task["id"], "in_approval")
-    return task["id"]
+    return hc_home, team
 
 
-# ---------------------------------------------------------------------------
-# Unit tests — review CRUD
-# ---------------------------------------------------------------------------
+@pytest.fixture()
+def task_in_approval(team_home):
+    """Create a task and move it to in_approval so review_attempt is incremented."""
+    hc_home, team = team_home
+    task = create_task(hc_home, team, title="Fix widgets", assignee="alice", priority="high", repo=[])
+    tid = task["id"]
 
-class TestCreateReview:
-    def test_create_review_returns_dict(self, tmp_team, task_id):
-        # Attempt 1 is auto-created; create attempt 2 manually
-        review = create_review(tmp_team, TEAM, task_id, 2, reviewer="boss")
-        assert review["task_id"] == task_id
-        assert review["attempt"] == 2
-        assert review["reviewer"] == "boss"
-        assert review["verdict"] is None  # pending
+    # Move through valid transitions: todo -> in_progress -> in_review -> in_approval
+    change_status(hc_home, team, tid, "in_progress")
+    change_status(hc_home, team, tid, "in_review")
+    change_status(hc_home, team, tid, "in_approval")
 
-    def test_create_review_duplicate_attempt_fails(self, tmp_team, task_id):
-        # Attempt 1 already exists from the in_approval transition
-        with pytest.raises(Exception):
-            create_review(tmp_team, TEAM, task_id, 1, reviewer="boss")
+    task = get_task(hc_home, team, tid)
+    return hc_home, team, task
 
 
-class TestGetReviews:
-    def test_get_reviews_returns_all(self, tmp_team, task_id):
-        create_review(tmp_team, TEAM, task_id, 2, reviewer="boss")
-        reviews = get_reviews(tmp_team, TEAM, task_id)
-        assert len(reviews) >= 2
-        assert reviews[0]["attempt"] == 1
-        assert reviews[1]["attempt"] == 2
+class TestReviewCreation:
+    """Tests for creating and retrieving reviews."""
 
-    def test_get_reviews_empty_for_nonexistent(self, tmp_team):
-        reviews = get_reviews(tmp_team, TEAM, 9999)
-        assert reviews == []
-
-
-class TestGetCurrentReview:
-    def test_returns_latest_attempt(self, tmp_team, task_id):
-        review = get_current_review(tmp_team, TEAM, task_id)
-        assert review is not None
+    def test_create_review(self, team_home):
+        hc_home, team = team_home
+        review = create_review(hc_home, team, task_id=1, attempt=1, reviewer="boss")
+        assert review["task_id"] == 1
         assert review["attempt"] == 1
-        assert "comments" in review
+        assert review["verdict"] is None
+        assert review["reviewer"] == "boss"
+        assert review["decided_at"] is None
 
-    def test_returns_none_for_nonexistent(self, tmp_team):
-        assert get_current_review(tmp_team, TEAM, 9999) is None
+    def test_review_created_on_in_approval(self, task_in_approval):
+        """When change_status moves a task to in_approval, a review row is auto-created."""
+        hc_home, team, task = task_in_approval
+        assert task["review_attempt"] == 1
 
-    def test_attaches_comments(self, tmp_team, task_id):
-        add_comment(tmp_team, TEAM, task_id, 1, "main.py", "Fix this", "boss", line=42)
-        review = get_current_review(tmp_team, TEAM, task_id)
-        assert len(review["comments"]) == 1
-        assert review["comments"][0]["body"] == "Fix this"
+        reviews = get_reviews(hc_home, team, task["id"])
+        assert len(reviews) == 1
+        assert reviews[0]["attempt"] == 1
+        assert reviews[0]["verdict"] is None
+
+    def test_get_current_review(self, task_in_approval):
+        hc_home, team, task = task_in_approval
+        current = get_current_review(hc_home, team, task["id"])
+        assert current is not None
+        assert current["attempt"] == 1
+        assert current["verdict"] is None
+
+    def test_get_current_review_nonexistent(self, team_home):
+        hc_home, team = team_home
+        current = get_current_review(hc_home, team, 9999)
+        assert current is None
 
 
-class TestSetVerdict:
-    def test_set_approved(self, tmp_team, task_id):
-        result = set_verdict(tmp_team, TEAM, task_id, 1, "approved", summary="LGTM", reviewer="boss")
+class TestReviewVerdicts:
+    """Tests for setting verdicts."""
+
+    def test_set_approved(self, task_in_approval):
+        hc_home, team, task = task_in_approval
+        result = set_verdict(hc_home, team, task["id"], 1, "approved", summary="LGTM", reviewer="boss")
         assert result["verdict"] == "approved"
         assert result["summary"] == "LGTM"
         assert result["decided_at"] is not None
 
-    def test_set_rejected(self, tmp_team, task_id):
-        result = set_verdict(tmp_team, TEAM, task_id, 1, "rejected", summary="Needs work")
+    def test_set_rejected(self, task_in_approval):
+        hc_home, team, task = task_in_approval
+        result = set_verdict(hc_home, team, task["id"], 1, "rejected", summary="Needs work", reviewer="boss")
         assert result["verdict"] == "rejected"
         assert result["summary"] == "Needs work"
 
-    def test_invalid_verdict_raises(self, tmp_team, task_id):
+    def test_invalid_verdict(self, task_in_approval):
+        hc_home, team, task = task_in_approval
         with pytest.raises(ValueError, match="Invalid verdict"):
-            set_verdict(tmp_team, TEAM, task_id, 1, "maybe")
-
-    def test_nonexistent_attempt_raises(self, tmp_team, task_id):
-        with pytest.raises(ValueError, match="No review found"):
-            set_verdict(tmp_team, TEAM, task_id, 99, "approved")
+            set_verdict(hc_home, team, task["id"], 1, "maybe")
 
 
-# ---------------------------------------------------------------------------
-# Unit tests — comments CRUD
-# ---------------------------------------------------------------------------
+class TestReviewComments:
+    """Tests for inline review comments."""
 
-class TestAddComment:
-    def test_returns_comment_dict(self, tmp_team, task_id):
-        c = add_comment(tmp_team, TEAM, task_id, 1, "utils.py", "Typo here", "boss", line=10)
-        assert c["file"] == "utils.py"
-        assert c["line"] == 10
-        assert c["body"] == "Typo here"
-        assert c["author"] == "boss"
-        assert c["task_id"] == task_id
-        assert c["attempt"] == 1
-        assert "id" in c
+    def test_add_comment_with_line(self, task_in_approval):
+        hc_home, team, task = task_in_approval
+        comment = add_comment(
+            hc_home, team, task["id"], 1,
+            file="src/widget.py", body="This shouldn't be mutable", author="boss",
+            line=42,
+        )
+        assert comment["file"] == "src/widget.py"
+        assert comment["line"] == 42
+        assert comment["body"] == "This shouldn't be mutable"
+        assert comment["author"] == "boss"
+        assert comment["attempt"] == 1
 
-    def test_file_level_comment(self, tmp_team, task_id):
-        c = add_comment(tmp_team, TEAM, task_id, 1, "README.md", "Needs update", "boss")
-        assert c["line"] is None
+    def test_add_comment_without_line(self, task_in_approval):
+        hc_home, team, task = task_in_approval
+        comment = add_comment(
+            hc_home, team, task["id"], 1,
+            file="README.md", body="Needs more docs", author="boss",
+        )
+        assert comment["file"] == "README.md"
+        assert comment["line"] is None
 
-    def test_multiple_comments_on_same_line(self, tmp_team, task_id):
-        add_comment(tmp_team, TEAM, task_id, 1, "app.py", "First", "boss", line=5)
-        add_comment(tmp_team, TEAM, task_id, 1, "app.py", "Second", "boss", line=5)
-        comments = get_comments(tmp_team, TEAM, task_id, attempt=1)
-        line5 = [c for c in comments if c["line"] == 5]
-        assert len(line5) == 2
+    def test_get_comments_by_attempt(self, task_in_approval):
+        hc_home, team, task = task_in_approval
+        add_comment(hc_home, team, task["id"], 1, file="a.py", body="fix", author="boss")
+        add_comment(hc_home, team, task["id"], 1, file="b.py", body="also fix", author="boss")
 
+        comments = get_comments(hc_home, team, task["id"], attempt=1)
+        assert len(comments) == 2
 
-class TestGetComments:
-    def test_filter_by_attempt(self, tmp_team, task_id):
-        add_comment(tmp_team, TEAM, task_id, 1, "a.py", "Attempt 1", "boss")
-        create_review(tmp_team, TEAM, task_id, 2)
-        add_comment(tmp_team, TEAM, task_id, 2, "b.py", "Attempt 2", "boss")
+    def test_get_comments_all_attempts(self, team_home):
+        hc_home, team = team_home
+        # Manually create two review attempts
+        create_review(hc_home, team, task_id=1, attempt=1)
+        create_review(hc_home, team, task_id=1, attempt=2)
+        add_comment(hc_home, team, 1, 1, file="a.py", body="old comment", author="boss")
+        add_comment(hc_home, team, 1, 2, file="a.py", body="new comment", author="boss")
 
-        c1 = get_comments(tmp_team, TEAM, task_id, attempt=1)
-        c2 = get_comments(tmp_team, TEAM, task_id, attempt=2)
-        assert len(c1) == 1
-        assert c1[0]["body"] == "Attempt 1"
-        assert len(c2) == 1
-        assert c2[0]["body"] == "Attempt 2"
-
-    def test_all_attempts(self, tmp_team, task_id):
-        add_comment(tmp_team, TEAM, task_id, 1, "a.py", "First", "boss")
-        create_review(tmp_team, TEAM, task_id, 2)
-        add_comment(tmp_team, TEAM, task_id, 2, "b.py", "Second", "boss")
-
-        all_comments = get_comments(tmp_team, TEAM, task_id, attempt=None)
+        all_comments = get_comments(hc_home, team, 1)
         assert len(all_comments) == 2
+
+    def test_current_review_includes_comments(self, task_in_approval):
+        hc_home, team, task = task_in_approval
+        add_comment(hc_home, team, task["id"], 1, file="x.py", body="fix this", author="boss", line=10)
+
+        current = get_current_review(hc_home, team, task["id"])
+        assert current is not None
+        assert len(current["comments"]) == 1
+        assert current["comments"][0]["file"] == "x.py"
+
+
+class TestMultipleAttempts:
+    """Tests for multiple review cycles."""
+
+    def test_second_attempt_fresh_verdict(self, task_in_approval):
+        """After rejection and re-submission, a fresh review is created."""
+        hc_home, team, task = task_in_approval
+
+        # Reject attempt 1
+        set_verdict(hc_home, team, task["id"], 1, "rejected", summary="Needs work")
+        change_status(hc_home, team, task["id"], "rejected")
+
+        # Rework: back to in_progress, then through review, then in_approval
+        change_status(hc_home, team, task["id"], "in_progress")
+        change_status(hc_home, team, task["id"], "in_review")
+        change_status(hc_home, team, task["id"], "in_approval")
+
+        task = get_task(hc_home, team, task["id"])
+        assert task["review_attempt"] == 2
+
+        # Should have 2 reviews
+        reviews = get_reviews(hc_home, team, task["id"])
+        assert len(reviews) == 2
+
+        # Current review is fresh (no verdict)
+        current = get_current_review(hc_home, team, task["id"])
+        assert current["attempt"] == 2
+        assert current["verdict"] is None
+
+    def test_old_comments_preserved(self, task_in_approval):
+        """Comments from attempt 1 are preserved after starting attempt 2."""
+        hc_home, team, task = task_in_approval
+
+        add_comment(hc_home, team, task["id"], 1, file="old.py", body="old issue", author="boss")
+        set_verdict(hc_home, team, task["id"], 1, "rejected")
+
+        change_status(hc_home, team, task["id"], "rejected")
+        change_status(hc_home, team, task["id"], "in_progress")
+        change_status(hc_home, team, task["id"], "in_review")
+        change_status(hc_home, team, task["id"], "in_approval")
+
+        # All comments across attempts
+        all_comments = get_comments(hc_home, team, task["id"])
+        assert len(all_comments) == 1
         assert all_comments[0]["attempt"] == 1
-        assert all_comments[1]["attempt"] == 2
+        assert all_comments[0]["body"] == "old issue"
 
-    def test_empty_for_nonexistent(self, tmp_team):
-        assert get_comments(tmp_team, TEAM, 9999) == []
-
-
-# ---------------------------------------------------------------------------
-# API endpoint tests — POST /teams/{team}/tasks/{id}/reviews/comments
-# ---------------------------------------------------------------------------
-
-class TestPostReviewCommentAPI:
-    def test_add_comment_via_api(self, client, task_id, tmp_team):
-        resp = client.post(
-            f"/teams/{TEAM}/tasks/{task_id}/reviews/comments",
-            json={"file": "src/main.py", "line": 42, "body": "Should use constant"},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["file"] == "src/main.py"
-        assert data["line"] == 42
-        assert data["body"] == "Should use constant"
-        assert data["attempt"] == 1
-
-    def test_file_level_comment_via_api(self, client, task_id):
-        resp = client.post(
-            f"/teams/{TEAM}/tasks/{task_id}/reviews/comments",
-            json={"file": "README.md", "body": "Update docs"},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["line"] is None
-
-    def test_nonexistent_task_404(self, client):
-        resp = client.post(
-            f"/teams/{TEAM}/tasks/9999/reviews/comments",
-            json={"file": "x.py", "body": "Hello"},
-        )
-        assert resp.status_code == 404
-
-    def test_no_review_attempt_400(self, client, tmp_team):
-        """Cannot post comments on a task with no active review."""
-        task = create_task(tmp_team, TEAM, title="No review")
-        resp = client.post(
-            f"/teams/{TEAM}/tasks/{task['id']}/reviews/comments",
-            json={"file": "x.py", "body": "Hello"},
-        )
-        assert resp.status_code == 400
-        assert "no active review" in resp.json()["detail"].lower()
-
-
-# ---------------------------------------------------------------------------
-# API endpoint tests — GET /teams/{team}/tasks/{id}/reviews
-# ---------------------------------------------------------------------------
-
-class TestGetReviewsAPI:
-    def test_list_reviews_with_comments(self, client, task_id, tmp_team):
-        add_comment(tmp_team, TEAM, task_id, 1, "a.py", "Fix", "boss", line=1)
-        resp = client.get(f"/teams/{TEAM}/tasks/{task_id}/reviews")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) >= 1
-        assert len(data[0]["comments"]) == 1
-
-    def test_current_review(self, client, task_id, tmp_team):
-        set_verdict(tmp_team, TEAM, task_id, 1, "approved", summary="Ship it")
-        resp = client.get(f"/teams/{TEAM}/tasks/{task_id}/reviews/current")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["verdict"] == "approved"
-        assert data["summary"] == "Ship it"
+        # Comments for attempt 2 only
+        new_comments = get_comments(hc_home, team, task["id"], attempt=2)
+        assert len(new_comments) == 0

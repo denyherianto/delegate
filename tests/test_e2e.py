@@ -1,17 +1,17 @@
-"""End-to-end tests — message passing, routing, and runtime without the UI.
+"""End-to-end tests — message passing, routing, and runtime dispatch without the UI.
 
 These tests exercise the full pipeline:
-    bootstrap → send → route → deliver → runtime dispatch
+    bootstrap → send → route → deliver → dispatch (via agents_with_unread)
 using real file I/O and the SQLite database, with no mocking.
 """
 
 import pytest
+import yaml
 
 from delegate.bootstrap import bootstrap
 from delegate.config import set_boss, get_boss
-from delegate.mailbox import send, read_inbox, read_outbox, deliver, Message
+from delegate.mailbox import send, read_inbox, read_outbox, deliver, Message, agents_with_unread
 from delegate.router import route_once, BossQueue
-from delegate.runtime import agents_with_unread
 from delegate.chat import get_messages, log_event
 from delegate.task import create_task, get_task, change_status, assign_task, format_task_id
 from delegate.paths import (
@@ -197,38 +197,37 @@ class TestCrossTeamBoss:
 
 
 # ---------------------------------------------------------------------------
-# E2E: runtime dispatch
+# E2E: runtime dispatch (agents_with_unread replaces orchestrator)
 # ---------------------------------------------------------------------------
 
 
 class TestRuntimeDispatch:
-    """Route messages, then verify runtime detects agents needing turns."""
+    """Route messages, then verify agents_with_unread detects agents needing turns."""
 
     def test_unread_triggers_dispatch(self, hc):
-        """After routing, agents with unread messages appear in agents_with_unread."""
+        """After routing, agents with unread inbox messages are detected."""
         send(hc, TEAM_A, "edison", "alice", "Work on T0001")
         route_once(hc, TEAM_A)
 
-        candidates = agents_with_unread(hc, TEAM_A)
-        assert "alice" in candidates
+        needy = agents_with_unread(hc, TEAM_A)
+        assert "alice" in needy
 
     def test_no_dispatch_without_messages(self, hc):
-        """Agents with empty inboxes are NOT dispatch candidates."""
-        candidates = agents_with_unread(hc, TEAM_A)
-        assert candidates == []
+        """Agents with empty inboxes are NOT flagged for dispatch."""
+        needy = agents_with_unread(hc, TEAM_A)
+        assert needy == []
 
     def test_multiple_agents_detected(self, hc):
-        """agents_with_unread detects multiple agents with unread messages."""
+        """agents_with_unread detects all agents with unread messages."""
         send(hc, TEAM_A, "edison", "alice", "Task for alice")
         send(hc, TEAM_A, "edison", "bob", "Task for bob")
         route_once(hc, TEAM_A)
 
-        candidates = agents_with_unread(hc, TEAM_A)
-        assert "alice" in candidates
-        assert "bob" in candidates
+        needy = agents_with_unread(hc, TEAM_A)
+        assert set(needy) >= {"alice", "bob"}
 
     def test_full_pipeline_boss_to_dispatch(self, hc):
-        """Boss → manager → worker → runtime detects dispatch need."""
+        """Boss → manager → worker → runtime detects unread."""
         # Boss kicks off
         send(hc, TEAM_A, DIRECTOR, "edison", "Assign T0001 to alice")
         route_once(hc, TEAM_A, boss_name=DIRECTOR)
@@ -237,9 +236,9 @@ class TestRuntimeDispatch:
         send(hc, TEAM_A, "edison", "alice", "Alice, please work on T0001")
         route_once(hc, TEAM_A)
 
-        # Runtime should detect alice needs a turn (unread inbox)
-        candidates = agents_with_unread(hc, TEAM_A)
-        assert "alice" in candidates
+        # Runtime should detect alice (unread inbox)
+        needy = agents_with_unread(hc, TEAM_A)
+        assert "alice" in needy
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +252,7 @@ class TestTasksAndMessaging:
     def test_create_assign_and_notify(self, hc):
         """Create a task, assign it, then message the assignee."""
         # Create a team-scoped task
-        task = create_task(hc, TEAM_A, title="Fix pagination bug", description="Off by one")
+        task = create_task(hc, TEAM_A, title="Fix pagination bug", assignee="manager", description="Off by one")
         task_id = task["id"]
         assert task["status"] == "todo"
 
@@ -282,11 +281,13 @@ class TestTasksAndMessaging:
         assert len(qa_inbox) == 1
         assert "REVIEW_REQUEST" in qa_inbox[0].body
 
-        # Reviewer approves: in_review → in_approval → done
+        # Reviewer approves: in_review → in_approval → merging → done
         change_status(hc, TEAM_A, task_id, "in_review")
         assert get_task(hc, TEAM_A, task_id)["status"] == "in_review"
         change_status(hc, TEAM_A, task_id, "in_approval")
         assert get_task(hc, TEAM_A, task_id)["status"] == "in_approval"
+        change_status(hc, TEAM_A, task_id, "merging")
+        assert get_task(hc, TEAM_A, task_id)["status"] == "merging"
         change_status(hc, TEAM_A, task_id, "done")
         assert get_task(hc, TEAM_A, task_id)["status"] == "done"
 

@@ -6,7 +6,7 @@ messages.  Each call:
 1. Reads unread inbox messages, builds prompt
 2. Calls ``claude_code_sdk.query()`` (spawns a short-lived ``claude`` process)
 3. Processes the response (tokens, worklogs)
-4. Marks consumed messages as processed
+4. Marks the first unread message as processed
 5. Optionally runs a reflection follow-up (20% chance)
 6. Writes worklog, saves context, ends session
 
@@ -21,30 +21,28 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from delegate.logging_setup import log_caller
+
 from delegate.agent import (
     AgentLogger,
     build_system_prompt,
     build_user_message,
     build_reflection_message,
     _check_reflection_due,
-    _get_current_task,
-    get_task_workspace,
     _agent_dir,
     _read_state,
     _next_worklog_number,
     _process_turn_messages,
+    TurnTokens,
     SENIORITY_MODELS,
     DEFAULT_SENIORITY,
 )
 from delegate.mailbox import (
     read_inbox,
     mark_seen_batch,
+    mark_processed,
 )
 from delegate.task import format_task_id
-from delegate.paths import agents_dir as _agents_dir
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +54,16 @@ logger = logging.getLogger(__name__)
 def list_ai_agents(hc_home: Path, team: str) -> list[str]:
     """Return names of AI agents for a team (excludes the boss).
 
-    Used by the daemon loop to determine which agents can have turns
-    dispatched.
+    Used to filter ``agents_with_unread()`` results — the boss is a
+    human and should not have turns dispatched.
     """
+    import yaml
+    from delegate.paths import agents_dir as _agents_dir
+
     adir = _agents_dir(hc_home, team)
     if not adir.is_dir():
         return []
-    agents: list[str] = []
+    agents = []
     for d in sorted(adir.iterdir()):
         if not d.is_dir():
             continue
@@ -73,13 +74,6 @@ def list_ai_agents(hc_home: Path, team: str) -> list[str]:
         if state.get("role") != "boss":
             agents.append(d.name)
     return agents
-
-
-def agents_with_unread(hc_home: Path, team: str) -> list[str]:
-    """Return AI agents that have at least one unread delivered message."""
-    from delegate.mailbox import has_unread
-
-    return [a for a in list_ai_agents(hc_home, team) if has_unread(hc_home, team, a)]
 
 
 def _write_worklog(ad: Path, lines: list[str]) -> None:
@@ -102,9 +96,10 @@ class TurnResult:
     agent: str
     team: str
     session_id: int = 0
-    task_id: int | None = None
     tokens_in: int = 0
     tokens_out: int = 0
+    cache_read: int = 0
+    cache_write: int = 0
     cost_usd: float = 0.0
     turns: int = 0
     error: str | None = None
@@ -124,17 +119,12 @@ async def run_turn(
 ) -> TurnResult:
     """Run a single turn for an agent.
 
-    One call to ``run_turn`` processes the batch of unread messages that
-    ``build_user_message()`` selects (up to K messages sharing the same
-    ``task_id``).  If the 20% reflection coin-flip lands, a second
-    (reflection) turn is appended within the same session.
+    One call to ``run_turn`` processes the oldest unread message.
+    If the 20% reflection coin-flip lands, a second (reflection) turn
+    is appended within the same session.
 
     Returns a ``TurnResult`` with token usage and cost.
     """
-    from claude_code_sdk import (
-        query as default_query,
-        ClaudeCodeOptions as DefaultOptions,
-    )
     from delegate.chat import (
         start_session,
         end_session,
@@ -142,10 +132,14 @@ async def run_turn(
         update_session_task,
         log_event,
     )
-    from delegate.mailbox import mark_processed_batch
 
-    sdk_query = sdk_query or default_query
-    sdk_options_class = sdk_options_class or DefaultOptions
+    if sdk_query is None or sdk_options_class is None:
+        from claude_code_sdk import (
+            query as default_query,
+            ClaudeCodeOptions as DefaultOptions,
+        )
+        sdk_query = sdk_query or default_query
+        sdk_options_class = sdk_options_class or DefaultOptions
 
     alog = AgentLogger(agent)
     result = TurnResult(agent=agent, team=team)
@@ -153,24 +147,39 @@ async def run_turn(
     # --- Setup ---
     ad = _agent_dir(hc_home, team, agent)
     state = _read_state(ad)
+    seniority = state.get("seniority", DEFAULT_SENIORITY)
     role = state.get("role", "engineer")
 
     # Set logging caller context for all log lines during this turn
     _prev_caller = log_caller.set(f"{agent}:{role}")
-
-    seniority = state.get("seniority", DEFAULT_SENIORITY)
     model = SENIORITY_MODELS.get(seniority, SENIORITY_MODELS[DEFAULT_SENIORITY])
     token_budget = state.get("token_budget")
     max_turns = max(1, token_budget // 4000) if token_budget else None
 
-    current_task = _get_current_task(hc_home, team, agent)
-    current_task_id = current_task["id"] if current_task else None
-    workspace = get_task_workspace(hc_home, team, agent, current_task)
+    # Determine task from first unread message's task_id
+    inbox_peek = read_inbox(hc_home, team, agent, unread_only=True)
+    first_msg = inbox_peek[0] if inbox_peek else None
+    current_task_id: int | None = first_msg.task_id if first_msg else None
+    current_task: dict | None = None
+    workspace: Path = ad / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    if current_task_id is not None:
+        try:
+            from delegate.task import get_task as _get_task
+            current_task = _get_task(hc_home, team, current_task_id)
+            repos = current_task.get("repo", [])
+            if repos:
+                from delegate.repo import get_task_worktree_path
+                wt = get_task_worktree_path(hc_home, team, repos[0], current_task_id)
+                if wt.is_dir():
+                    workspace = wt
+        except Exception:
+            logger.debug("Could not resolve task %s for workspace", current_task_id)
 
     # Start session
     session_id = start_session(hc_home, team, agent, task_id=current_task_id)
     result.session_id = session_id
-    result.task_id = current_task_id
 
     alog.session_start_log(
         task_id=current_task_id,
@@ -179,16 +188,6 @@ async def run_turn(
         workspace=workspace,
         session_id=session_id,
     )
-
-    # Build user message — captures exactly which message IDs are in the prompt
-    user_msg, turn_msg_ids = build_user_message(hc_home, team, agent, include_context=True)
-
-    # Mark included messages as seen
-    if turn_msg_ids:
-        mark_seen_batch(hc_home, team, turn_msg_ids)
-    messages = read_inbox(hc_home, team, agent, unread_only=True)
-    for inbox_msg in messages[:len(turn_msg_ids)]:
-        alog.message_received(inbox_msg.sender, len(inbox_msg.body))
 
     # Build SDK options
     def _build_options() -> Any:
@@ -211,92 +210,101 @@ async def run_turn(
 
     options = _build_options()
 
+    # Build user message
+    user_msg = build_user_message(hc_home, team, agent, include_context=True)
+
     # --- Main turn ---
+    task_label = format_task_id(current_task_id) if current_task_id else ""
     worklog_lines: list[str] = [
         f"# Worklog — {agent}",
+        f"Task: {task_label}" if task_label else "Task: (none)",
         f"Session: {datetime.now(timezone.utc).isoformat()}",
         f"\n## Turn 1\n{user_msg}",
     ]
 
+    # Mark messages as seen (reuse the inbox_peek we already fetched)
+    messages = inbox_peek
+    seen_ids = [m.filename for m in messages if m.filename]
+    if seen_ids:
+        mark_seen_batch(hc_home, team, seen_ids)
+    for inbox_msg in messages:
+        alog.message_received(inbox_msg.sender, len(inbox_msg.body))
+
     alog.turn_start(1, user_msg)
 
-    turn_tokens_in = 0
-    turn_tokens_out = 0
-    turn_cost = 0.0
+    turn = TurnTokens()
     turn_tools: list[str] = []
 
     try:
         async for msg in sdk_query(prompt=user_msg, options=options):
-            turn_tokens_in, turn_tokens_out, turn_cost = _process_turn_messages(
-                msg, alog, turn_tokens_in, turn_tokens_out, turn_cost,
-                turn_tools, worklog_lines,
+            _process_turn_messages(
+                msg, alog, turn, turn_tools, worklog_lines,
+                agent=agent, task_label=task_label,
             )
     except Exception as exc:
         alog.session_error(exc)
         result.error = str(exc)
         result.turns = 1
-        try:
-            end_session(
-                hc_home, team, session_id,
-                tokens_in=turn_tokens_in, tokens_out=turn_tokens_out,
-                cost_usd=turn_cost,
-            )
-        except Exception:
-            logger.exception("Failed to end session after error | agent=%s", agent)
-        _write_worklog(ad, worklog_lines)
-
-        total_tokens = turn_tokens_in + turn_tokens_out
-        cost_str = f" · ${turn_cost:.4f}" if turn_cost else ""
-        log_event(
-            hc_home, team,
-            f"{agent.capitalize()} went offline ({total_tokens:,} tokens{cost_str})",
-            task_id=current_task_id,
+        end_session(
+            hc_home, team, session_id,
+            tokens_in=turn.input, tokens_out=turn.output,
+            cost_usd=turn.cost_usd,
+            cache_read_tokens=turn.cache_read,
+            cache_write_tokens=turn.cache_write,
         )
+        _write_worklog(ad, worklog_lines)
         log_caller.reset(_prev_caller)
         return result
 
     # Log turn end
     alog.turn_end(
         1,
-        tokens_in=turn_tokens_in,
-        tokens_out=turn_tokens_out,
-        cost_usd=turn_cost,
-        cumulative_tokens_in=turn_tokens_in,
-        cumulative_tokens_out=turn_tokens_out,
-        cumulative_cost=turn_cost,
+        tokens_in=turn.input,
+        tokens_out=turn.output,
+        cost_usd=turn.cost_usd,
+        cumulative_tokens_in=turn.input,
+        cumulative_tokens_out=turn.output,
+        cumulative_cost=turn.cost_usd,
         tool_calls=turn_tools or None,
     )
 
     # Persist running totals
     update_session_tokens(
         hc_home, team, session_id,
-        tokens_in=turn_tokens_in,
-        tokens_out=turn_tokens_out,
-        cost_usd=turn_cost,
+        tokens_in=turn.input,
+        tokens_out=turn.output,
+        cost_usd=turn.cost_usd,
+        cache_read_tokens=turn.cache_read,
+        cache_write_tokens=turn.cache_write,
     )
 
-    # Mark exactly the messages that were in the prompt as processed
-    if turn_msg_ids:
-        mark_processed_batch(hc_home, team, turn_msg_ids)
-        for mid in turn_msg_ids:
-            alog.mail_marked_read(mid)
+    # Mark the first unread message as processed
+    first_unread = read_inbox(hc_home, team, agent, unread_only=True)
+    if first_unread and first_unread[0].filename:
+        mark_processed(hc_home, team, first_unread[0].filename)
+        alog.mail_marked_read(first_unread[0].filename)
 
     # Re-check task association (may have been assigned during the turn)
     if current_task_id is None:
-        current_task = _get_current_task(hc_home, team, agent)
-        if current_task is not None:
-            current_task_id = current_task["id"]
-            result.task_id = current_task_id
-            update_session_task(hc_home, team, session_id, current_task_id)
-            alog.info(
-                "Task association updated | task=%s",
-                format_task_id(current_task_id),
-            )
+        try:
+            from delegate.task import list_tasks as _list_tasks
+            open_tasks = _list_tasks(hc_home, team, assignee=agent, status="in_progress")
+            if open_tasks:
+                current_task_id = open_tasks[0]["id"]
+                update_session_task(hc_home, team, session_id, current_task_id)
+                alog.info(
+                    "Task association updated | task=%s",
+                    format_task_id(current_task_id),
+                )
+        except Exception:
+            pass
 
     # --- Optional reflection turn (20% chance) ---
-    total_tokens_in = turn_tokens_in
-    total_tokens_out = turn_tokens_out
-    total_cost = turn_cost
+    total = TurnTokens(
+        input=turn.input, output=turn.output,
+        cache_read=turn.cache_read, cache_write=turn.cache_write,
+        cost_usd=turn.cost_usd,
+    )
     turn_num = 1
 
     if _check_reflection_due():
@@ -305,67 +313,63 @@ async def run_turn(
         worklog_lines.append(f"\n## Turn 2 (reflection)\n{ref_msg}")
         alog.turn_start(2, ref_msg)
 
-        ref_tin = 0
-        ref_tout = 0
-        ref_cost = 0.0
+        ref = TurnTokens()
         ref_tools: list[str] = []
 
         try:
-            ref_options = _build_options()
+            ref_options = _build_options()  # rebuild for fresh system prompt
             async for msg in sdk_query(prompt=ref_msg, options=ref_options):
-                ref_tin, ref_tout, ref_cost = _process_turn_messages(
-                    msg, alog, ref_tin, ref_tout, ref_cost,
-                    ref_tools, worklog_lines,
+                _process_turn_messages(
+                    msg, alog, ref, ref_tools, worklog_lines,
+                    agent=agent, task_label=task_label,
                 )
 
-            total_tokens_in += ref_tin
-            total_tokens_out += ref_tout
-            total_cost += ref_cost
+            total.input += ref.input
+            total.output += ref.output
+            total.cache_read += ref.cache_read
+            total.cache_write += ref.cache_write
+            total.cost_usd += ref.cost_usd
 
             alog.turn_end(
                 2,
-                tokens_in=ref_tin,
-                tokens_out=ref_tout,
-                cost_usd=ref_cost,
-                cumulative_tokens_in=total_tokens_in,
-                cumulative_tokens_out=total_tokens_out,
-                cumulative_cost=total_cost,
+                tokens_in=ref.input,
+                tokens_out=ref.output,
+                cost_usd=ref.cost_usd,
+                cumulative_tokens_in=total.input,
+                cumulative_tokens_out=total.output,
+                cumulative_cost=total.cost_usd,
                 tool_calls=ref_tools or None,
             )
+
+            # DO NOT mark mail during reflection — no inbox message was acted on
             alog.info("Reflection turn completed")
         except Exception as exc:
             alog.error("Reflection turn failed: %s", exc)
 
     # --- Finalize ---
-    result.tokens_in = total_tokens_in
-    result.tokens_out = total_tokens_out
-    result.cost_usd = total_cost
+    result.tokens_in = total.input
+    result.tokens_out = total.output
+    result.cache_read = total.cache_read
+    result.cache_write = total.cache_write
+    result.cost_usd = total.cost_usd
     result.turns = turn_num
 
     # End session
-    try:
-        end_session(
-            hc_home, team, session_id,
-            tokens_in=total_tokens_in, tokens_out=total_tokens_out,
-            cost_usd=total_cost,
-        )
-    except Exception:
-        logger.exception("Failed to end session | agent=%s", agent)
-
-    # Log session summary
-    total_tokens = total_tokens_in + total_tokens_out
-    cost_str = f" · ${total_cost:.4f}" if total_cost else ""
-    log_event(
-        hc_home, team,
-        f"{agent.capitalize()} went offline ({total_tokens:,} tokens{cost_str})",
-        task_id=current_task_id,
+    end_session(
+        hc_home, team, session_id,
+        tokens_in=total.input, tokens_out=total.output,
+        cost_usd=total.cost_usd,
+        cache_read_tokens=total.cache_read,
+        cache_write_tokens=total.cache_write,
     )
 
+    # Log session summary
+    total_tokens = total.input + total.output
     alog.session_end_log(
         turns=turn_num,
-        tokens_in=total_tokens_in,
-        tokens_out=total_tokens_out,
-        cost_usd=total_cost,
+        tokens_in=total.input,
+        tokens_out=total.output,
+        cost_usd=total.cost_usd,
     )
 
     # Write worklog

@@ -278,13 +278,14 @@ def _run_tool(cmd: list[str], cwd: str | None = None) -> subprocess.CompletedPro
         return None
 
 
-def _get_changed_files(run_dir: Path, baseline_ref: str = "HEAD~1") -> list[str]:
+def _get_changed_files(run_dir: Path) -> list[str]:
     """Get list of changed Python files from git diff in the run directory.
 
-    *baseline_ref* is the git ref to diff against (default ``HEAD~1``).
+    TODO(T0031): Accept a baseline ref (tag or SHA) instead of hardcoding
+    HEAD~1, so multi-commit eval runs diff against the correct starting point.
     """
     result = _run_tool(
-        ["git", "diff", "--name-only", "--diff-filter=ACMR", baseline_ref],
+        ["git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD~1"],
         cwd=str(run_dir),
     )
     if result is None or result.returncode != 0:
@@ -303,13 +304,14 @@ def _get_changed_files(run_dir: Path, baseline_ref: str = "HEAD~1") -> list[str]
     return files
 
 
-def _get_diff_size(run_dir: Path, baseline_ref: str = "HEAD~1") -> int | None:
+def _get_diff_size(run_dir: Path) -> int | None:
     """Get total diff size (lines added + removed) from git.
 
-    *baseline_ref* is the git ref to diff against (default ``HEAD~1``).
+    TODO(T0031): Accept a baseline ref (tag or SHA) instead of hardcoding
+    HEAD~1, so multi-commit eval runs diff against the correct starting point.
     """
     result = _run_tool(
-        ["git", "diff", "--stat", baseline_ref],
+        ["git", "diff", "--stat", "HEAD~1"],
         cwd=str(run_dir),
     )
     if result is None or result.returncode != 0:
@@ -408,12 +410,7 @@ def _compute_complexity(run_dir: Path, changed_files: list[str]) -> float | None
     return None
 
 
-def collect_metrics(
-    hc_home: Path,
-    run_dir: Path | None = None,
-    team: str = EVAL_TEAM,
-    baseline_ref: str = "HEAD~1",
-) -> dict:
+def collect_metrics(hc_home: Path, run_dir: Path | None = None, team: str = EVAL_TEAM) -> dict:
     """Collect all metrics from a completed eval run.
 
     Gathers data from:
@@ -448,8 +445,8 @@ def collect_metrics(
 
     # Git-based metrics (only if run_dir is a git repo)
     if run_dir:
-        changed_files = _get_changed_files(run_dir, baseline_ref)
-        metrics["diff_size"] = _get_diff_size(run_dir, baseline_ref)
+        changed_files = _get_changed_files(run_dir)
+        metrics["diff_size"] = _get_diff_size(run_dir)
         metrics["lint_violations"] = _count_lint_violations(run_dir, changed_files)
         metrics["type_errors"] = _count_type_errors(run_dir, changed_files)
         metrics["complexity_score"] = _compute_complexity(run_dir, changed_files)
@@ -628,13 +625,7 @@ def judge_diff(diff: str, task_spec: str, rubric: str = DEFAULT_RUBRIC) -> dict:
     raise ValueError(f"Failed to parse judge response after 2 attempts: {last_error}")
 
 
-def judge_run(
-    hc_home: Path,
-    reps: int = 3,
-    run_dir: Path | None = None,
-    team: str = EVAL_TEAM,
-    baseline_ref: str = "HEAD~1",
-) -> dict:
+def judge_run(hc_home: Path, reps: int = 3, run_dir: Path | None = None, team: str = EVAL_TEAM) -> dict:
     """Score all tasks in an eval run using LLM-as-judge.
 
     For each task, extracts the git diff and task spec, calls judge_diff()
@@ -667,7 +658,7 @@ def judge_run(
         return {"tasks": {}, "overall": {}}
 
     # Get the full diff for the run
-    full_diff = _get_full_diff(run_dir, baseline_ref) if run_dir else "(no diff available)"
+    full_diff = _get_full_diff(run_dir) if run_dir else "(no diff available)"
 
     task_scores = {}
     for task_id, task in tasks_data.items():
@@ -702,13 +693,13 @@ def judge_run(
     return {"tasks": task_scores, "overall": overall}
 
 
-def _get_full_diff(run_dir: Path, baseline_ref: str = "HEAD~1") -> str:
+def _get_full_diff(run_dir: Path) -> str:
     """Get the full git diff text for the run directory.
 
-    *baseline_ref* is the git ref to diff against (default ``HEAD~1``).
+    TODO(T0031): Accept a baseline ref so multi-commit runs diff correctly.
     """
     result = _run_tool(
-        ["git", "diff", baseline_ref],
+        ["git", "diff", "HEAD~1"],
         cwd=str(run_dir),
     )
     if result is None or result.returncode != 0:
@@ -796,7 +787,7 @@ def print_judge_results(results: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Eval runner (T0031)
+# Eval runner orchestration (T0031)
 # ---------------------------------------------------------------------------
 
 
@@ -828,12 +819,13 @@ def load_benchmark_specs(suite_dir: Path) -> list[dict]:
     return specs
 
 
-def seed_tasks(hc_home: Path, specs: list[dict], team: str = EVAL_TEAM) -> list[dict]:
+def seed_tasks(hc_home: Path, specs: list[dict], team: str = EVAL_TEAM, assignee: str = "manager") -> list[dict]:
     """Create tasks from benchmark specs via the task system.
 
     Args:
         hc_home: Delegate home directory.
         specs: List of benchmark spec dicts.
+        assignee: Agent to assign tasks to (default: manager).
 
     Returns:
         List of created task dicts (with IDs assigned).
@@ -846,6 +838,7 @@ def seed_tasks(hc_home: Path, specs: list[dict], team: str = EVAL_TEAM) -> list[
             hc_home,
             team,
             title=spec["title"],
+            assignee=assignee,
             description=spec.get("description", ""),
             priority="high",
         )
@@ -1003,46 +996,70 @@ def _run_daemon_loop(
     max_concurrent: int = 3,
     token_budget: int | None = None,
 ) -> None:
-    """Run the daemon loop (router + runtime dispatcher) in a thread.
+    """Run the daemon loop (router + runtime dispatch) in a thread.
 
     This replicates the logic from delegate/web.py:_daemon_loop but runs
-    in a thread with its own event loop instead of as an async task.
+    synchronously in a thread instead of as an async task.
     """
-    import asyncio as _asyncio
+    import asyncio
     from delegate.router import route_once
-    from delegate.runtime import run_turn, agents_with_unread
+    from delegate.runtime import run_turn
+    from delegate.mailbox import agents_with_unread
+    from delegate.merge import merge_once
 
-    loop = _asyncio.new_event_loop()
-    sem = _asyncio.Semaphore(max_concurrent)
-    in_flight: set[str] = set()
-
-    async def _dispatch(agent: str) -> None:
-        key = f"{team}/{agent}"
-        async with sem:
-            try:
-                await run_turn(hc_home, team, agent)
-            except Exception:
-                logger.exception("Turn error | agent=%s", agent)
-            finally:
-                in_flight.discard(key)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    active: dict[str, asyncio.Task] = {}
 
     logger.info("Eval daemon loop started — polling every %.1fs", interval)
 
-    while not stop_event.is_set():
+    async def _cycle() -> None:
         try:
             routed = route_once(hc_home, team)
             if routed > 0:
                 logger.info("Routed %d message(s)", routed)
-
-            for agent in agents_with_unread(hc_home, team):
-                key = f"{team}/{agent}"
-                if key not in in_flight:
-                    in_flight.add(key)
-                    loop.run_until_complete(_dispatch(agent))
         except Exception:
-            logger.exception("Error during eval daemon cycle")
+            logger.exception("Error during eval routing")
 
+        # Clean up finished tasks
+        done_agents = [a for a, t in active.items() if t.done()]
+        for a in done_agents:
+            task = active.pop(a)
+            try:
+                task.result()
+            except Exception:
+                logger.exception("Turn failed for agent %s", a)
+
+        # Dispatch turns for agents with unread messages
+        try:
+            needy = agents_with_unread(hc_home, team)
+        except Exception:
+            logger.exception("Error checking unread")
+            needy = []
+
+        for agent_name in needy:
+            if agent_name in active:
+                continue
+            if len(active) >= max_concurrent:
+                break
+            active[agent_name] = asyncio.create_task(
+                run_turn(hc_home, team, agent_name)
+            )
+            logger.info("Dispatched turn for %s", agent_name)
+
+        # Merges (serialized via to_thread — safe from this sync-driven loop)
+        try:
+            await asyncio.to_thread(merge_once, hc_home, team)
+        except Exception:
+            logger.exception("Error during merge")
+
+    while not stop_event.is_set():
+        loop.run_until_complete(_cycle())
         stop_event.wait(timeout=interval)
+
+    # Drain active tasks
+    if active:
+        loop.run_until_complete(asyncio.gather(*active.values(), return_exceptions=True))
 
     loop.close()
     logger.info("Eval daemon loop stopped")
@@ -1160,7 +1177,7 @@ def run_eval(
         setup_repo(run_dir, specs)
 
         # 5. Seed the task queue
-        created_tasks = seed_tasks(hc_home, specs, team=team)
+        created_tasks = seed_tasks(hc_home, specs, team=team, assignee=manager)
         results["tasks_seeded"] = len(created_tasks)
         logger.info("Seeded %d tasks", len(created_tasks))
 
@@ -1184,7 +1201,7 @@ def run_eval(
         )
         logger.info("Sim-boss started")
 
-        # 7. Start the daemon (router + runtime) in a background thread
+        # 7. Start the daemon (router + orchestrator) in a background thread
         daemon_stop = threading.Event()
         daemon_thread = threading.Thread(
             target=_run_daemon_loop,
@@ -1412,10 +1429,6 @@ def main():
         "--run-dir", type=Path, default=None,
         help="Path to working directory for git-based metrics",
     )
-    p_metrics.add_argument(
-        "--baseline-ref", default="HEAD~1",
-        help="Git ref to diff against (default: HEAD~1). Use a tag or SHA for multi-commit runs.",
-    )
 
     # judge
     p_judge = sub.add_parser(
@@ -1436,10 +1449,6 @@ def main():
     p_judge.add_argument(
         "--reps", type=int, default=3,
         help="Number of independent judge calls per task (default: 3)",
-    )
-    p_judge.add_argument(
-        "--baseline-ref", default="HEAD~1",
-        help="Git ref to diff against (default: HEAD~1). Use a tag or SHA for multi-commit runs.",
     )
 
     # run — eval runner
@@ -1525,15 +1534,13 @@ def main():
     elif args.command == "metrics":
         hc_home = args.home
         team = getattr(args, "team", EVAL_TEAM)
-        baseline = getattr(args, "baseline_ref", "HEAD~1")
-        metrics = collect_metrics(hc_home, run_dir=getattr(args, "run_dir", None), team=team, baseline_ref=baseline)
+        metrics = collect_metrics(hc_home, run_dir=getattr(args, "run_dir", None), team=team)
         print_metrics_table(metrics)
 
     elif args.command == "judge":
         hc_home = args.home
         team = getattr(args, "team", EVAL_TEAM)
-        baseline = getattr(args, "baseline_ref", "HEAD~1")
-        results = judge_run(hc_home, reps=args.reps, run_dir=getattr(args, "run_dir", None), team=team, baseline_ref=baseline)
+        results = judge_run(hc_home, reps=args.reps, run_dir=getattr(args, "run_dir", None), team=team)
         print_judge_results(results)
 
     elif args.command == "run":

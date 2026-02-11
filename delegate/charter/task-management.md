@@ -16,7 +16,7 @@ python -m delegate.task attach <home> <task_id> <file_path>
 python -m delegate.task detach <home> <task_id> <file_path>
 ```
 
-Statuses: `todo` → `in_progress` → `in_review` → `in_approval` → `done`. Also: `rejected` (→ `in_progress`), `conflict` (→ `in_progress`).
+Statuses: `todo` → `in_progress` → `in_review` → `in_approval` → `merging` → `done`. Also: `rejected` (→ `in_progress`), `conflict` (→ `in_progress`).
 
 Tasks are stored per-team in SQLite. Associate with one or more repos using `--repo` (repeatable for multi-repo tasks).
 
@@ -36,9 +36,9 @@ The boss's "Action Queue" in the UI shows tasks where the boss is the current as
 3. Agent completes → sets `in_review`. Manager reassigns to the reviewer.
 4. Reviewer reviews diff (base_sha → branch tip), runs tests, checks quality.
 5. Reviewer approves → `in_approval`. Manager reassigns to boss. Reviewer rejects → back to `in_progress`, manager reassigns to DRI with feedback.
-6. Boss approves (manual repos) or auto-merge (auto repos).
+6. Boss approves (manual repos) or auto-merge (auto repos). Task transitions to `merging`.
 7. Merge worker rebases onto main in each repo, runs pre-merge script, fast-forward merges.
-8. Task becomes `done`.
+8. Task becomes `done` (successful merge) or `conflict` (rebase/test failure).
 
 ## Attachments
 

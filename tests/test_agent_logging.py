@@ -346,42 +346,6 @@ class TestErrorLogging:
         assert records[0].exc_info is not None
 
 
-class TestConnectionLogging:
-    """Verify client connection event logging."""
-
-    @pytest.fixture
-    def alog_with_records(self):
-        alog = AgentLogger("alice")
-        records = []
-
-        class RecordHandler(logging.Handler):
-            def emit(self, record):
-                records.append(record)
-
-        handler = RecordHandler()
-        handler.setLevel(logging.DEBUG)
-        alog._logger.addHandler(handler)
-        alog._logger.setLevel(logging.DEBUG)
-        return alog, records
-
-    def test_client_connecting(self, alog_with_records):
-        alog, records = alog_with_records
-        alog.client_connecting()
-        assert "Connecting" in records[0].getMessage()
-        assert records[0].levelno == logging.INFO
-
-    def test_client_connected(self, alog_with_records):
-        alog, records = alog_with_records
-        alog.client_connected()
-        assert "connected" in records[0].getMessage()
-        assert records[0].levelno == logging.INFO
-
-    def test_client_disconnected(self, alog_with_records):
-        alog, records = alog_with_records
-        alog.client_disconnected()
-        assert "disconnected" in records[0].getMessage()
-
-
 class TestIdleLogging:
     """Verify idle/waiting event logging."""
 

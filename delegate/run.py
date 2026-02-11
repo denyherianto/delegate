@@ -20,12 +20,8 @@ import uvicorn
 from delegate.mailbox import send as mailbox_send
 from delegate.bootstrap import get_member_by_role
 from delegate.config import get_boss
+from delegate.logging_setup import configure_logging
 
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-)
 logger = logging.getLogger("daemon")
 
 
@@ -51,6 +47,9 @@ def main():
     args = parser.parse_args()
 
     hc_home = args.home.resolve()
+
+    # --- Unified logging (file + console) ---
+    configure_logging(hc_home, console=True)
 
     # --- Send kick message (once, before uvicorn spawns workers) ---
     if args.kick:

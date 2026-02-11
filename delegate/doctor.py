@@ -1,11 +1,14 @@
-"""Runtime dependency verification (e.g., git, python).
+"""Runtime dependency verification (e.g., git, python, API keys).
 
 Used by ``delegate doctor`` CLI command.
 """
 
+import json
+import os
 import shutil
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -40,12 +43,64 @@ def check_uv() -> CheckResult:
     return CheckResult("uv", True, "uv not found — pip will be used as fallback.")
 
 
+def check_claude_cli() -> CheckResult:
+    """Check if the claude CLI is installed."""
+    if shutil.which("claude"):
+        return CheckResult("Claude CLI", True, "claude CLI is installed.")
+    return CheckResult(
+        "Claude CLI",
+        False,
+        "claude CLI not found in PATH. Install from https://docs.anthropic.com/en/docs/claude-code",
+    )
+
+
+def check_api_key() -> CheckResult:
+    """Check if Anthropic API key is available.
+
+    Looks for:
+    1. ANTHROPIC_API_KEY environment variable
+    2. Claude CLI credentials (~/.claude.json or ~/.claude/credentials.json)
+    """
+    # 1. Environment variable
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return CheckResult("API Key", True, "ANTHROPIC_API_KEY is set in environment.")
+
+    # 2. Claude CLI credential files
+    home = Path.home()
+    credential_paths = [
+        home / ".claude.json",
+        home / ".claude" / "credentials.json",
+    ]
+    for cred_path in credential_paths:
+        if cred_path.exists():
+            try:
+                data = json.loads(cred_path.read_text())
+                # .claude.json stores oauthAccount or similar
+                # credentials.json might have apiKey or token
+                if data:
+                    return CheckResult(
+                        "API Key",
+                        True,
+                        f"Claude credentials found at {cred_path}.",
+                    )
+            except (json.JSONDecodeError, OSError):
+                continue
+
+    return CheckResult(
+        "API Key",
+        False,
+        "No Anthropic API key found. Set ANTHROPIC_API_KEY or authenticate with `claude login`.",
+    )
+
+
 def run_all_checks() -> list[CheckResult]:
     """Run all dependency checks."""
     return [
         check_git(),
         check_python_version(),
         check_uv(),
+        check_claude_cli(),
+        check_api_key(),
     ]
 
 

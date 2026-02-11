@@ -192,3 +192,53 @@ class TestReadSharedFile:
         data = resp.json()
         assert len(data["content"]) == 1_000_000
         assert data["size"] == 1_500_000
+
+    def test_read_image_returns_base64(self, shared_tree):
+        """Reading an image file returns base64-encoded data."""
+        import base64
+        from delegate.paths import shared_dir
+
+        base = shared_dir(shared_tree, TEAM)
+        # Create a minimal valid PNG (1x1 pixel, transparent)
+        png_bytes = bytes.fromhex(
+            "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
+            "89000000017352474200aece1ce900000009704859730000000e000000000e01"
+            "952a0000000a49444154185763000100000500010d0a2db4000000004945"
+            "4e44ae426082"
+        )
+        image_file = base / "test.png"
+        image_file.write_bytes(png_bytes)
+
+        app = create_app(hc_home=shared_tree)
+        c = TestClient(app)
+        resp = c.get(
+            f"/teams/{TEAM}/files/content",
+            params={"path": "test.png"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["content_type"] == "image/png"
+        assert data["is_binary"] is True
+        # Verify base64 decoding works
+        decoded = base64.b64decode(data["content"])
+        assert decoded == png_bytes
+
+    def test_read_binary_file_shows_message(self, shared_tree):
+        """Reading a non-image binary file returns empty content with is_binary flag."""
+        from delegate.paths import shared_dir
+
+        base = shared_dir(shared_tree, TEAM)
+        binary_file = base / "data.bin"
+        binary_file.write_bytes(b"\x00\x01\x02\x03\xff\xfe\xfd")
+
+        app = create_app(hc_home=shared_tree)
+        c = TestClient(app)
+        resp = c.get(
+            f"/teams/{TEAM}/files/content",
+            params={"path": "data.bin"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["is_binary"] is True
+        assert data["content"] == ""
+        assert data["content_type"] == "application/octet-stream"

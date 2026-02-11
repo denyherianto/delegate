@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "preact/hooks";
-import { currentTeam, tasks, activeTab, taskPanelId, taskFilterPreset } from "../state.js";
+import { currentTeam, tasks, activeTab, taskPanelId } from "../state.js";
 import { cap, fmtStatus, taskIdStr } from "../utils.js";
 import { playTaskSound } from "../audio.js";
 import { FilterBar, applyFilters } from "./FilterBar.jsx";
@@ -9,6 +9,7 @@ const STATUS_OPTIONS = [
   "todo", "in_progress", "in_review", "in_approval", "merging", "done", "rejected",
 ];
 const PRIORITY_OPTIONS = ["low", "medium", "high", "critical"];
+const APPROVAL_OPTIONS = ["approved", "rejected", "(none)"];
 
 export function TasksPanel() {
   const team = currentTeam.value;
@@ -29,18 +30,6 @@ export function TasksPanel() {
       if (saved.search) setSearchQuery(saved.search);
     } catch (e) { }
   }, []);
-
-  // Pick up pre-filter from sidebar banner click
-  useEffect(() => {
-    const preset = taskFilterPreset.value;
-    if (!preset) return;
-    // Convert preset into FilterBar-compatible filters
-    const newFilters = [];
-    if (preset.assignee) newFilters.push({ field: "assignee", operator: "is", values: [preset.assignee] });
-    if (preset.status) newFilters.push({ field: "status", operator: "is", values: [preset.status] });
-    setFilters(newFilters);
-    taskFilterPreset.value = null; // consume it
-  }, [taskFilterPreset.value]);
 
   // Save filters to session storage
   useEffect(() => {
@@ -95,6 +84,7 @@ export function TasksPanel() {
     const assigneeSet = new Set();
     const driSet = new Set();
     const repoSet = new Set();
+    const tagSet = new Set();
 
     for (const t of allTasks) {
       if (t.assignee) assigneeSet.add(t.assignee);
@@ -102,6 +92,10 @@ export function TasksPanel() {
       if (t.repo) {
         const repos = Array.isArray(t.repo) ? t.repo : [t.repo];
         repos.forEach(r => { if (r) repoSet.add(r); });
+      }
+      if (t.tags) {
+        const tags = Array.isArray(t.tags) ? t.tags : [t.tags];
+        tags.forEach(tag => { if (tag) tagSet.add(tag); });
       }
     }
 
@@ -111,6 +105,8 @@ export function TasksPanel() {
       { key: "dri", label: "DRI", options: [...driSet].sort() },
       { key: "priority", label: "Priority", options: PRIORITY_OPTIONS },
       { key: "repo", label: "Repo", options: [...repoSet].sort() },
+      { key: "tags", label: "Tags", options: [...tagSet].sort() },
+      { key: "approval_status", label: "Approval", options: APPROVAL_OPTIONS },
     ];
   }, [allTasks]);
 
@@ -140,7 +136,7 @@ export function TasksPanel() {
   );
 
   return (
-    <div class="panel" style={{ display: activeTab.value === "tasks" ? "" : "none" }}>
+    <div class={`panel${activeTab.value === "tasks" ? " active" : ""}`}>
       <div class="task-filters">
         <div class="filter-search-wrap">
           {searchIcon}
@@ -150,7 +146,6 @@ export function TasksPanel() {
             placeholder="Search tasks..."
             value={searchQuery}
             onInput={onSearchInput}
-            aria-label="Search tasks"
           />
         </div>
         <FilterBar

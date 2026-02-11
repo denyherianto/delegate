@@ -15,30 +15,24 @@ import logging
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from delegate.paths import agent_dir as _resolve_agent_dir, agents_dir, base_charter_dir
-from delegate.mailbox import (
-    read_inbox, mark_seen_batch, mark_processed_batch, has_unread,
-    recent_conversation, recent_messages_from_others,
-)
+from delegate.mailbox import read_inbox, recent_processed
 from delegate.task import format_task_id
 
 logger = logging.getLogger(__name__)
 
+# Default idle timeout in seconds (10 minutes)
+DEFAULT_IDLE_TIMEOUT = 600
+
 # Context window: how many recent processed messages to include per turn
 CONTEXT_MSGS_SAME_SENDER = 5   # from the primary sender of the new message
 CONTEXT_MSGS_OTHERS = 3         # most recent from anyone else
-
-# Maximum unread messages to include in a single turn.  Only messages sharing
-# the same task_id as the first unread message are batched together (preserving
-# the invariant of one task per agent turn).  ALL included messages are marked
-# processed after the turn completes.
-MAX_MESSAGES_PER_TURN = 5
 
 # Model mapping by seniority
 SENIORITY_MODELS = {
@@ -209,20 +203,6 @@ class AgentLogger:
             type(error).__name__, str(error), exc_info=True,
         )
 
-    # -- Connection -------------------------------------------------------
-
-    def client_connecting(self) -> None:
-        """Log SDK client connection attempt."""
-        self.info("Connecting to Claude SDK client")
-
-    def client_connected(self) -> None:
-        """Log successful SDK connection."""
-        self.info("Claude SDK client connected")
-
-    def client_disconnected(self) -> None:
-        """Log SDK client disconnection."""
-        self.info("Claude SDK client disconnected")
-
     # -- Idle / waiting ---------------------------------------------------
 
     def waiting_for_mail(self, timeout: float) -> None:
@@ -307,192 +287,24 @@ def _slugify(title: str, max_len: int = 40) -> str:
     return slug[:max_len].rstrip("-")
 
 
-def _branch_name(hc_home: Path, team: str, task_id: int, title: str = "") -> str:
+def _branch_name(team: str, task_id: int, title: str = "") -> str:
     """Compute the branch name for a task.
 
-    Format: ``delegate/<team_id>/<team>/T<task_id>``
-    The team_id (6-char hex) prevents collisions when a team is deleted and
-    recreated; the team name keeps branches human-readable.
+    Format: ``delegate/<team>/T<task_id>``
+    The team-scoped prefix keeps branches organized across teams.
     """
-    from delegate.paths import get_team_id
-    tid = get_team_id(hc_home, team)
-    return f"delegate/{tid}/{team}/{format_task_id(task_id)}"
+    return f"delegate/{team}/{format_task_id(task_id)}"
 
 
-def setup_task_worktree(
-    hc_home: Path,
-    team: str,
-    agent: str,
-    task: dict,
-) -> Path | None:
-    """Set up git worktrees for the agent's current task repos.
+def push_task_branch(hc_home: Path, team: str, task: dict) -> bool:
+    """Push the task's branch to origin in all repos.
 
-    For multi-repo tasks, creates a worktree in each repo using the same
-    branch name.  Returns the path to the **first** repo's worktree (primary
-    workspace).  Returns *None* if the task has no repos.
+    Returns True if at least one push succeeded, False otherwise.
     """
-    repos: list[str] = task.get("repo", [])
-    if not repos:
-        return None
-
-    task_id = task["id"]
-    title = task.get("title", "")
-    branch = _branch_name(hc_home, team, task_id, title)
-    primary_wt: Path | None = None
-
-    from delegate.repo import create_agent_worktree
-
-    for repo_name in repos:
-        try:
-            wt_path = create_agent_worktree(
-                hc_home, team, repo_name, agent, task_id, branch=branch,
-            )
-            if primary_wt is None:
-                primary_wt = wt_path
-            logger.info(
-                "Worktree ready for %s on %s in %s: %s (branch %s)",
-                agent, task_id, repo_name, wt_path, branch,
-            )
-        except (FileNotFoundError, Exception) as exc:
-            logger.warning(
-                "Could not create worktree for task %s (repo=%s): %s",
-                task_id, repo_name, exc,
-            )
-
-    # Record the branch on the task
-    if primary_wt is not None:
-        from delegate.task import set_task_branch
-        set_task_branch(hc_home, team, task_id, branch)
-
-    return primary_wt
-
-
-def cleanup_task_worktree(
-    hc_home: Path,
-    team: str,
-    agent: str,
-    task: dict,
-) -> None:
-    """Remove the agent's worktrees for a completed task.
-
-    Branches are local-only — the merge worker handles rebasing and
-    fast-forward merging directly, so agents never push to origin.
-    """
-    repos: list[str] = task.get("repo", [])
-    if not repos:
-        return
-
-    task_id = task["id"]
-
-    # Remove worktrees in all repos
-    from delegate.repo import remove_agent_worktree
-    for repo_name in repos:
-        try:
-            remove_agent_worktree(hc_home, team, repo_name, agent, task_id)
-        except Exception as exc:
-            logger.warning(
-                "Could not remove worktree for %s in repo %s: %s", task_id, repo_name, exc,
-            )
-
-
-def _ensure_task_branch_metadata(
-    hc_home: Path,
-    team: str,
-    agent: str,
-    task: dict,
-    wt_path: Path,
-) -> None:
-    """Backfill branch and base_sha on a task when already-existing worktree is reused.
-
-    base_sha is now always recorded at task creation time, so this should
-    rarely need to do anything.  Kept as a defensive safety net for tasks
-    created before eager recording was added.
-    """
-    task_id = task["id"]
-    needs_update = False
-    updates: dict = {}
-
-    # Backfill branch name (use team-scoped naming)
-    if not task.get("branch"):
-        branch = _branch_name(hc_home, team, task_id, task.get("title", ""))
-        updates["branch"] = branch
-        needs_update = True
-        logger.warning(
-            "Backfilling branch=%s on task %s — branch should have been set earlier",
-            branch, task_id,
-        )
-
-    # Backfill base_sha (per-repo dict) from main HEAD in the worktree
-    existing_base_sha: dict = task.get("base_sha", {})
-    repos: list[str] = task.get("repo", [])
-    if not existing_base_sha and repos:
-        logger.warning(
-            "Backfilling base_sha on task %s — base_sha should have been set at creation",
-            task_id,
-        )
-        import subprocess as _sp
-        base_sha_dict: dict[str, str] = {}
-        for repo_name in repos:
-            try:
-                result = _sp.run(
-                    ["git", "merge-base", "main", "HEAD"],
-                    cwd=str(wt_path),
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                sha = result.stdout.strip()
-                if sha:
-                    base_sha_dict[repo_name] = sha
-                    logger.info("Backfilled base_sha[%s]=%s on task %s", repo_name, sha[:8], task_id)
-            except Exception as exc:
-                logger.warning("Could not backfill base_sha for task %s repo %s: %s", task_id, repo_name, exc)
-        if base_sha_dict:
-            updates["base_sha"] = base_sha_dict
-            needs_update = True
-
-    if needs_update:
-        from delegate.task import update_task
-        update_task(hc_home, team, task_id, **updates)
-
-
-def get_task_workspace(
-    hc_home: Path,
-    team: str,
-    agent: str,
-    task: dict | None,
-) -> Path:
-    """Return the best workspace directory for the agent.
-
-    If the agent's current task has a repo, returns (and ensures) the worktree
-    path.  Otherwise returns the generic ``<agent>/workspace/`` directory.
-
-    When the worktree already exists but the task is missing branch or
-    base_sha metadata (e.g. after a restart), this function backfills them
-    so that downstream diff and merge tooling works correctly.
-    """
-    ad = _resolve_agent_dir(hc_home, team, agent)
-    default_workspace = ad / "workspace"
-    default_workspace.mkdir(parents=True, exist_ok=True)
-
-    if task is None:
-        return default_workspace
-
-    repos: list[str] = task.get("repo", [])
-    if not repos:
-        return default_workspace
-
-    # Use first repo as primary workspace
-    first_repo = repos[0]
-    from delegate.repo import get_worktree_path
-    wt_path = get_worktree_path(hc_home, team, first_repo, agent, task["id"])
-    if wt_path.is_dir():
-        _ensure_task_branch_metadata(hc_home, team, agent, task, wt_path)
-        return wt_path
-
-    # Create worktrees in all repos, return the first
-    created = setup_task_worktree(hc_home, team, agent, task)
-    return created if created else default_workspace
+    # NOTE: Removed push_branch() call. Delegate works with local branches only.
+    # Worktrees share the same .git directory, so all branches are visible locally.
+    # The merge worker (merge.py) works with local branches directly.
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -635,21 +447,16 @@ def build_system_prompt(
     ws = workspace_path or (ad / "workspace")
     worktree_block = ""
     if current_task and current_task.get("repo"):
-        repos: list[str] = current_task["repo"]
         branch = current_task.get("branch", "")
         task_id = current_task["id"]
-        repos_str = ", ".join(repos)
         worktree_block = f"""
 GIT WORKTREE:
-    You are working in git worktrees for task {format_task_id(task_id)}.
-    Repos: {repos_str}
+    Your working directory is set to the task worktree automatically for {format_task_id(task_id)}.
     Your branch: {branch}
-    Primary worktree path: {ws}
 
     - Commit your changes frequently with clear messages.
     - Do NOT switch branches — stay on {branch}.
-    - Do NOT push — the merge worker handles rebasing and merging.
-    - Other agents have their own worktrees and cannot interfere with your work.
+    - Your branch is local-only and will be merged by the merge worker when approved.
 """
 
     return f"""\
@@ -666,11 +473,14 @@ CRITICAL: You communicate ONLY by running shell commands. Your conversational
 replies are NOT seen by anyone — they only go to an internal log. To send a
 message that another agent or {boss_name} will read, you MUST run:
 
-    {python} -m delegate.mailbox send {hc_home} {team} {agent} <recipient> "<message>"
+    {python} -m delegate.mailbox send {hc_home} {team} {agent} <recipient> "<message>" --task <task_id>
+
+The --task flag is REQUIRED when the message relates to a specific task. Omit it only for
+messages to/from {boss_name} or general messages not tied to any task.
 
 Examples:
     {python} -m delegate.mailbox send {hc_home} {team} {agent} {boss_name} "Here is my update..."
-    {python} -m delegate.mailbox send {hc_home} {team} {agent} {manager_name} "Status update..."
+    {python} -m delegate.mailbox send {hc_home} {team} {agent} {manager_name} "Status update on T0042..." --task 42
 
 Other commands:
     # Task management
@@ -708,19 +518,9 @@ def build_user_message(
     team: str,
     agent: str,
     include_context: bool = False,
-) -> tuple[str, list[str]]:
-    """Build the user message from unread inbox messages + assigned tasks.
-
-    Returns ``(prompt_text, included_msg_ids)`` where *included_msg_ids* is
-    the list of message IDs (as strings) that were included in the prompt.
-    After the turn completes, exactly these IDs should be marked as processed.
-
-    At most ``MAX_MESSAGES_PER_TURN`` unread messages are included.  The agent
-    is told to act on ALL of them.  Remaining messages stay unprocessed and
-    will be picked up in a subsequent turn.
-    """
-    parts: list[str] = []
-    included_msg_ids: list[str] = []
+) -> str:
+    """Build the user message from unread inbox messages + assigned tasks."""
+    parts = []
 
     # Previous session context (cold start only)
     if include_context:
@@ -732,70 +532,41 @@ def build_user_message(
             )
 
     # --- Recent conversation history (processed messages for context) ---
-    all_unread = read_inbox(hc_home, team, agent, unread_only=True)
-    # Take at most K messages that share the same task_id as the first message.
-    # This preserves the invariant: one task per agent turn.
-    if all_unread:
-        first_task_id = all_unread[0].task_id
-        messages = []
-        for msg in all_unread:
-            if msg.task_id != first_task_id:
-                continue
-            messages.append(msg)
-            if len(messages) >= MAX_MESSAGES_PER_TURN:
-                break
-    else:
-        messages = []
-    remaining = len(all_unread) - len(messages)
-
+    messages = read_inbox(hc_home, team, agent, unread_only=True)
     if messages:
-        included_msg_ids = [m.filename for m in messages if m.filename]
         primary_sender = messages[0].sender
 
-        # Bidirectional conversation history with the primary sender
-        # Shows BOTH sent and received messages so the agent can see
-        # what it already said (prevents re-responding to old messages).
-        convo = recent_conversation(
-            hc_home, team, agent, other=primary_sender,
+        # Fetch recent processed messages from the primary sender
+        history_same = recent_processed(
+            hc_home, team, agent, from_sender=primary_sender,
             limit=CONTEXT_MSGS_SAME_SENDER,
         )
-        # Recent messages from other people (received only)
-        others = recent_messages_from_others(
-            hc_home, team, agent, exclude_sender=primary_sender,
-            limit=CONTEXT_MSGS_OTHERS,
-        )
+        # Fetch recent processed messages from anyone else
+        history_others = [
+            m for m in recent_processed(hc_home, team, agent, limit=CONTEXT_MSGS_OTHERS * 2)
+            if m.sender != primary_sender
+        ][:CONTEXT_MSGS_OTHERS]
 
-        if convo or others:
-            parts.append("=== CONVERSATION HISTORY (read-only context) ===")
-            if convo:
-                parts.append(f"Thread with {primary_sender}:")
-                for msg in convo:
-                    direction = "You" if msg.sender == agent else msg.sender
-                    parts.append(f"  [{msg.time}] {direction}: {msg.body}")
-                parts.append("")
-            if others:
-                parts.append("Recent from others:")
-                for msg in others:
-                    parts.append(f"  [{msg.time}] {msg.sender}: {msg.body}")
-                parts.append("")
+        if history_same or history_others:
+            parts.append("=== RECENT CONVERSATION HISTORY ===")
+            parts.append("(Previously processed messages — for context only.)\n")
+            for msg in sorted(history_same + history_others, key=lambda m: m.id or 0):
+                parts.append(f"[{msg.time}] From {msg.sender}:\n{msg.body}\n")
 
-    # --- New messages — act on ALL of them ---
+    # --- New messages — act on the first, read the rest for context ---
     if messages:
         parts.append(f"=== NEW MESSAGES ({len(messages)}) ===")
         for i, msg in enumerate(messages, 1):
-            parts.append(f">>> Message {i}/{len(messages)} <<<")
+            if i == 1:
+                parts.append(f">>> ACTION REQUIRED — Message {i}/{len(messages)} <<<")
+            else:
+                parts.append(f"--- Upcoming message {i}/{len(messages)} (for context only) ---")
             parts.append(f"[{msg.time}] From {msg.sender}:\n{msg.body}")
-        if remaining > 0:
-            parts.append(
-                f"\n({remaining} more message(s) queued — they will arrive in your next turn.)"
-            )
         parts.append(
-            "\n\U0001f449 Respond to ALL messages above. Where possible, consolidate "
-            "replies to the same sender into a single message. Do NOT send "
-            "acknowledgment-only messages (e.g. \"Got it\", \"Thanks\", \"Standing by\"). "
-            "The system automatically shows delivery and read status to senders. "
-            "Only send a message when you have substantive information, a question, "
-            "or a deliverable."
+            "\n\U0001f449 Respond to the ACTION REQUIRED message above (message 1). "
+            "You may read the other messages for context and adapt your "
+            "response accordingly, but only take action on message 1. "
+            "The remaining messages will be delivered for action in subsequent turns."
         )
     else:
         parts.append("No new messages.")
@@ -816,7 +587,7 @@ def build_user_message(
     except Exception:
         pass
 
-    return "\n".join(parts), included_msg_ids
+    return "\n".join(parts)
 
 
 def build_reflection_message(hc_home: Path, team: str, agent: str) -> str:
@@ -851,89 +622,200 @@ def build_reflection_message(hc_home: Path, team: str, agent: str) -> str:
 # Token / worklog helpers
 # ---------------------------------------------------------------------------
 
-def _collect_tokens_from_message(msg: Any) -> tuple[int, int, float]:
-    """Extract (tokens_in, tokens_out, cost_usd) from a ResultMessage.
+@dataclass
+class TokenUsage:
+    """Token usage extracted from a single ResultMessage."""
+
+    input: int = 0
+    output: int = 0
+    cache_read: int = 0
+    cache_write: int = 0
+    cost_usd: float = 0.0
+
+
+def _collect_tokens_from_message(msg: Any) -> TokenUsage:
+    """Extract authoritative token usage from a ``ResultMessage``.
 
     Only ``ResultMessage`` carries usage/cost data in the Claude Code SDK.
     ``AssistantMessage`` has ``content`` and ``model`` but no usage fields —
     the SDK aggregates all token/cost info into the single ``ResultMessage``
-    emitted at the end of each ``client.query()`` call.
+    emitted at the end of each ``query()`` call.
 
-    With per-turn sessions (each turn uses a fresh ``session_id``),
-    ``total_cost_usd`` and ``usage`` reflect **this turn only**, so callers
-    should simply sum them across turns.
+    The ``usage`` dict follows the Anthropic API shape::
+
+        {
+            "input_tokens": int,
+            "output_tokens": int,
+            "cache_creation_input_tokens": int,   # tokens written to cache
+            "cache_read_input_tokens": int,        # tokens served from cache
+        }
     """
     msg_type = type(msg).__name__
-    if hasattr(msg, "total_cost_usd"):
-        cost = msg.total_cost_usd or 0.0
-        tin = 0
-        tout = 0
-        usage = getattr(msg, "usage", None)
-        if usage and isinstance(usage, dict):
-            tin = usage.get("input_tokens", 0)
-            tout = usage.get("output_tokens", 0)
-        elif usage is not None:
-            logger.warning(
-                "Unexpected usage type %s on %s — skipping token extraction",
-                type(usage).__name__, msg_type,
-            )
-        logger.debug(
-            "Token extract from %s: usage=%r cost_usd=%r -> tin=%d tout=%d cost=%.6f",
-            msg_type, usage, msg.total_cost_usd, tin, tout, cost,
+    if not hasattr(msg, "total_cost_usd"):
+        logger.debug("Skipping %s (no total_cost_usd attr)", msg_type)
+        return TokenUsage()
+
+    cost = msg.total_cost_usd or 0.0
+    usage = getattr(msg, "usage", None)
+    tin = tout = cache_read = cache_write = 0
+
+    if usage and isinstance(usage, dict):
+        tin = usage.get("input_tokens", 0)
+        tout = usage.get("output_tokens", 0)
+        cache_read = usage.get("cache_read_input_tokens", 0)
+        cache_write = usage.get("cache_creation_input_tokens", 0)
+    elif usage is not None:
+        logger.warning(
+            "Unexpected usage type %s on %s — skipping token extraction",
+            type(usage).__name__, msg_type,
         )
-        return tin, tout, cost
-    logger.debug("Skipping %s (no total_cost_usd attr)", msg_type)
-    return 0, 0, 0.0
+
+    logger.debug(
+        "Token extract from %s: in=%d out=%d cache_read=%d cache_write=%d cost=%.6f",
+        msg_type, tin, tout, cache_read, cache_write, cost,
+    )
+    return TokenUsage(
+        input=tin, output=tout,
+        cache_read=cache_read, cache_write=cache_write,
+        cost_usd=cost,
+    )
 
 
-def _extract_tool_calls(msg: Any) -> list[str]:
-    """Extract tool call names from a response message."""
-    tools = []
-    if hasattr(msg, "content"):
-        for block in msg.content:
-            if hasattr(block, "name"):
-                tools.append(block.name)
+def _extract_tool_calls_rich(msg: Any) -> list[dict]:
+    """Extract tool call names and key inputs from a response message.
+
+    Returns a list of dicts like ``{"name": "Bash", "summary": "ls -la"}``
+    for richer worklog / logging output.
+    """
+    tools: list[dict] = []
+    if not hasattr(msg, "content"):
+        return tools
+    for block in msg.content:
+        if not hasattr(block, "name"):
+            continue
+        name = block.name
+        inp = getattr(block, "input", {}) or {}
+        if name == "Bash":
+            summary = inp.get("command", "")
+        elif name in ("Edit", "Write", "Read", "MultiEdit"):
+            summary = inp.get("file_path", "")
+        elif name == "Grep" or name == "Glob":
+            summary = inp.get("pattern", "")
+        else:
+            # Generic: show tool name with input keys
+            summary = ", ".join(sorted(inp.keys())[:3]) if inp else ""
+        tools.append({"name": name, "summary": summary})
     return tools
 
 
-def _append_to_worklog(lines: list[str], msg: Any) -> None:
-    """Append assistant / tool content from a message to the worklog."""
-    if hasattr(msg, "content"):
-        for block in msg.content:
-            if hasattr(block, "text"):
-                lines.append(f"**Assistant**: {block.text}\n")
-            elif hasattr(block, "name"):
-                lines.append(f"**Tool**: {block.name}\n")
+def _append_to_worklog(
+    lines: list[str],
+    msg: Any,
+    *,
+    agent: str = "",
+    task_label: str = "",
+) -> None:
+    """Append assistant / tool content from a message to the worklog.
+
+    Enriched version: logs tool name + key inputs for observability.
+    Also emits structured logger.info lines for the unified log.
+    """
+    prefix = f"{agent}" if agent else ""
+    if task_label:
+        prefix = f"{prefix} | {task_label}" if prefix else task_label
+
+    if not hasattr(msg, "content"):
+        return
+
+    for block in msg.content:
+        if hasattr(block, "text"):
+            text = block.text or ""
+            preview = text[:200].replace("\n", " ")
+            lines.append(f"**Assistant**: {text}\n")
+            if prefix:
+                logger.info("%s | %s", prefix, preview)
+        elif hasattr(block, "name"):
+            name = block.name
+            inp = getattr(block, "input", {}) or {}
+            # Build detail string per tool type
+            if name == "Bash":
+                detail = inp.get("command", "(no command)")
+                lines.append(f"**Tool: Bash** | `{detail}`\n")
+                if prefix:
+                    logger.info("%s | bash: %s", prefix, detail)
+            elif name in ("Edit", "Write"):
+                fpath = inp.get("file_path", "")
+                lines.append(f"**Tool: {name}** | `{fpath}`\n")
+                if prefix:
+                    logger.info("%s | %s: %s", prefix, name.lower(), fpath)
+            elif name == "Read":
+                fpath = inp.get("file_path", "")
+                lines.append(f"**Tool: Read** | `{fpath}`\n")
+                if prefix:
+                    logger.info("%s | read: %s", prefix, fpath)
+            elif name == "MultiEdit":
+                fpath = inp.get("file_path", "")
+                lines.append(f"**Tool: MultiEdit** | `{fpath}`\n")
+                if prefix:
+                    logger.info("%s | multi-edit: %s", prefix, fpath)
+            else:
+                keys = ", ".join(sorted(inp.keys())[:3]) if inp else ""
+                detail = f"{name}({keys})" if keys else name
+                lines.append(f"**Tool: {detail}**\n")
+                if prefix:
+                    logger.info("%s | tool: %s", prefix, detail)
+
+
+# Backward-compat alias for tests that import the old name
+def _extract_tool_calls(msg: Any) -> list[str]:
+    """Extract tool call names from a response message (compat shim)."""
+    return [t["name"] for t in _extract_tool_calls_rich(msg)]
 
 
 # ---------------------------------------------------------------------------
 # Turn processing helper
 # ---------------------------------------------------------------------------
 
+@dataclass
+class TurnTokens:
+    """Mutable accumulator for token usage across a turn."""
+
+    input: int = 0
+    output: int = 0
+    cache_read: int = 0
+    cache_write: int = 0
+    cost_usd: float = 0.0
+
+    def add(self, usage: TokenUsage) -> None:
+        self.input += usage.input
+        self.output += usage.output
+        self.cache_read += usage.cache_read
+        self.cache_write += usage.cache_write
+        if usage.cost_usd > 0:
+            self.cost_usd = usage.cost_usd  # ResultMessage gives cumulative cost
+
+
 def _process_turn_messages(
     msg: Any,
     alog: AgentLogger,
-    turn_tokens_in: int,
-    turn_tokens_out: int,
-    turn_cost: float,
+    turn_tokens: TurnTokens,
     turn_tools: list[str],
     worklog_lines: list[str],
-) -> tuple[int, int, float]:
+    *,
+    agent: str = "",
+    task_label: str = "",
+) -> None:
     """Process a single response message: extract tokens, tools, worklog.
 
-    Returns updated (turn_tokens_in, turn_tokens_out, turn_cost).
+    Mutates ``turn_tokens`` and ``turn_tools`` in place.
     """
-    tin, tout, cost = _collect_tokens_from_message(msg)
-    turn_tokens_in += tin
-    turn_tokens_out += tout
-    if cost > 0:
-        turn_cost = cost
+    usage = _collect_tokens_from_message(msg)
+    turn_tokens.add(usage)
 
     # Log tool calls
-    tools = _extract_tool_calls(msg)
-    for tool_name in tools:
-        alog.tool_call(tool_name)
-        turn_tools.append(tool_name)
+    tools = _extract_tool_calls_rich(msg)
+    for t in tools:
+        alog.tool_call(t["name"], t.get("summary", ""))
+        turn_tools.append(t["name"])
 
-    _append_to_worklog(worklog_lines, msg)
-    return turn_tokens_in, turn_tokens_out, turn_cost
+    _append_to_worklog(worklog_lines, msg, agent=agent, task_label=task_label)

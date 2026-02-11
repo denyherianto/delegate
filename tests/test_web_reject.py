@@ -25,7 +25,7 @@ def client(tmp_team):
 
 def _task_to_in_approval(root):
     """Create a task and advance it to in_approval status. Returns task dict."""
-    task = create_task(root, TEAM, title="Feature X")
+    task = create_task(root, TEAM, title="Feature X", assignee="manager")
     assign_task(root, TEAM, task["id"], "alice")
     change_status(root, TEAM, task["id"], "in_progress")
     change_status(root, TEAM, task["id"], "in_review")
@@ -89,7 +89,6 @@ class TestRejectNotification:
         assert msg.sender == "nikhil"
 
     def test_reject_sets_approval_status(self, tmp_team, client):
-        from delegate.review import get_current_review
         task = _task_to_in_approval(tmp_team)
         resp = client.post(
             f"/teams/{TEAM}/tasks/{task['id']}/reject",
@@ -97,11 +96,8 @@ class TestRejectNotification:
         )
         data = resp.json()
         assert data["status"] == "rejected"
-        # Verdict is now in the reviews table, not on the task
-        review = get_current_review(tmp_team, TEAM, task["id"])
-        assert review is not None
-        assert review["verdict"] == "rejected"
-        assert review["summary"] == "Needs work"
+        assert data["approval_status"] == "rejected"
+        assert data["rejection_reason"] == "Needs work"
 
     def test_reject_returns_full_task_dict(self, tmp_team, client):
         task = _task_to_in_approval(tmp_team)

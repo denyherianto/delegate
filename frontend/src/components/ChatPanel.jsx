@@ -174,20 +174,21 @@ export function ChatPanel() {
   }, [msgs, showEvents, filterFrom, filterTo, filterSearch, direction]);
 
   // Scroll to bottom on initial load
-  const initialScrollDone = useRef(false);
-  useEffect(() => {
-    if (!initialScrollDone.current && logRef.current && filteredMsgs.length > 0) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-      initialScrollDone.current = true;
-    }
-  }, [filteredMsgs]);
-
-  // Auto-scroll on new messages (only if near bottom)
   useEffect(() => {
     const el = logRef.current;
-    if (el && initialScrollDone.current) {
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
+
+  // Auto-scroll when new messages arrive (only if near bottom)
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) {
       const wasNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-      if (wasNearBottom) el.scrollTop = el.scrollHeight;
+      if (wasNearBottom) {
+        requestAnimationFrame(() => {
+          el.scrollTop = el.scrollHeight;
+        });
+      }
     }
   }, [filteredMsgs]);
 
@@ -283,7 +284,7 @@ export function ChatPanel() {
           {" "}Activity
         </label>
       </div>
-      <div class="chat-log" ref={logRef} role="log" aria-label="Chat messages" aria-live="polite">
+      <div class="chat-log" ref={logRef}>
         {filteredMsgs.map((m, i) => {
           if (m.type === "event") {
             const eventHtml = agentifyRefs(linkifyFilePaths(linkifyTaskRefs(esc(m.content))), agNames);
@@ -299,38 +300,38 @@ export function ChatPanel() {
               </div>
             );
           }
-          const c = avatarColor(m.sender);
           const contentHtml = linkifyFilePaths(linkifyTaskRefs(renderMarkdown(m.content)));
-          const statusHtml = msgStatusIcon(m);
+          // Three-tier name coloring: boss=white, manager=blue, agents=grey
+          const senderLower = m.sender.toLowerCase();
+          const senderRole = allAgents.find(a => a.name === senderLower)?.role || "";
+          let senderColor = "var(--text-secondary)"; // default: agents
+          if (senderLower === "nikhil") senderColor = "var(--text-primary)"; // boss: white
+          else if (senderRole === "manager") senderColor = "var(--accent)"; // manager: blue
+          // Manager message elevated background
+          const msgClass = (senderRole === "manager") ? "msg msg-manager" : "msg";
           return (
-            <div key={m.id || i} class="msg">
-              <div class="msg-avatar" style={{ background: c }}>{avatarInitial(m.sender)}</div>
+            <div key={m.id || i} class={msgClass}>
               <div class="msg-body">
                 <div class="msg-header">
-                  <span class="msg-left-group">
+                  <span
+                    class="msg-sender"
+                    style={{ cursor: "pointer", color: senderColor }}
+                    onClick={() => { diffPanelMode.value = "agent"; diffPanelTarget.value = m.sender; }}
+                  >
+                    {cap(m.sender)}
+                  </span>
+                  <span class="msg-recipient" style={{ color: "var(--text-secondary)" }}> → {cap(m.recipient)}</span>
+                  <span class="msg-time" dangerouslySetInnerHTML={{ __html: fmtTimestamp(m.timestamp) }} />
+                  <span class="msg-checkmark" dangerouslySetInnerHTML={{ __html: msgStatusIcon(m) }} />
+                  {m.task_id != null && (
                     <span
-                      class="msg-sender"
-                      style={{ cursor: "pointer" }}
-                      onClick={() => { diffPanelMode.value = "agent"; diffPanelTarget.value = m.sender; }}
+                      class="msg-task-badge"
+                      title={`Task ${taskIdStr(m.task_id)}`}
+                      onClick={(e) => { e.stopPropagation(); taskPanelId.value = m.task_id; }}
                     >
-                      {cap(m.sender)}
+                      {taskIdStr(m.task_id)}
                     </span>
-                    <span class="msg-separator">&middot;</span>
-                    <span class="msg-recipient">{cap(m.recipient)}</span>
-                    {m.task_id && (
-                      <span
-                        class="msg-task-badge"
-                        onClick={() => { taskPanelId.value = m.task_id; }}
-                        style={{ cursor: "pointer" }}
-                      >
-                        {taskIdStr(m.task_id)}
-                      </span>
-                    )}
-                  </span>
-                  <span class="msg-right-group">
-                    <span class="msg-time">{fmtTimestamp(m.timestamp)}</span>
-                    {m.type === "chat" && <span dangerouslySetInnerHTML={{ __html: statusHtml }} />}
-                  </span>
+                  )}
                 </div>
                 <LinkedDiv class="msg-content md-content" html={contentHtml} />
               </div>
@@ -340,7 +341,7 @@ export function ChatPanel() {
       </div>
       <div class="chat-input-container">
         <div class="chat-input-top">
-          <select value={recipient} onChange={e => setRecipient(e.target.value)} aria-label="Message recipient">
+          <select value={recipient} onChange={e => setRecipient(e.target.value)}>
             {recipientOptions.map(a => (
               <option key={a.name} value={a.name}>{cap(a.name)} ({a.role || "worker"})</option>
             ))}
@@ -350,7 +351,6 @@ export function ChatPanel() {
           ref={inputRef}
           placeholder="Send a message..."
           rows="1"
-          aria-label="Message input"
           onKeyDown={handleKeydown}
           onInput={(e) => {
             e.target.style.height = "auto";

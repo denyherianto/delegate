@@ -55,6 +55,7 @@ def notify_rejection(
     """Send a rejection notification to the manager.
 
     Called when a task is rejected via POST /tasks/{id}/reject.
+    Includes any inline review comments from the current attempt.
 
     Args:
         hc_home: Delegate home directory.
@@ -70,6 +71,26 @@ def notify_rejection(
     task_id = task["id"]
     title = task.get("title", "(untitled)")
     assignee = task.get("assignee", "(unassigned)")
+    attempt = task.get("review_attempt", 0)
+
+    # Gather inline comments for this attempt
+    comment_lines = ""
+    if attempt > 0:
+        try:
+            from delegate.review import get_comments
+            comments = get_comments(hc_home, team, task_id, attempt)
+            if comments:
+                parts = []
+                for c in comments:
+                    loc = f"{c['file']}:{c['line']}" if c.get("line") else c["file"]
+                    parts.append(f"  {loc} — {c['body']}")
+                comment_lines = (
+                    f"\nInline comments ({len(comments)}):\n"
+                    + "\n".join(parts)
+                    + "\n"
+                )
+        except Exception:
+            pass
 
     body = (
         f"TASK_REJECTED: {format_task_id(task_id)}\n"
@@ -77,6 +98,7 @@ def notify_rejection(
         f"Task: {format_task_id(task_id)} — {title}\n"
         f"Assignee: {assignee}\n"
         f"Reason: {reason or '(no reason provided)'}\n"
+        f"{comment_lines}"
         f"\n"
         f"Suggested actions:\n"
         f"  - Rework: reset to in_progress, same assignee fixes the issues\n"

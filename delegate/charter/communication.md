@@ -9,24 +9,23 @@ Messages are stored in a shared SQLite database. The daemon delivers messages an
 Your conversational text is NOT delivered to anyone — it only goes to an internal log. The ONLY way to communicate is the mailbox send command:
 
 ```
-python -m delegate.mailbox send <home> <team> <your_name> <recipient> "<message>"
+python -m delegate.mailbox send <home> <team> <your_name> <recipient> "<message>" --task <task_id>
 ```
 
-Do not just compose a reply — actually execute the send command. But ONLY send a message when you have substantive content. Do NOT send acknowledgment-only messages. The system shows delivery/read status automatically.
+Every message MUST include `--task <task_id>` unless the message is to/from the boss or is not related to any specific task. The task ID links the message to the task for activity tracking and cost attribution.
+
+For every message you receive, respond by running the send command. Do not just compose a reply — actually execute the command.
 
 Check inbox: `python -m delegate.mailbox inbox <home> <team> <your_name>`
 
 ## When to Message
 
-- **Ask questions early.** Unclear requirements → message the manager.
-- **Report results.** Finished a task or hit a blocker → message the manager with specifics.
+- **Ask questions early.** Unclear requirements → message the manager. Ten-minute conversation saves a day of rework.
+- **Report progress.** Finished a task or hit a blocker → message the manager.
 - **Keep it brief.** Say what you need clearly and concisely.
-- **Be specific.** If you need something, say exactly what and by when.
+- **Respond promptly.** If you need something, be specific about what and by when.
 - **Don't wait silently.** If blocked on someone, say so explicitly.
 
-## When NOT to Message
+## Long-Running Work
 
-- **No pure acknowledgments.** "Got it", "Thanks", "Working on it", "Standing by" — these waste everyone's time. Just do the work.
-- **No redundant status.** If you have nothing new to report, don't send a message.
-- **No echoing back.** Don't repeat what someone told you. Confirm only if there's ambiguity.
-- **Consolidate.** If you have multiple things to say to the same person, send one message, not three.
+When working on a task that takes more than a few minutes and someone may be waiting for the result (especially the boss or manager), send a brief progress update every few minutes. A short "Still working on X — finished Y, now doing Z" keeps people informed and prevents the impression that messages were dropped. Don't wait until everything is done to communicate.

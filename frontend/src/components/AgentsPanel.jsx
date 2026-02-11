@@ -25,7 +25,7 @@ export function AgentsPanel() {
   }, [allTasks]);
 
   return (
-    <div class="panel" style={{ display: activeTab.value === "agents" ? "" : "none" }}>
+    <div class={`panel${activeTab.value === "agents" ? " active" : ""}`}>
       {allAgents.map(a => {
         const stats = statsMap[a.name] || {};
         const currentTask = inProgressTasks.find(t => t.assignee === a.name);

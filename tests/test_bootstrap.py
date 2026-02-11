@@ -131,6 +131,7 @@ def test_db_schema_created(tmp_team):
     assert sess_columns == {
         "id", "agent", "task_id", "started_at", "ended_at",
         "duration_seconds", "tokens_in", "tokens_out", "cost_usd",
+        "cache_read_tokens", "cache_write_tokens",
     }
 
     conn.close()

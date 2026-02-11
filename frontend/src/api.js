@@ -57,47 +57,56 @@ export async function fetchTaskStats(team, taskId) {
   return r.ok ? r.json() : null;
 }
 
-export async function fetchCurrentReview(team, taskId) {
-  const r = await fetch(`/teams/${team}/tasks/${taskId}/reviews/current`);
-  return r.ok ? r.json() : { attempt: 0, verdict: null, summary: "", comments: [] };
+export async function fetchTaskActivity(team, taskId) {
+  const r = await fetch(`/teams/${team}/tasks/${taskId}/activity`);
+  return r.ok ? r.json() : [];
 }
+
+// --- Reviews ---
 
 export async function fetchReviews(team, taskId) {
   const r = await fetch(`/teams/${team}/tasks/${taskId}/reviews`);
   return r.ok ? r.json() : [];
 }
 
-export async function approveTask(team, taskId, summary) {
-  const r = await fetch(`/teams/${team}/tasks/${taskId}/approve`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ summary: summary || "" }),
-  });
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({}));
-    throw new Error(err.detail || r.statusText);
-  }
-  return r.json();
-}
-
-export async function rejectTask(team, taskId, reason) {
-  const r = await fetch(`/teams/${team}/tasks/${taskId}/reject`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ reason: reason || "(no reason)" }),
-  });
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({}));
-    throw new Error(err.detail || r.statusText);
-  }
-  return r.json();
+export async function fetchCurrentReview(team, taskId) {
+  const r = await fetch(`/teams/${team}/tasks/${taskId}/reviews/current`);
+  return r.ok ? r.json() : { attempt: 0, verdict: null, summary: "", comments: [] };
 }
 
 export async function postReviewComment(team, taskId, { file, line, body }) {
   const r = await fetch(`/teams/${team}/tasks/${taskId}/reviews/comments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ file, line, body }),
+    body: JSON.stringify({ file, line: line || null, body }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+// --- Approve / Reject ---
+
+export async function approveTask(team, taskId, summary = "") {
+  const r = await fetch(`/teams/${team}/tasks/${taskId}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ summary }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+export async function rejectTask(team, taskId, reason, summary = "") {
+  const r = await fetch(`/teams/${team}/tasks/${taskId}/reject`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: reason || "(no reason)", summary: summary || reason || "(no reason)" }),
   });
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));

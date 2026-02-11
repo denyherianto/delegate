@@ -54,22 +54,23 @@ def get_messages(
     msg_type: str | None = None,
     limit: int | None = None,
 ) -> list[dict]:
-    """Query messages with optional filters.
-
-    For chat messages, includes ``delivered_at``, ``seen_at``, and
-    ``processed_at`` fields by LEFT JOINing with the ``mailbox`` table.
-    """
+    """Query messages with optional filters, including mailbox status fields."""
     conn = get_connection(hc_home, team)
-    query = """\
-        SELECT m.id, m.timestamp, m.sender, m.recipient, m.content, m.type, m.task_id,
-               mb.delivered_at, mb.seen_at, mb.processed_at
+    # LEFT JOIN with mailbox to get status fields (delivered_at, seen_at, processed_at)
+    # Match on sender, recipient, and content (timestamp could have slight differences)
+    query = """
+        SELECT
+            m.id, m.timestamp, m.sender, m.recipient, m.content, m.type,
+            m.task_id,
+            mb.delivered_at, mb.seen_at, mb.processed_at
         FROM messages m
-        LEFT JOIN mailbox mb
-            ON  m.type = 'chat'
-            AND mb.sender = m.sender
-            AND mb.recipient = m.recipient
-            AND mb.body = m.content
-        WHERE 1=1"""
+        LEFT JOIN mailbox mb ON (
+            m.sender = mb.sender
+            AND m.recipient = mb.recipient
+            AND m.content = mb.body
+        )
+        WHERE 1=1
+    """
     params: list = []
 
     if since:
@@ -91,6 +92,34 @@ def get_messages(
         query += " LIMIT ?"
         params.append(limit)
 
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_task_activity(
+    hc_home: Path,
+    team: str,
+    task_id: int,
+    limit: int | None = None,
+) -> list[dict]:
+    """Return all messages (events + chat) associated with a task.
+
+    Combines system events (task created, assigned, status changes) and
+    inter-agent messages that reference the task.  Results are ordered
+    chronologically, oldest first.
+    """
+    conn = get_connection(hc_home, team)
+    query = """
+        SELECT id, timestamp, sender, recipient, content, type, task_id
+        FROM messages
+        WHERE task_id = ?
+        ORDER BY id ASC
+    """
+    params: list = [task_id]
+    if limit:
+        query = query.rstrip() + " LIMIT ?"
+        params.append(limit)
     rows = conn.execute(query, params).fetchall()
     conn.close()
     return [dict(row) for row in rows]
@@ -119,6 +148,8 @@ def end_session(
     tokens_in: int = 0,
     tokens_out: int = 0,
     cost_usd: float = 0.0,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
 ) -> None:
     """End an agent session, recording duration and token usage."""
     conn = get_connection(hc_home, team)
@@ -128,35 +159,14 @@ def end_session(
             duration_seconds = (julianday('now') - julianday(started_at)) * 86400,
             tokens_in = ?,
             tokens_out = ?,
-            cost_usd = ?
+            cost_usd = ?,
+            cache_read_tokens = ?,
+            cache_write_tokens = ?
         WHERE id = ?""",
-        (tokens_in, tokens_out, cost_usd, session_id),
+        (tokens_in, tokens_out, cost_usd, cache_read_tokens, cache_write_tokens, session_id),
     )
     conn.commit()
     conn.close()
-
-
-def close_orphaned_sessions(hc_home: Path, team: str, agent: str) -> int:
-    """Close any sessions for *agent* that have ended_at IS NULL.
-
-    Called by the daemon when a stale session is detected — the agent
-    turn errored without closing the session, leaving the DB
-    session open.  We stamp ``ended_at`` so it doesn't look "active" forever.
-
-    Returns the number of sessions closed.
-    """
-    conn = get_connection(hc_home, team)
-    cursor = conn.execute(
-        """UPDATE sessions SET
-            ended_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-            duration_seconds = (julianday('now') - julianday(started_at)) * 86400
-        WHERE agent = ? AND ended_at IS NULL""",
-        (agent,),
-    )
-    closed = cursor.rowcount
-    conn.commit()
-    conn.close()
-    return closed
 
 
 def update_session_task(hc_home: Path, team: str, session_id: int, task_id: int) -> None:
@@ -177,6 +187,8 @@ def update_session_tokens(
     tokens_in: int = 0,
     tokens_out: int = 0,
     cost_usd: float = 0.0,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
 ) -> None:
     """Persist running token/cost totals mid-session.
 
@@ -188,9 +200,11 @@ def update_session_tokens(
         """UPDATE sessions SET
             tokens_in = ?,
             tokens_out = ?,
-            cost_usd = ?
+            cost_usd = ?,
+            cache_read_tokens = ?,
+            cache_write_tokens = ?
         WHERE id = ?""",
-        (tokens_in, tokens_out, cost_usd, session_id),
+        (tokens_in, tokens_out, cost_usd, cache_read_tokens, cache_write_tokens, session_id),
     )
     conn.commit()
     conn.close()
@@ -205,7 +219,9 @@ def get_task_stats(hc_home: Path, team: str, task_id: int) -> dict:
             COALESCE(SUM(duration_seconds), 0.0) as agent_time_seconds,
             COALESCE(SUM(tokens_in), 0) as total_tokens_in,
             COALESCE(SUM(tokens_out), 0) as total_tokens_out,
-            COALESCE(SUM(cost_usd), 0.0) as total_cost_usd
+            COALESCE(SUM(cost_usd), 0.0) as total_cost_usd,
+            COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+            COALESCE(SUM(cache_write_tokens), 0) as total_cache_write
         FROM sessions WHERE task_id = ?""",
         (task_id,),
     ).fetchone()
@@ -224,7 +240,9 @@ def get_agent_stats(hc_home: Path, team: str, agent: str) -> dict:
             COALESCE(SUM(duration_seconds), 0.0) as agent_time_seconds,
             COALESCE(SUM(tokens_in), 0) as total_tokens_in,
             COALESCE(SUM(tokens_out), 0) as total_tokens_out,
-            COALESCE(SUM(cost_usd), 0.0) as total_cost_usd
+            COALESCE(SUM(cost_usd), 0.0) as total_cost_usd,
+            COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+            COALESCE(SUM(cache_write_tokens), 0) as total_cache_write
         FROM sessions WHERE agent = ?""",
         (agent,),
     ).fetchone()
@@ -236,6 +254,8 @@ def get_agent_stats(hc_home: Path, team: str, agent: str) -> dict:
         "total_tokens_in": 0,
         "total_tokens_out": 0,
         "total_cost_usd": 0.0,
+        "total_cache_read": 0,
+        "total_cache_write": 0,
     }
 
     all_tasks = list_tasks(hc_home, team, assignee=agent)
@@ -265,6 +285,8 @@ def get_project_stats(hc_home: Path, team: str, project: str) -> dict:
             "total_tokens_in": 0,
             "total_tokens_out": 0,
             "total_cost_usd": 0.0,
+            "total_cache_read": 0,
+            "total_cache_write": 0,
         }
 
     conn = get_connection(hc_home, team)
@@ -275,7 +297,9 @@ def get_project_stats(hc_home: Path, team: str, project: str) -> dict:
             COALESCE(SUM(duration_seconds), 0.0) as agent_time_seconds,
             COALESCE(SUM(tokens_in), 0) as total_tokens_in,
             COALESCE(SUM(tokens_out), 0) as total_tokens_out,
-            COALESCE(SUM(cost_usd), 0.0) as total_cost_usd
+            COALESCE(SUM(cost_usd), 0.0) as total_cost_usd,
+            COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+            COALESCE(SUM(cache_write_tokens), 0) as total_cache_write
         FROM sessions WHERE task_id IN ({placeholders})""",
         task_ids,
     ).fetchone()

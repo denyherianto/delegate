@@ -6,15 +6,7 @@
   </defs>
   
   <g clip-path="url(#rounded)">
-    <!-- Background -->
-    <rect width="512" height="512" fill="#0F1117"/>
-    
-    <!-- 
-      Geometric "d" lettermark
-      The "d" is constructed as a single path:
-      - A vertical stem on the right
-      - An open bowl on the left that connects to the stem
-    -->
+    <rect width="512" height="512" fill="#1A1A1C"/>
     <path d="
       M 304 88
       L 304 424
@@ -37,9 +29,6 @@
       C 140 180 104 222 104 280
       C 104 338 140 380 192 380
       Z
-    " fill="#6C8EEF" fill-rule="evenodd"/>
-    
-    <!-- Activity dot — the green pulse that says "something's alive" -->
-    <circle cx="400" cy="120" r="28" fill="#4ADE80"/>
+    " fill="#4ADE80" fill-rule="evenodd"/>
   </g>
 </svg>

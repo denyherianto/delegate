@@ -9,7 +9,7 @@ assignment — the DRI never changes and anchors the branch name
 owns the ball and is updated by the manager as the task moves through stages.
 
 Usage:
-    python -m delegate.task create <home> <team> --title "Build API" [--priority high]
+    python -m delegate.task create <home> <team> --title "Build API" --assignee alice [--priority high]
     python -m delegate.task list <home> <team> [--status todo] [--assignee alice]
     python -m delegate.task update <home> <team> <task_id> [--title ...] [--description ...] [--priority ...]
     python -m delegate.task assign <home> <team> <task_id> <assignee>
@@ -35,7 +35,7 @@ VALID_TRANSITIONS = {
     "todo": {"in_progress"},
     "in_progress": {"in_review"},
     "in_review": {"done", "in_approval", "in_progress"},
-    "in_approval": {"done", "rejected", "conflict", "merging"},
+    "in_approval": {"merging", "rejected"},
     "merging": {"done", "conflict"},
     "rejected": {"in_progress"},
     "conflict": {"in_progress"},
@@ -47,8 +47,8 @@ VALID_TRANSITIONS = {
 _TASK_FIELDS = frozenset({
     "id", "title", "description", "status", "dri", "assignee",
     "project", "priority", "repo", "tags", "created_at", "updated_at",
-    "completed_at", "depends_on", "branch", "base_sha", "commits",
-    "merge_base", "merge_tip",
+    "completed_at", "depends_on", "branch", "base_sha",
+    "rejection_reason", "approval_status", "merge_base", "merge_tip",
     "attachments", "review_attempt",
 })
 
@@ -70,46 +70,12 @@ def _now() -> str:
 # CRUD
 # ---------------------------------------------------------------------------
 
-def _snapshot_base_sha(hc_home: Path, team: str, repo_list: list[str]) -> dict[str, str]:
-    """Return ``{repo_name: main_HEAD_sha}`` for each repo in *repo_list*.
-
-    This is called at task creation time so that ``base_sha`` is always set
-    from the start.  If a repo can't be resolved (e.g. not yet registered),
-    it is silently skipped.
-    """
-    import logging as _logging
-    _log = _logging.getLogger(__name__)
-
-    base: dict[str, str] = {}
-    if not repo_list:
-        return base
-
-    from delegate.repo import get_repo_path
-    for repo_name in repo_list:
-        try:
-            repo_dir = get_repo_path(hc_home, team, repo_name).resolve()
-            if not repo_dir.is_dir():
-                continue
-            result = subprocess.run(
-                ["git", "rev-parse", "refs/heads/main"],
-                cwd=str(repo_dir),
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                base[repo_name] = result.stdout.strip()
-        except Exception as exc:
-            _log.warning("Could not snapshot base_sha for repo %s: %s", repo_name, exc)
-    return base
-
-
 def create_task(
     hc_home: Path,
     team: str,
     title: str,
+    assignee: str,
     description: str = "",
-    assignee: str = "",
     project: str = "",
     priority: str = "medium",
     depends_on: list[int] | None = None,
@@ -118,19 +84,17 @@ def create_task(
 ) -> dict:
     """Create a new task. Returns the task dict with assigned ID.
 
-    *assignee* is the DRI (Directly Responsible Individual).  When provided,
-    it is set as both ``dri`` and ``assignee`` at creation time.
+    *assignee* is required and will be set as both the assignee and DRI.
 
     *repo* can be a single repo name string or a list of repo names for
     multi-repo tasks.  Stored as a JSON array internally.
 
     *tags* is an optional free-form list of string labels (e.g.
     ``["bugfix", "frontend"]``).
-
-    When repos are provided, ``base_sha`` is recorded immediately as the
-    current ``main`` HEAD of each repo — this is mandatory for the merge
-    flow's ``--onto`` rebase to work correctly.
     """
+    if not assignee or not assignee.strip():
+        raise ValueError("Assignee/DRI is required when creating a task")
+
     if priority not in VALID_PRIORITIES:
         raise ValueError(f"Invalid priority '{priority}'. Must be one of: {VALID_PRIORITIES}")
 
@@ -139,9 +103,6 @@ def create_task(
         repo_list = [repo] if repo else []
     else:
         repo_list = list(repo)
-
-    # Snapshot base_sha eagerly so it's always set
-    base_sha = _snapshot_base_sha(hc_home, team, repo_list)
 
     now = _now()
     conn = get_connection(hc_home, team)
@@ -153,23 +114,21 @@ def create_task(
                 project, priority, repo, tags,
                 created_at, updated_at, completed_at,
                 depends_on, branch, base_sha, commits,
-                merge_base, merge_tip
+                rejection_reason, approval_status, merge_base, merge_tip
             ) VALUES (
                 ?, ?, 'todo', ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, '',
-                ?, '', ?, '{}',
-                '{}', '{}'
+                ?, '', '{}', '{}',
+                '', '', '{}', '{}'
             )""",
             (
-                title, description,
-                assignee, assignee,
+                title, description, assignee, assignee,
                 project, priority,
                 json.dumps(repo_list),
                 json.dumps([str(t) for t in tags] if tags else []),
                 now, now,
                 json.dumps([int(d) for d in depends_on] if depends_on else []),
-                json.dumps(base_sha),
             ),
         )
         conn.commit()
@@ -183,6 +142,20 @@ def create_task(
 
     from delegate.chat import log_event
     log_event(hc_home, team, f"{format_task_id(task_id)} created \u2014 {title}", task_id=task_id)
+
+    # Eagerly create worktrees for each repo (with branch)
+    if repo_list:
+        import logging
+        _task_log = logging.getLogger(__name__)
+        branch_name = f"delegate/{team}/{format_task_id(task_id)}"
+        for repo_name in repo_list:
+            try:
+                from delegate.repo import create_task_worktree
+                create_task_worktree(hc_home, team, repo_name, task_id, branch=branch_name)
+            except Exception as exc:
+                _task_log.warning("Could not create worktree for %s (%s): %s", format_task_id(task_id), repo_name, exc)
+        # Record branch on the task
+        task = update_task(hc_home, team, task_id, branch=branch_name)
 
     return task
 
@@ -259,12 +232,19 @@ def update_task(hc_home: Path, team: str, task_id: int, **updates) -> dict:
     return task
 
 
-def assign_task(hc_home: Path, team: str, task_id: int, assignee: str) -> dict:
+def assign_task(hc_home: Path, team: str, task_id: int, assignee: str, suppress_log: bool = False) -> dict:
     """Assign a task to an agent.
 
     On the first assignment (when ``dri`` is empty), the assignee is also
     recorded as the DRI (Directly Responsible Individual). The DRI never
     changes and is used for branch naming.
+
+    Args:
+        hc_home: Home directory path
+        team: Team name
+        task_id: Task ID
+        assignee: Agent name to assign to
+        suppress_log: If True, skip logging the assignment event (default: False)
     """
     task = get_task(hc_home, team, task_id)
     updates: dict[str, str] = {"assignee": assignee}
@@ -272,28 +252,10 @@ def assign_task(hc_home: Path, team: str, task_id: int, assignee: str) -> dict:
         updates["dri"] = assignee
     task = update_task(hc_home, team, task_id, **updates)
 
-    from delegate.chat import log_event
-    log_event(hc_home, team, f"{format_task_id(task_id)} assigned to {assignee.capitalize()}", task_id=task_id)
+    if not suppress_log:
+        from delegate.chat import log_event
+        log_event(hc_home, team, f"{format_task_id(task_id)} assigned to {assignee.capitalize()}", task_id=task_id)
 
-    return task
-
-
-def transition_task(
-    hc_home: Path,
-    team: str,
-    task_id: int,
-    status: str,
-    assignee: str | None = None,
-) -> dict:
-    """Change task status and optionally reassign in a single logged event.
-
-    This combines ``change_status`` and ``assign_task`` into one call so
-    that both changes are logged as a single activity-feed event (e.g.
-    "In Progress → In Review · assigned to Sarah").
-    """
-    task = change_status(hc_home, team, task_id, status)
-    if assignee is not None and assignee != task.get("assignee", ""):
-        task = assign_task(hc_home, team, task_id, assignee)
     return task
 
 
@@ -301,9 +263,7 @@ def _backfill_branch_metadata(hc_home: Path, team: str, task: dict, updates: dic
     """Try to fill in missing branch and base_sha on a task.
 
     Called as a safety net when a task enters ``in_review`` or ``in_approval``
-    status.  Since ``base_sha`` is now always recorded at task creation time,
-    this should rarely need to do anything.  When it does trigger, it logs a
-    warning so we can track down the gap.
+    status.  If the task already has both fields populated, this is a no-op.
 
     For ``branch``, derives the name from the team and task ID.
     For ``base_sha``, computes ``git merge-base main <branch>`` per repo.
@@ -319,25 +279,14 @@ def _backfill_branch_metadata(hc_home: Path, team: str, task: dict, updates: dic
 
     # Backfill branch name
     if not task.get("branch") and "branch" not in updates:
-        from delegate.paths import get_team_id
-        tid = get_team_id(hc_home, team)
-        branch = f"delegate/{tid}/{team}/{format_task_id(task_id)}"
+        branch = f"delegate/{team}/{format_task_id(task_id)}"
         updates["branch"] = branch
-        _log.warning(
-            "Backfilling branch=%s on task %s during status change — "
-            "branch should have been set earlier",
-            branch, task_id,
-        )
+        _log.info("Backfilling branch=%s on task %s during status change", branch, task_id)
 
     # Backfill base_sha (per-repo dict)
     branch = updates.get("branch") or task.get("branch", "")
     existing_base_sha: dict = task.get("base_sha", {})
     if not existing_base_sha and "base_sha" not in updates and branch:
-        _log.warning(
-            "Backfilling base_sha on task %s during status change — "
-            "base_sha should have been set at task creation",
-            task_id,
-        )
         base_sha_dict: dict[str, str] = {}
         for repo_name in repos:
             try:
@@ -353,7 +302,7 @@ def _backfill_branch_metadata(hc_home: Path, team: str, task: dict, updates: dic
                 if result.returncode == 0 and result.stdout.strip():
                     base_sha_dict[repo_name] = result.stdout.strip()
                     _log.info(
-                        "Backfilled base_sha[%s]=%s on task %s",
+                        "Backfilling base_sha[%s]=%s on task %s",
                         repo_name, base_sha_dict[repo_name][:8], task_id,
                     )
             except Exception as exc:
@@ -362,10 +311,103 @@ def _backfill_branch_metadata(hc_home: Path, team: str, task: dict, updates: dic
             updates["base_sha"] = base_sha_dict
 
 
-def change_status(hc_home: Path, team: str, task_id: int, status: str) -> dict:
+def _validate_review_gate(hc_home: Path, team: str, task: dict) -> None:
+    """Validate that the task is ready for review.
+
+    Raises ``ValueError`` if:
+    1. The worktree has uncommitted changes.
+    2. The branch has no new commits after ``base_sha``.
+    3. The worktree has a different branch checked out than expected.
+    """
+    import subprocess
+    from delegate.paths import task_worktree_dir
+
+    repos: list[str] = task.get("repo", [])
+    if not repos:
+        return  # No repos — nothing to validate
+
+    task_id = task["id"]
+    branch = task.get("branch", "")
+    base_sha_dict: dict = task.get("base_sha", {})
+
+    for repo_name in repos:
+        wt_path = task_worktree_dir(hc_home, team, repo_name, task_id)
+        if not wt_path.is_dir():
+            continue  # Worktree might not exist (no-repo task)
+
+        wt_str = str(wt_path)
+
+        # Check 1: no uncommitted changes
+        try:
+            result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=wt_str,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                raise ValueError(
+                    f"Cannot move {format_task_id(task_id)} to in_review: "
+                    f"worktree for {repo_name} has uncommitted changes. "
+                    f"Please commit or stash before submitting for review."
+                )
+        except subprocess.TimeoutExpired:
+            pass  # Skip validation if git is slow
+
+        # Check 2: at least one commit after base_sha
+        base_sha = base_sha_dict.get(repo_name, "")
+        if base_sha:
+            try:
+                result = subprocess.run(
+                    ["git", "log", f"{base_sha}..HEAD", "--oneline"],
+                    cwd=wt_str,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode == 0 and not result.stdout.strip():
+                    raise ValueError(
+                        f"Cannot move {format_task_id(task_id)} to in_review: "
+                        f"branch for {repo_name} has no commits beyond base. "
+                        f"Please make at least one commit before submitting for review."
+                    )
+            except subprocess.TimeoutExpired:
+                pass
+
+        # Check 3: worktree has the correct branch checked out
+        if branch:
+            try:
+                result = subprocess.run(
+                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                    cwd=wt_str,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if result.returncode == 0:
+                    checked_out = result.stdout.strip()
+                    if checked_out != branch:
+                        raise ValueError(
+                            f"Cannot move {format_task_id(task_id)} to in_review: "
+                            f"worktree for {repo_name} has '{checked_out}' checked out, "
+                            f"expected '{branch}'."
+                        )
+            except subprocess.TimeoutExpired:
+                pass
+
+
+def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_log: bool = False) -> dict:
     """Change task status. Sets completed_at when moving to 'done'.
 
     Validates status transitions according to VALID_TRANSITIONS.
+
+    Args:
+        hc_home: Home directory path
+        team: Team name
+        task_id: Task ID
+        status: New status to transition to
+        suppress_log: If True, skip logging the status change event (default: False)
     """
     if status not in VALID_STATUSES:
         raise ValueError(f"Invalid status '{status}'. Must be one of: {VALID_STATUSES}")
@@ -395,8 +437,11 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str) -> dict:
     if status in ("in_review", "in_approval"):
         _backfill_branch_metadata(hc_home, team, old_task, updates)
 
-    # When entering in_approval, increment review_attempt and create a pending
-    # review row.
+    # Review gate: verify branch is clean and has commits beyond base_sha
+    if status == "in_review":
+        _validate_review_gate(hc_home, team, old_task)
+
+    # When entering in_approval, increment review_attempt and create a pending review
     if status == "in_approval":
         new_attempt = old_task.get("review_attempt", 0) + 1
         updates["review_attempt"] = new_attempt
@@ -405,19 +450,57 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str) -> dict:
 
     # Create the pending review row after the task is updated
     if status == "in_approval":
-        import logging as _logging
         from delegate.review import create_review
         try:
             create_review(hc_home, team, task_id, task["review_attempt"])
         except Exception:
-            _logging.getLogger(__name__).warning(
+            import logging
+            logging.getLogger(__name__).warning(
                 "Failed to create review row for %s attempt %d",
-                format_task_id(task_id), task.get("review_attempt", 0),
+                format_task_id(task_id), task["review_attempt"],
             )
 
-    new_status = status.replace("_", " ").title()
+    if not suppress_log:
+        new_status = status.replace("_", " ").title()
+        from delegate.chat import log_event
+        log_event(hc_home, team, f"{format_task_id(task_id)} {old_status} \u2192 {new_status}", task_id=task_id)
+
+    return task
+
+
+def transition_task(hc_home: Path, team: str, task_id: int, new_status: str, new_assignee: str) -> dict:
+    """Change task status and assignee together with a single combined log message.
+
+    This function combines status change and assignment into one operation, emitting
+    a single activity feed message like: 'T0026: In Review → In Approval, assigned to Nikhil'
+
+    Args:
+        hc_home: Home directory path
+        team: Team name
+        task_id: Task ID
+        new_status: New status to transition to
+        new_assignee: Agent name to assign to
+
+    Returns:
+        The updated task dict
+    """
+    # Get current task to capture old status for the combined message
+    old_task = get_task(hc_home, team, task_id)
+    old_status = old_task["status"].replace("_", " ").title()
+
+    # Perform both operations without logging
+    task = change_status(hc_home, team, task_id, new_status, suppress_log=True)
+    task = assign_task(hc_home, team, task_id, new_assignee, suppress_log=True)
+
+    # Emit a single combined log message
+    new_status_title = new_status.replace("_", " ").title()
     from delegate.chat import log_event
-    log_event(hc_home, team, f"{format_task_id(task_id)} {old_status} \u2192 {new_status}", task_id=task_id)
+    log_event(
+        hc_home,
+        team,
+        f"{format_task_id(task_id)}: {old_status} \u2192 {new_status_title}, assigned to {new_assignee.capitalize()}",
+        task_id=task_id,
+    )
 
     return task
 
@@ -426,16 +509,6 @@ def set_task_branch(hc_home: Path, team: str, task_id: int, branch_name: str) ->
     """Set the branch name on a task."""
     return update_task(hc_home, team, task_id, branch=branch_name)
 
-
-def add_task_commit(hc_home: Path, team: str, task_id: int, commit_sha: str, repo_name: str = "_default") -> dict:
-    """Append a commit SHA to the task's commits dict under *repo_name*."""
-    task = get_task(hc_home, team, task_id)
-    commits: dict = dict(task.get("commits", {}))
-    repo_commits = list(commits.get(repo_name, []))
-    if commit_sha not in repo_commits:
-        repo_commits.append(commit_sha)
-    commits[repo_name] = repo_commits
-    return update_task(hc_home, team, task_id, commits=commits)
 
 
 def attach_file(hc_home: Path, team: str, task_id: int, file_path: str) -> dict:
@@ -487,149 +560,47 @@ def get_task_diff(hc_home: Path, team: str, task_id: int) -> dict[str, str]:
     return diffs
 
 
-def _git_run(args: list[str], cwd: str) -> subprocess.CompletedProcess:
-    """Run a git command, returning the CompletedProcess."""
-    return subprocess.run(
-        args, capture_output=True, text=True, timeout=30, cwd=cwd,
-    )
-
-
-def _show_commits(commit_shas: list[str], cwd: str) -> str:
-    """Return combined ``git show`` output for a list of commit SHAs."""
-    parts = []
-    for sha in commit_shas:
-        result = _git_run(["git", "show", sha], cwd)
-        if result.returncode == 0 and result.stdout.strip():
-            parts.append(result.stdout)
-    return "\n".join(parts)
-
-
-def _is_branch_merged(branch: str, cwd: str) -> bool:
-    """Check if *branch* has been merged into main.
-
-    A branch is considered merged when its tip equals the merge-base with
-    main — i.e. main already contains every commit on the branch.
-    """
-    mb = _git_run(["git", "merge-base", "main", branch], cwd)
-    if mb.returncode != 0:
-        return False
-    tip = _git_run(["git", "rev-parse", branch], cwd)
-    if tip.returncode != 0:
-        return False
-    return mb.stdout.strip() == tip.stdout.strip()
-
-
-def _diff_for_merged_branch(
-    task_id: int, branch: str, commits: list[str], cwd: str,
-) -> str:
-    """Produce a diff for a branch already merged into main.
-
-    Strategy cascade (first non-empty wins):
-    1. Use the task's recorded commits.
-    2. Search for commits whose message mentions the task ID (e.g. T0059).
-    3. Find the merge commit on main and show its diff.
-    """
-    # Strategy 1: recorded commits
-    if commits:
-        output = _show_commits(commits, cwd)
-        if output.strip():
-            return output
-
-    # Strategy 2: grep for commits mentioning the task ID
-    task_label = format_task_id(task_id)
-    grep_result = _git_run(
-        ["git", "log", "--oneline", "--all", f"--grep={task_label}"], cwd,
-    )
-    if grep_result.returncode == 0 and grep_result.stdout.strip():
-        shas = [line.split()[0] for line in grep_result.stdout.strip().splitlines()]
-        output = _show_commits(shas, cwd)
-        if output.strip():
-            return output
-
-    # Strategy 3: find the merge commit on main
-    merge_log = _git_run(
-        ["git", "log", "--oneline", "--merges", "--ancestry-path",
-         f"{branch}..main"],
-        cwd,
-    )
-    if merge_log.returncode == 0 and merge_log.stdout.strip():
-        lines = merge_log.stdout.strip().splitlines()
-        merge_sha = lines[-1].split()[0]
-        result = _git_run(["git", "show", merge_sha], cwd)
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout
-
-    return ""
-
-
 def _diff_for_one_repo(git_cwd: str, branch: str, task: dict, repo_key: str) -> str:
-    """Compute the diff for a single repo within a task.
-
-    Priority:
-    1. ``merge_base..merge_tip`` — exact diff that was merged.
-    2. ``base_sha...branch`` — three-dot (merge-base) diff for unmerged branches.
-    3. Merged-branch cascade — when the three-dot diff is empty because the
-       branch is already merged (merge-base == branch tip).
-    """
-    # 1. Prefer merge_base..merge_tip for merged tasks (exact diff that landed)
+    """Compute the diff for a single repo within a task."""
+    # Prefer merge_base..merge_tip for merged tasks (exact diff that landed)
     merge_base_dict: dict = task.get("merge_base", {})
     merge_tip_dict: dict = task.get("merge_tip", {})
-    mb = merge_base_dict.get(repo_key, "")
-    mt = merge_tip_dict.get(repo_key, "")
+    merge_base = merge_base_dict.get(repo_key, "")
+    merge_tip = merge_tip_dict.get(repo_key, "")
 
-    if mb and mt:
+    if merge_base and merge_tip:
         try:
-            result = _git_run(["git", "diff", f"{mb}..{mt}"], git_cwd)
+            result = subprocess.run(
+                ["git", "diff", f"{merge_base}..{merge_tip}"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=git_cwd,
+            )
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
-    # 2. Three-dot diff base_sha...branch (pre-merge or active branches)
+    # Fall back to base_sha...branch (pre-merge or older tasks)
     base_sha_dict: dict = task.get("base_sha", {})
     base_sha = base_sha_dict.get(repo_key, "")
     diff_base = base_sha if base_sha else "main"
 
     try:
-        result = _git_run(["git", "diff", f"{diff_base}...{branch}"], git_cwd)
+        result = subprocess.run(
+            ["git", "diff", f"{diff_base}...{branch}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=git_cwd,
+        )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
 
-    # 3. Branch already merged — cascade through fallback strategies
-    try:
-        if _is_branch_merged(branch, git_cwd):
-            commits_dict: dict = task.get("commits", {})
-            commits = commits_dict.get(repo_key, [])
-            task_id = task.get("id", 0)
-            merged_diff = _diff_for_merged_branch(task_id, branch, commits, git_cwd)
-            if merged_diff.strip():
-                return merged_diff
-            return "(branch merged — no task-specific diff available)"
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-
     return "(no diff available)"
-
-
-def _discover_commits(git_cwd: str, branch: str, base_sha: str) -> list[str]:
-    """Discover commit SHAs on *branch* since *base_sha* via ``git log``.
-
-    Returns a list of SHAs in chronological order (oldest first).
-    If *base_sha* is empty, falls back to ``main..branch``.
-    """
-    range_spec = f"{base_sha}..{branch}" if base_sha else f"main..{branch}"
-    try:
-        result = subprocess.run(
-            ["git", "log", "--reverse", "--format=%H", range_spec],
-            capture_output=True, text=True, timeout=15, cwd=git_cwd,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip().splitlines()
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-    return []
 
 
 def get_task_commit_diffs(
@@ -638,55 +609,49 @@ def get_task_commit_diffs(
     """Return per-commit diffs for a task, keyed by repo name.
 
     Returns ``{repo_name: [{"sha": str, "message": str, "diff": str}, ...]}``.
-    Commits are discovered from ``git log`` when the task's ``commits`` field is
-    empty (the common case, since agents commit via tools and the SHAs are not
-    explicitly recorded on the task object).
+    Commits are always discovered dynamically via ``git log base_sha..branch``.
     """
     task = get_task(hc_home, team, task_id)
-    commits_dict: dict = task.get("commits", {})
     repos: list[str] = task.get("repo", [])
     branch: str = task.get("branch", "")
     base_sha_dict: dict = task.get("base_sha", {})
+
+    if not branch or not repos:
+        return {}
 
     from delegate.paths import repo_path as _repo_path
 
     results: dict[str, list[dict]] = {}
 
-    # Build the set of repos to inspect
-    repo_names: list[str] = []
-    if commits_dict:
-        repo_names = list(commits_dict.keys())
-    elif repos:
-        repo_names = list(repos)
-
-    for repo_name in repo_names:
-        shas = list(commits_dict.get(repo_name, []))
+    for repo_name in repos:
         try:
             git_cwd = str(_repo_path(hc_home, team, repo_name))
         except FileNotFoundError:
-            entries = [{"sha": sha, "message": "", "diff": f"(repo '{repo_name}' not found)"} for sha in shas]
-            if entries:
-                results[repo_name] = entries
+            results[repo_name] = [{"sha": "", "message": "", "diff": f"(repo '{repo_name}' not found)"}]
             continue
 
-        # If no commits recorded, discover them from git log
-        if not shas and branch:
-            base_sha = base_sha_dict.get(repo_name, "")
-            shas = _discover_commits(git_cwd, branch, base_sha)
+        # Discover commits from git log
+        base_sha = base_sha_dict.get(repo_name, "")
+        range_spec = f"{base_sha}..{branch}" if base_sha else f"main..{branch}"
+        try:
+            log_result = subprocess.run(
+                ["git", "log", "--reverse", "--pretty=format:%H%n%s", range_spec],
+                capture_output=True, text=True, timeout=30, cwd=git_cwd,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            results[repo_name] = [{"sha": "", "message": "", "diff": f"(failed to discover commits for '{repo_name}')"}]
+            continue
 
+        if log_result.returncode != 0 or not log_result.stdout.strip():
+            continue  # No commits found
+
+        lines = log_result.stdout.strip().split("\n")
         repo_results: list[dict] = []
-        for sha in shas:
-            msg = ""
+        for i in range(0, len(lines), 2):
+            sha = lines[i]
+            msg = lines[i + 1] if i + 1 < len(lines) else ""
             diff = ""
             try:
-                # Get commit message
-                msg_result = subprocess.run(
-                    ["git", "log", "-1", "--format=%s", sha],
-                    capture_output=True, text=True, timeout=10, cwd=git_cwd,
-                )
-                if msg_result.returncode == 0:
-                    msg = msg_result.stdout.strip()
-                # Get commit diff
                 diff_result = subprocess.run(
                     ["git", "diff", f"{sha}~1..{sha}"],
                     capture_output=True, text=True, timeout=30, cwd=git_cwd,
@@ -694,7 +659,6 @@ def get_task_commit_diffs(
                 if diff_result.returncode == 0:
                     diff = diff_result.stdout
                 else:
-                    # Might be the first commit on the branch; try show
                     show_result = subprocess.run(
                         ["git", "show", sha, "--format=", "--diff-merges=first-parent"],
                         capture_output=True, text=True, timeout=30, cwd=git_cwd,
@@ -706,6 +670,7 @@ def get_task_commit_diffs(
             repo_results.append({"sha": sha, "message": msg, "diff": diff or "(empty diff)"})
         if repo_results:
             results[repo_name] = repo_results
+
     return results
 
 
@@ -764,8 +729,8 @@ def main():
     p_create.add_argument("home", type=Path)
     p_create.add_argument("team")
     p_create.add_argument("--title", required=True)
+    p_create.add_argument("--assignee", required=True, help="Agent to assign the task to (sets DRI)")
     p_create.add_argument("--description", default="")
-    p_create.add_argument("--assignee", default="", help="DRI / initial assignee")
     p_create.add_argument("--project", default="")
     p_create.add_argument("--priority", default="medium", choices=VALID_PRIORITIES)
     p_create.add_argument("--repo", default="", help="Registered repo name for this task")
@@ -830,14 +795,14 @@ def main():
             args.home,
             args.team,
             title=args.title,
-            description=args.description,
             assignee=args.assignee,
+            description=args.description,
             project=args.project,
             priority=args.priority,
             repo=args.repo,
             tags=args.tags or None,
         )
-        print(f"Created {format_task_id(task['id'])}: {task['title']}")
+        print(f"Created {format_task_id(task['id'])}: {task['title']} (assigned to {args.assignee})")
 
     elif args.command == "list":
         tasks = list_tasks(

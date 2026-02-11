@@ -92,7 +92,7 @@ def qa_team_with_task(qa_team):
     hc_home, repo_path = qa_team
 
     # Create a task and move it through the workflow to 'in_review'
-    task = create_task(hc_home, TEAM, title="Add multiply feature", repo="myapp")
+    task = create_task(hc_home, TEAM, title="Add multiply feature", assignee="manager", repo="myapp")
     assign_task(hc_home, TEAM, task["id"], "alice")
     change_status(hc_home, TEAM, task["id"], "in_progress")
     change_status(hc_home, TEAM, task["id"], "in_review")
@@ -141,10 +141,7 @@ class TestExtractTaskIdFromBranch:
         assert _extract_task_id_from_branch("main") is None
 
     def test_delegate_team_convention(self):
-        """Convention: delegate/<team_id>/<team>/T<NNNN>."""
-        # Current format: delegate/<team_id>/<team>/T<NNN>
-        assert _extract_task_id_from_branch("delegate/a1b2c3/myteam/T0042") == 42
-        # Legacy format: delegate/<team>/T<NNN>
+        """New convention: delegate/<team>/T<NNNN>."""
         assert _extract_task_id_from_branch("delegate/myteam/T0042") == 42
 
 

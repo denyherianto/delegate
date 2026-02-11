@@ -31,26 +31,33 @@ function LinkedDiv({ html, class: cls, style }) {
 }
 
 // ── Approval Badge (Details tab) ──
-function ApprovalBadge({ task, review }) {
-  const { status } = task;
-  const verdict = review ? review.verdict : null;
-  const summary = review ? review.summary : "";
+function ApprovalBadge({ task, currentReview }) {
+  const { status, approval_status, rejection_reason } = task;
+  const attempt = task.review_attempt || 0;
+  const attemptLabel = attempt > 1 ? ` (attempt ${attempt})` : "";
+  const reviewSummary = currentReview && currentReview.summary;
 
-  if (status === "done" || verdict === "approved") {
-    return <div class="task-approval-status"><div class="approval-badge approval-badge-approved">&#10004; Approved &amp; Merged</div></div>;
-  }
-  if (status === "rejected" || verdict === "rejected") {
+  if (status === "done" || approval_status === "approved") {
     return (
       <div class="task-approval-status">
-        <div class="approval-badge approval-badge-rejected">&#10006; Rejected</div>
-        {summary && <div class="approval-rejection-reason">{summary}</div>}
+        <div class="approval-badge approval-badge-approved">&#10004; Approved &amp; Merged{attemptLabel}</div>
+        {reviewSummary && <div class="approval-rejection-reason" style={{ color: "var(--text-secondary)" }}>{reviewSummary}</div>}
+      </div>
+    );
+  }
+  if (status === "rejected" || approval_status === "rejected") {
+    const reason = reviewSummary || rejection_reason;
+    return (
+      <div class="task-approval-status">
+        <div class="approval-badge approval-badge-rejected">&#10006; Rejected{attemptLabel}</div>
+        {reason && <div class="approval-rejection-reason">{reason}</div>}
       </div>
     );
   }
   if (status === "in_approval") {
     return (
       <div class="task-approval-status">
-        <div class="approval-badge approval-badge-pending">&#9203; Awaiting Approval</div>
+        <div class="approval-badge approval-badge-pending">&#9203; Awaiting Approval{attemptLabel}</div>
         <span style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
           Review changes in the <a href="#" onClick={(e) => { e.preventDefault(); setTabFromBadge && setTabFromBadge("changes"); }} style={{ color: "var(--accent-blue)" }}>Changes</a> tab
         </span>
@@ -58,10 +65,14 @@ function ApprovalBadge({ task, review }) {
     );
   }
   if (status === "merging") {
-    return <div class="task-approval-status"><div class="approval-badge approval-badge-merging">&#8987; Merging…</div></div>;
+    return (
+      <div class="task-approval-status">
+        <div class="approval-badge approval-badge-merging">&#8635; Merging...</div>
+      </div>
+    );
   }
   if (status === "conflict") {
-    return <div class="task-approval-status"><div class="approval-badge approval-badge-conflict">&#9888; Merge Conflict</div></div>;
+    return <div class="task-approval-status"><div class="approval-badge" style={{ background: "rgba(251,146,60,0.12)", color: "#fb923c" }}>&#9888; Merge Conflict</div></div>;
   }
   return null;
 }
@@ -70,24 +81,35 @@ function ApprovalBadge({ task, review }) {
 let setTabFromBadge = null;
 
 // ── Approval Actions (Changes tab) ──
-function ApprovalActions({ task, review, onApproved, onRejected }) {
+function ApprovalActions({ task, currentReview, onApproved, onRejected }) {
   const [loading, setLoading] = useState(false);
-  const [comment, setComment] = useState("");
+  const [showReject, setShowReject] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [summary, setSummary] = useState("");
   const [result, setResult] = useState(null); // "approved" | "rejected" | null
+  const inputRef = useRef();
 
-  const { status } = task;
-  const verdict = review ? review.verdict : null;
-  const summary = review ? review.summary : "";
+  const { status, approval_status, rejection_reason } = task;
+  const attempt = task.review_attempt || 0;
+  const attemptLabel = attempt > 1 ? ` (attempt ${attempt})` : "";
+  const reviewSummary = currentReview && currentReview.summary;
+  const commentCount = currentReview && currentReview.comments ? currentReview.comments.length : 0;
 
-  if (status === "done" || verdict === "approved" || result === "approved") {
-    return <div class="task-review-box task-review-box-approved"><div class="approval-badge approval-badge-approved">&#10004; Approved &amp; Merged</div></div>;
+  if (status === "done" || approval_status === "approved" || result === "approved") {
+    return (
+      <div class="task-review-box task-review-box-approved">
+        <div class="approval-badge approval-badge-approved">&#10004; Approved &amp; Merged{attemptLabel}</div>
+        {(summary || reviewSummary) && <div class="approval-rejection-reason" style={{ color: "var(--text-secondary)" }}>{summary || reviewSummary}</div>}
+      </div>
+    );
   }
-  if (status === "rejected" || verdict === "rejected" || result === "rejected") {
-    const reason = result === "rejected" ? comment : summary;
+  if (status === "rejected" || approval_status === "rejected" || result === "rejected") {
+    const reason = result === "rejected" ? (summary || rejectReason) : (reviewSummary || rejection_reason);
     return (
       <div class="task-review-box task-review-box-rejected">
-        <div class="approval-badge approval-badge-rejected">&#10006; Changes Rejected</div>
+        <div class="approval-badge approval-badge-rejected">&#10006; Changes Rejected{attemptLabel}</div>
         {reason && <div class="approval-rejection-reason">{reason}</div>}
+        {commentCount > 0 && <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>{commentCount} inline comment{commentCount !== 1 ? "s" : ""}</div>}
       </div>
     );
   }
@@ -96,7 +118,7 @@ function ApprovalActions({ task, review, onApproved, onRejected }) {
   const handleApprove = async () => {
     setLoading(true);
     try {
-      await api.approveTask(currentTeam.value, task.id, comment);
+      await api.approveTask(currentTeam.value, task.id, summary);
       setResult("approved");
       if (onApproved) onApproved();
     } catch (e) {
@@ -109,7 +131,7 @@ function ApprovalActions({ task, review, onApproved, onRejected }) {
   const handleReject = async () => {
     setLoading(true);
     try {
-      await api.rejectTask(currentTeam.value, task.id, comment || "(no reason)");
+      await api.rejectTask(currentTeam.value, task.id, rejectReason || summary || "(no reason)", summary);
       setResult("rejected");
       if (onRejected) onRejected();
     } catch (e) {
@@ -121,14 +143,24 @@ function ApprovalActions({ task, review, onApproved, onRejected }) {
 
   return (
     <div class="task-review-box">
-      <div class="task-review-box-header">Review changes</div>
+      <div class="task-review-box-header">
+        Review changes{attemptLabel}
+        {commentCount > 0 && (
+          <span style={{ marginLeft: "8px", fontSize: "11px", color: "var(--accent)" }}>
+            {commentCount} comment{commentCount !== 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+      {/* Overall comment textarea */}
       <textarea
-        class="review-comment-input"
-        placeholder="Leave a comment (optional)..."
-        value={comment}
-        onInput={(e) => setComment(e.target.value)}
+        class="rc-comment-textarea"
+        style={{ marginBottom: "8px" }}
+        placeholder="Overall comment (optional)..."
+        value={summary}
+        onInput={(e) => setSummary(e.target.value)}
         onClick={(e) => e.stopPropagation()}
-        rows={3}
+        onKeyDown={(e) => e.stopPropagation()}
+        rows="2"
       />
       <div class="task-review-box-actions">
         <button
@@ -136,16 +168,42 @@ function ApprovalActions({ task, review, onApproved, onRejected }) {
           disabled={loading}
           onClick={(e) => { e.stopPropagation(); handleApprove(); }}
         >
-          {loading ? "Approving..." : "\u2714 Approve"}
+          {loading ? "Merging..." : "\u2714 Approve & Merge"}
         </button>
         <button
           class="btn-reject-outline"
           disabled={loading}
-          onClick={(e) => { e.stopPropagation(); handleReject(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowReject(!showReject);
+            if (!showReject) setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
+          }}
         >
           &#10006; Request Changes
         </button>
       </div>
+      {showReject && (
+        <div class="reject-reason-row">
+          <input
+            ref={inputRef}
+            type="text"
+            class="reject-reason-input"
+            placeholder="Describe what needs to change..."
+            value={rejectReason}
+            onInput={(e) => setRejectReason(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") handleReject(); }}
+          />
+          <button
+            class="btn-reject"
+            disabled={loading}
+            onClick={(e) => { e.stopPropagation(); handleReject(); }}
+            style={{ flexShrink: 0 }}
+          >
+            {loading ? "Rejecting..." : "Submit"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -159,24 +217,33 @@ function ActivitySection({ taskId, task }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const evts = [];
-      if (task.created_at) evts.push({ type: "created", time: task.created_at, text: "Task created", icon: "\u2795" });
-      if (task.assignee) evts.push({ type: "assignment", time: task.created_at, text: "Assigned to " + cap(task.assignee), icon: "\uD83D\uDC64" });
-      if (task.status && task.status !== "todo") evts.push({ type: "status", time: task.updated_at, text: "Status: " + fmtStatus(task.status), icon: "\uD83D\uDD04" });
       try {
-        const msgs = await api.fetchMessages(team, {});
-        const taskRef = taskIdStr(taskId);
-        for (const m of msgs) {
-          if (m.type === "chat" && m.content && m.content.includes(taskRef)) {
-            evts.push({ type: "mention", time: m.timestamp, text: "Mentioned by " + cap(m.sender), icon: "\uD83D\uDCAC" });
+        const activity = await api.fetchTaskActivity(team, taskId);
+        if (cancelled) return;
+        const evts = activity.map((m) => {
+          if (m.type === "event") {
+            // System events: task created, assigned, status changes, etc.
+            const text = m.content || "Event";
+            let icon = "\uD83D\uDD04"; // default: 🔄
+            if (/created/i.test(text)) icon = "\u2795";
+            else if (/assign/i.test(text)) icon = "\uD83D\uDC64";
+            else if (/approved|merged/i.test(text)) icon = "\u2705";
+            else if (/rejected/i.test(text)) icon = "\u274C";
+            else if (/review/i.test(text)) icon = "\uD83D\uDD0D";
+            return { type: "event", time: m.timestamp, text, icon };
           }
-        }
-      } catch (e) { }
-      evts.sort((a, b) => (a.time || "").localeCompare(b.time || ""));
-      if (!cancelled) setEvents(evts);
+          // Chat messages: "sender → recipient"
+          const sender = cap(m.sender || "unknown");
+          const recipient = cap(m.recipient || "unknown");
+          return { type: "chat", time: m.timestamp, text: `${sender} \u2192 ${recipient}`, icon: "\uD83D\uDCAC" };
+        });
+        setEvents(evts);
+      } catch (e) {
+        if (!cancelled) setEvents([]);
+      }
     })();
     return () => { cancelled = true; };
-  }, [taskId]);
+  }, [taskId, team]);
 
   return (
     <div class="task-activity-section">
@@ -204,9 +271,10 @@ function ActivitySection({ taskId, task }) {
 }
 
 // ── Diff tabs content ──
-function DiffContent({ diffRaw, taskId, diffTab, setDiffTab, review, oldComments, isReviewable }) {
+function DiffContent({ diffRaw, taskId, diffTab, setDiffTab, task, currentReview, oldComments }) {
   const [commitsData, setCommitsData] = useState(null);
   const team = currentTeam.value;
+  const isReviewable = task && task.status === "in_approval";
 
   const renderFiles = () => {
     const files = diff2HtmlParse(diffRaw);
@@ -238,15 +306,13 @@ function DiffContent({ diffRaw, taskId, diffTab, setDiffTab, review, oldComments
     );
   };
 
-  const renderFullDiff = () => {
+  const renderReviewableDiff = () => {
     if (!diffRaw) return <div class="diff-empty">No changes</div>;
-    // Use ReviewableDiff for interactive inline commenting
-    const currentComments = (review && review.comments) || [];
     return (
       <ReviewableDiff
         diffRaw={diffRaw}
         taskId={taskId}
-        currentComments={currentComments}
+        currentComments={currentReview ? (currentReview.comments || []) : []}
         oldComments={oldComments || []}
         isReviewable={isReviewable}
       />
@@ -287,7 +353,7 @@ function DiffContent({ diffRaw, taskId, diffTab, setDiffTab, review, oldComments
       </div>
       <div>
         {diffTab === "files" && renderFiles()}
-        {diffTab === "diff" && renderFullDiff()}
+        {diffTab === "diff" && renderReviewableDiff()}
         {diffTab === "commits" && renderCommits()}
       </div>
     </div>
@@ -319,7 +385,7 @@ function CommitList({ commits, multiRepo }) {
             {isOpen && (
               <div class="commit-diff">
                 {c.diff && c.diff !== "(empty diff)" ? (
-                  <div dangerouslySetInnerHTML={{ __html: diff2HtmlRender(c.diff, { outputFormat: "line-by-line", drawFileList: false, matching: "words" }) }} />
+                  <div dangerouslySetInnerHTML={{ __html: diff2HtmlRender(c.diff, { outputFormat: "line-by-line", drawFileList: false, matching: "lines" }) }} />
                 ) : (
                   <div class="diff-empty">Empty diff</div>
                 )}
@@ -340,11 +406,12 @@ export function TaskSidePanel() {
 
   const [task, setTask] = useState(null);
   const [stats, setStats] = useState(null);
-  const [review, setReview] = useState(null);
   const [activeTabLocal, setActiveTabLocal] = useState("details");
   const [diffRaw, setDiffRaw] = useState("");
   const [diffLoaded, setDiffLoaded] = useState(false);
   const [diffTab, setDiffTab] = useState("files");
+  const [currentReview, setCurrentReview] = useState(null);
+  const [oldComments, setOldComments] = useState([]);
 
   // Set the tab switcher for badge → changes tab link
   useEffect(() => {
@@ -354,12 +421,13 @@ export function TaskSidePanel() {
 
   // Load task data when panel opens
   useEffect(() => {
-    if (id === null || !team) { setTask(null); setReview(null); return; }
+    if (id === null || !team) { setTask(null); return; }
     setActiveTabLocal("details");
     setDiffRaw("");
     setDiffLoaded(false);
     setDiffTab("files");
-    setReview(null);
+    setCurrentReview(null);
+    setOldComments([]);
 
     // Find task from cached list first
     const cached = allTasks.find(t => t.id === id);
@@ -376,13 +444,35 @@ export function TaskSidePanel() {
         const s = await api.fetchTaskStats(team, id);
         setStats(s);
       } catch (e) { }
-      // Fetch current review from the reviews table (source of truth)
-      try {
-        const r = await api.fetchCurrentReview(team, id);
-        setReview(r);
-      } catch (e) { }
     })();
   }, [id, team]);
+
+  // Load review data when panel opens or task changes
+  useEffect(() => {
+    if (id === null || !team) return;
+    (async () => {
+      try {
+        const review = await api.fetchCurrentReview(team, id);
+        setCurrentReview(review);
+      } catch (e) { }
+      try {
+        const reviews = await api.fetchReviews(team, id);
+        if (reviews.length > 1) {
+          // Collect comments from all previous attempts (not the latest)
+          const latest = reviews[reviews.length - 1];
+          const old = [];
+          for (const r of reviews) {
+            if (r.attempt !== latest.attempt && r.comments) {
+              for (const c of r.comments) {
+                old.push({ ...c, attempt: r.attempt });
+              }
+            }
+          }
+          setOldComments(old);
+        }
+      } catch (e) { }
+    })();
+  }, [id, team, task && task.review_attempt]);
 
   // Lazy load diff when Changes tab activated
   useEffect(() => {
@@ -420,7 +510,7 @@ export function TaskSidePanel() {
             <span class="task-panel-assignee">{t && t.assignee ? cap(t.assignee) : ""}</span>
             <span class="task-panel-priority">{t && t.priority ? cap(t.priority) : ""}</span>
           </div>
-          <button class="task-panel-close" onClick={close} aria-label="Close task panel">&times;</button>
+          <button class="task-panel-close" onClick={close}>&times;</button>
         </div>
         <div class="task-panel-tabs">
           {["details", "changes"].map(tab => (
@@ -440,11 +530,11 @@ export function TaskSidePanel() {
             <>
               {/* Details tab */}
               <div style={{ display: activeTabLocal === "details" ? "" : "none" }}>
-                <DetailsTab task={t} stats={stats} review={review} />
+                <DetailsTab task={t} stats={stats} currentReview={currentReview} />
               </div>
               {/* Changes tab */}
               <div style={{ display: activeTabLocal === "changes" ? "" : "none" }}>
-                <ChangesTab task={t} stats={stats} review={review} diffRaw={diffRaw} diffTab={diffTab} setDiffTab={setDiffTab} onApproved={handleApproved} />
+                <ChangesTab task={t} stats={stats} diffRaw={diffRaw} diffTab={diffTab} setDiffTab={setDiffTab} onApproved={handleApproved} currentReview={currentReview} oldComments={oldComments} />
               </div>
             </>
           )}
@@ -456,7 +546,7 @@ export function TaskSidePanel() {
 }
 
 // ── Details tab content ──
-function DetailsTab({ task, stats, review }) {
+function DetailsTab({ task, stats, currentReview }) {
   const t = task;
   const descHtml = t.description ? linkifyFilePaths(linkifyTaskRefs(renderMarkdown(t.description))) : "";
 
@@ -535,37 +625,14 @@ function DetailsTab({ task, stats, review }) {
       {/* Activity */}
       <ActivitySection taskId={t.id} task={t} />
       {/* Approval badge */}
-      <ApprovalBadge task={t} review={review} />
+      <ApprovalBadge task={t} currentReview={currentReview} />
     </div>
   );
 }
 
 // ── Changes tab content ──
-function ChangesTab({ task, stats, review, diffRaw, diffTab, setDiffTab, onApproved }) {
+function ChangesTab({ task, stats, diffRaw, diffTab, setDiffTab, onApproved, currentReview, oldComments }) {
   const t = task;
-  const team = currentTeam.value;
-  const [oldComments, setOldComments] = useState([]);
-
-  // Fetch comments from previous review attempts (for dimmed display)
-  useEffect(() => {
-    if (!team || !t || !review || !review.attempt || review.attempt <= 1) {
-      setOldComments([]);
-      return;
-    }
-    // Fetch all reviews to collect comments from prior attempts
-    api.fetchReviews(team, t.id).then(reviews => {
-      const old = [];
-      for (const r of reviews) {
-        if (r.attempt < review.attempt && r.comments) {
-          for (const c of r.comments) old.push({ ...c, attempt: r.attempt });
-        }
-      }
-      setOldComments(old);
-    }).catch(() => setOldComments([]));
-  }, [team, t && t.id, review && review.attempt]);
-
-  // A task is reviewable when it is in_approval (or in_review) and has an active review
-  const isReviewable = t && (t.status === "in_approval" || t.status === "in_review") && review && review.attempt > 0;
 
   return (
     <div>
@@ -573,19 +640,6 @@ function ChangesTab({ task, stats, review, diffRaw, diffTab, setDiffTab, onAppro
       {stats && stats.branch && (
         <div class="task-panel-vcs-row">
           <span class="task-branch" title={stats.branch}>{stats.branch}</span>
-          {stats.commits && typeof stats.commits === "object" && (() => {
-            let allCommits = [];
-            if (Array.isArray(stats.commits)) {
-              allCommits = stats.commits;
-            } else {
-              Object.keys(stats.commits).forEach(repo => {
-                (stats.commits[repo] || []).forEach(c => allCommits.push(c));
-              });
-            }
-            return allCommits.map((c, i) => (
-              <span key={i} class="diff-panel-commit">{String(c).substring(0, 7)}</span>
-            ));
-          })()}
         </div>
       )}
       {/* Base SHA */}
@@ -600,17 +654,9 @@ function ChangesTab({ task, stats, review, diffRaw, diffTab, setDiffTab, onAppro
         </div>
       )}
       {/* Diff */}
-      <DiffContent
-        diffRaw={diffRaw}
-        taskId={t.id}
-        diffTab={diffTab}
-        setDiffTab={setDiffTab}
-        review={review}
-        oldComments={oldComments}
-        isReviewable={isReviewable}
-      />
+      <DiffContent diffRaw={diffRaw} taskId={t.id} diffTab={diffTab} setDiffTab={setDiffTab} task={t} currentReview={currentReview} oldComments={oldComments} />
       {/* Approval actions */}
-      <ApprovalActions task={t} review={review} onApproved={onApproved} onRejected={onApproved} />
+      <ApprovalActions task={t} currentReview={currentReview} onApproved={onApproved} onRejected={onApproved} />
     </div>
   );
 }

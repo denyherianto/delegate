@@ -1,28 +1,33 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#1a1a2e"/>
-      <stop offset="100%" stop-color="#16213e"/>
-    </linearGradient>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#F5A623"/>
-      <stop offset="100%" stop-color="#D4850E"/>
-    </linearGradient>
+    <clipPath id="rounded">
+      <rect width="180" height="180" rx="34"/>
+    </clipPath>
   </defs>
-  <!-- Background -->
-  <rect width="180" height="180" rx="36" fill="url(#bg)"/>
-  <!-- Baton -->
-  <line x1="48" y1="132" x2="132" y2="48" stroke="url(#g)" stroke-width="10" stroke-linecap="round"/>
-  <!-- Baton tip -->
-  <circle cx="132" cy="48" r="8" fill="#F5A623"/>
-  <!-- Agent nodes -->
-  <circle cx="106" cy="28" r="11" fill="#F5A623" opacity="0.9"/>
-  <circle cx="156" cy="38" r="10" fill="#D4850E" opacity="0.85"/>
-  <circle cx="150" cy="72" r="8.5" fill="#F5A623" opacity="0.75"/>
-  <circle cx="112" cy="64" r="7" fill="#D4850E" opacity="0.65"/>
-  <!-- Connecting lines -->
-  <line x1="132" y1="48" x2="106" y2="28" stroke="#F5A623" stroke-width="2.5" opacity="0.35"/>
-  <line x1="132" y1="48" x2="156" y2="38" stroke="#F5A623" stroke-width="2.5" opacity="0.35"/>
-  <line x1="132" y1="48" x2="150" y2="72" stroke="#F5A623" stroke-width="2" opacity="0.3"/>
-  <line x1="132" y1="48" x2="112" y2="64" stroke="#F5A623" stroke-width="2" opacity="0.25"/>
+  <g clip-path="url(#rounded)">
+    <rect width="180" height="180" fill="#1A1A1C"/>
+    <path d="
+      M 107.0 31.0
+      L 107.0 149.1
+      Q 107.0 151.9 104.2 151.9
+      L 101.4 151.9
+      Q 98.6 151.9 98.6 149.1
+      L 98.6 133.6
+      C 91.5 142.7 80.3 147.7 67.5 147.7
+      C 41.5 147.7 22.5 125.9 22.5 98.4
+      C 22.5 71.0 41.5 49.2 67.5 49.2
+      C 80.3 49.2 91.5 54.2 98.6 63.3
+      L 98.6 31.0
+      Q 98.6 28.1 101.4 28.1
+      L 104.2 28.1
+      Q 107.0 28.1 107.0 31.0
+      Z
+      M 67.5 133.6
+      C 85.8 133.6 98.6 118.8 98.6 98.4
+      C 98.6 78.0 85.8 63.3 67.5 63.3
+      C 49.2 63.3 36.6 78.0 36.6 98.4
+      C 36.6 118.8 49.2 133.6 67.5 133.6
+      Z
+    " fill="#4ADE80" fill-rule="evenodd"/>
+  </g>
 </svg>

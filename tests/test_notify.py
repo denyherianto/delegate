@@ -27,7 +27,7 @@ def _make_task_at_in_approval(hc_home):
 
     Returns the current task dict (reloaded after all transitions).
     """
-    task = create_task(hc_home, TEAM, title="Build login feature")
+    task = create_task(hc_home, TEAM, title="Build login feature", assignee="manager")
     assign_task(hc_home, TEAM, task["id"], "alice")
     change_status(hc_home, TEAM, task["id"], "in_progress")
     change_status(hc_home, TEAM, task["id"], "in_review")
@@ -106,6 +106,7 @@ class TestNotifyConflict:
     def test_sends_message_to_manager(self, notify_team):
         task = _make_task_at_in_approval(notify_team)
         task["branch"] = "alice/T0001"
+        change_status(notify_team, TEAM, task["id"], "merging")
         change_status(notify_team, TEAM, task["id"], "conflict")
 
         result = notify_conflict(
@@ -122,6 +123,7 @@ class TestNotifyConflict:
     def test_message_contains_task_and_branch(self, notify_team):
         task = _make_task_at_in_approval(notify_team)
         task["branch"] = "alice/T0001"
+        change_status(notify_team, TEAM, task["id"], "merging")
         change_status(notify_team, TEAM, task["id"], "conflict")
 
         notify_conflict(
@@ -141,6 +143,7 @@ class TestNotifyConflict:
     def test_message_suggests_rebase(self, notify_team):
         task = _make_task_at_in_approval(notify_team)
         task["branch"] = "alice/T0001"
+        change_status(notify_team, TEAM, task["id"], "merging")
         change_status(notify_team, TEAM, task["id"], "conflict")
 
         notify_conflict(notify_team, TEAM, task)
@@ -154,6 +157,7 @@ class TestNotifyConflict:
     def test_no_details_shows_placeholder(self, notify_team):
         task = _make_task_at_in_approval(notify_team)
         task["branch"] = "alice/T0001"
+        change_status(notify_team, TEAM, task["id"], "merging")
         change_status(notify_team, TEAM, task["id"], "conflict")
 
         notify_conflict(notify_team, TEAM, task, conflict_details="")
@@ -165,6 +169,7 @@ class TestNotifyConflict:
     def test_returns_id_string(self, notify_team):
         """notify_conflict returns the message id as a string."""
         task = _make_task_at_in_approval(notify_team)
+        change_status(notify_team, TEAM, task["id"], "merging")
         change_status(notify_team, TEAM, task["id"], "conflict")
 
         result = notify_conflict(notify_team, TEAM, task, conflict_details="Test")

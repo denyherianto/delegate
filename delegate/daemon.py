@@ -1,7 +1,7 @@
 """Daemon management — start/stop the background web UI + routing loop.
 
 The daemon runs uvicorn serving the FastAPI app (delegate.web) with
-the message router and agent runtime running as background tasks.
+the message router and agent orchestrator running as background tasks.
 
 The daemon PID is written to ``~/.delegate/daemon.pid``.
 
@@ -98,7 +98,10 @@ def start_daemon(
             pid_path.unlink(missing_ok=True)
         return None
 
-    # Spawn background process
+    # Spawn background process — redirect stderr to the log file
+    hc_home.mkdir(parents=True, exist_ok=True)
+    log_fp = log_file_path(hc_home)
+
     cmd = [
         sys.executable, "-m", "uvicorn",
         "delegate.web:create_app",
@@ -108,15 +111,12 @@ def start_daemon(
         "--log-level", "info",
     ]
 
-    # Redirect stderr to the log file so agent output is captured
-    log_dest = log_file_path(hc_home)
-    log_fh = open(log_dest, "a")
-
+    stderr_fh = open(log_fp, "a")  # noqa: SIM115 — kept open for subprocess lifetime
     proc = subprocess.Popen(
         cmd,
         env=env,
-        stdout=log_fh,
-        stderr=log_fh,
+        stdout=subprocess.DEVNULL,
+        stderr=stderr_fh,
         start_new_session=True,
     )
 

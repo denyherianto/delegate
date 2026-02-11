@@ -16,7 +16,7 @@ export function Header() {
 
   const switchTab = useCallback((name) => {
     activeTab.value = name;
-    window.history.pushState(null, "", "/" + name);
+    window.history.pushState({}, '', '/' + name);
   }, []);
 
   const toggleMute = useCallback(() => {
@@ -26,21 +26,19 @@ export function Header() {
   }, []);
 
   return (
-    <div class="header" role="banner">
+    <div class="header">
       <div class="header-inner">
-        <nav class="tabs" aria-label="Main navigation">
+        <div class="tabs">
           {TABS.map(t => (
             <button
               key={t}
               class={"tab" + (tab === t ? " active" : "")}
               onClick={() => switchTab(t)}
-              aria-current={tab === t ? "page" : undefined}
-              aria-label={`Switch to ${t} view`}
             >
               {t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
-        </nav>
+        </div>
         <div class="header-actions">
           <button
             class="mute-toggle"

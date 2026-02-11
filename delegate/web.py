@@ -22,11 +22,14 @@ Provides:
     POST /messages    — send message (includes team in body)
 
 When started via the daemon, the daemon loop (message routing +
-agent orchestration) runs as an asyncio background task inside the
-FastAPI lifespan, so uvicorn restarts everything together.
+agent turn dispatch + merge processing) runs as an asyncio background
+task inside the FastAPI lifespan, so uvicorn restarts everything together.
+All agents are "always online" — the daemon dispatches turns directly
+as asyncio tasks when agents have unread messages.
 """
 
 import asyncio
+import base64
 import contextlib
 import logging
 import os
@@ -146,7 +149,7 @@ def _list_team_agents(hc_home: Path, team: str) -> list[dict]:
         agents.append({
             "name": d.name,
             "role": state.get("role", "engineer"),
-            "status": "online",  # all agents are always online in the runtime model
+            "pid": True,  # All agents are always online — daemon dispatches turns
             "unread_inbox": unread,
             "team": team,
             "last_active_at": _agent_last_active_at(d),
@@ -165,35 +168,28 @@ async def _daemon_loop(
     max_concurrent: int,
     default_token_budget: int | None,
 ) -> None:
-    """Route messages, dispatch agent turns, and process merges.
+    """Route messages, dispatch agent turns, and process merges (all teams).
 
-    Architecture:
-    - All agents are "always online" — there is no PID tracking or subprocess
-      management.
-    - Each agent turn is dispatched as an ``asyncio.create_task()`` call to
-      ``runtime.run_turn()``, which spawns a short-lived ``claude`` subprocess.
-    - A semaphore limits the number of concurrent turns across all agents.
-    - The daemon loop polls for unread messages and dispatches turns as needed.
+    All agents are "always online".  Instead of spawning subprocesses,
+    the daemon dispatches ``run_turn()`` as asyncio tasks when an agent
+    has unread mail.  A semaphore enforces *max_concurrent* across all
+    teams.
     """
     from delegate.router import route_once
-    from delegate.runtime import run_turn, agents_with_unread
+    from delegate.runtime import run_turn, list_ai_agents
     from delegate.merge import merge_once
     from delegate.bootstrap import get_member_by_role
-    from delegate.mailbox import send as send_message
-    from delegate.chat import log_event, close_orphaned_sessions
+    from delegate.mailbox import send as send_message, agents_with_unread
 
-    logger.info("Daemon loop started — polling every %.1fs | max_concurrent=%d", interval, max_concurrent)
+    logger.info("Daemon loop started — polling every %.1fs", interval)
 
-    # Semaphore limits concurrent agent turns
-    turn_semaphore = asyncio.Semaphore(max_concurrent)
-
-    # Track in-flight turns so we don't dispatch duplicates
-    in_flight: set[str] = set()  # "team/agent" keys
+    sem = asyncio.Semaphore(max_concurrent)
+    merge_sem = asyncio.Semaphore(1)
+    in_flight: set[tuple[str, str]] = set()  # (team, agent) pairs currently running
 
     async def _dispatch_turn(team: str, agent: str) -> None:
-        """Run a single agent turn, guarded by the semaphore."""
-        key = f"{team}/{agent}"
-        async with turn_semaphore:
+        """Dispatch and run one turn, then remove from in_flight."""
+        async with sem:
             try:
                 result = await run_turn(hc_home, team, agent)
                 if result.error:
@@ -202,29 +198,22 @@ async def _daemon_loop(
                         agent, team, result.error,
                     )
                 else:
+                    total = result.tokens_in + result.tokens_out
                     logger.info(
-                        "Turn complete | agent=%s | team=%s | turns=%d | cost=$%.4f",
-                        agent, team, result.turns, result.cost_usd,
+                        "Turn complete | agent=%s | team=%s | tokens=%d | cost=$%.4f",
+                        agent, team, total, result.cost_usd,
                     )
             except Exception:
-                logger.exception("Unhandled error in turn | agent=%s | team=%s", agent, team)
+                logger.exception("Uncaught error in turn | agent=%s | team=%s", agent, team)
             finally:
-                in_flight.discard(key)
+                in_flight.discard((team, agent))
 
-    # --- One-time startup: clean stale sessions + send manager greeting ---
+    # --- One-time startup: greeting from managers ---
     try:
         teams = _list_teams(hc_home)
         boss_name = get_boss(hc_home) or "boss"
 
         for team in teams:
-            # Close any orphaned sessions from previous crashes
-            from delegate.runtime import list_ai_agents
-            for agent in list_ai_agents(hc_home, team):
-                closed = close_orphaned_sessions(hc_home, team, agent)
-                if closed:
-                    logger.info("Closed %d orphaned session(s) | agent=%s | team=%s", closed, agent, team)
-
-            # Send startup greeting from manager
             manager_name = get_member_by_role(hc_home, team, "manager")
             if manager_name:
                 send_message(
@@ -242,7 +231,7 @@ async def _daemon_loop(
                     manager_name, boss_name, team,
                 )
     except Exception:
-        logger.exception("Error during daemon startup")
+        logger.exception("Error during startup greeting")
 
     # --- Main loop ---
     while True:
@@ -251,27 +240,33 @@ async def _daemon_loop(
             boss_name = get_boss(hc_home)
 
             for team in teams:
-                # Route pending messages
                 routed = route_once(hc_home, team, boss_name=boss_name)
                 if routed > 0:
                     logger.info("Routed %d message(s) for team %s", routed, team)
 
-                # Dispatch turns for agents with unread messages
-                for agent in agents_with_unread(hc_home, team):
-                    key = f"{team}/{agent}"
-                    if key in in_flight:
-                        continue  # already has a turn running
-                    in_flight.add(key)
-                    log_event(hc_home, team, f"Paging {agent.capitalize()}")
-                    asyncio.create_task(_dispatch_turn(team, agent))
+                # Find agents with unread messages and dispatch turns
+                ai_agents = set(list_ai_agents(hc_home, team))
+                needing_turn = [
+                    a for a in agents_with_unread(hc_home, team)
+                    if a in ai_agents
+                ]
+                for agent in needing_turn:
+                    key = (team, agent)
+                    if key not in in_flight:
+                        in_flight.add(key)
+                        asyncio.create_task(_dispatch_turn(team, agent))
 
-                # Process merge queue
-                merge_results = merge_once(hc_home, team)
-                for mr in merge_results:
-                    if mr.success:
-                        logger.info("Merged %s in %s: %s", mr.task_id, team, mr.message)
-                    else:
-                        logger.warning("Merge failed %s in %s: %s", mr.task_id, team, mr.message)
+                # Process merge queue (serialized — one merge at a time)
+                async def _run_merge(t: str) -> None:
+                    async with merge_sem:
+                        results = await asyncio.to_thread(merge_once, hc_home, t)
+                        for mr in results:
+                            if mr.success:
+                                logger.info("Merged %s in %s: %s", mr.task_id, t, mr.message)
+                            else:
+                                logger.warning("Merge failed %s in %s: %s", mr.task_id, t, mr.message)
+
+                asyncio.create_task(_run_merge(team))
         except Exception:
             logger.exception("Error during daemon cycle")
         await asyncio.sleep(interval)
@@ -429,7 +424,6 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             "task_id": task_id,
             "elapsed_seconds": elapsed_seconds,
             "branch": task.get("branch", ""),
-            "commits": task.get("commits", []),
             **stats,
         }
 
@@ -444,7 +438,6 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             "task_id": task_id,
             "branch": task.get("branch", ""),
             "repo": task.get("repo", []),
-            "commits": task.get("commits", {}),
             "diff": diff_dict,
             "merge_base": task.get("merge_base", {}),
             "merge_tip": task.get("merge_tip", {}),
@@ -457,7 +450,19 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             _get_task(hc_home, team, task_id)
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        # Frontend expects { commit_diffs: { repo: [...] } }
         return {"commit_diffs": _get_commit_diffs(hc_home, team, task_id)}
+
+    @app.get("/teams/{team}/tasks/{task_id}/activity")
+    def get_team_task_activity(team: str, task_id: int, limit: int | None = None):
+        """Return all activity (events + messages) for a task."""
+        from delegate.chat import get_task_activity
+
+        try:
+            _get_task(hc_home, team, task_id)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        return get_task_activity(hc_home, team, task_id, limit=limit)
 
     # --- Review endpoints (team-scoped) ---
 
@@ -470,6 +475,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
         reviews = get_reviews(hc_home, team, task_id)
+        # Attach comments to each review
         for r in reviews:
             r["comments"] = get_comments(hc_home, team, task_id, r["attempt"])
         return reviews
@@ -533,19 +539,20 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 detail=f"Cannot approve task in '{task['status']}' status. Task must be in 'in_approval' status.",
             )
 
-        # Record verdict on the reviews table (source of truth)
+        # Record verdict on the review
         attempt = task.get("review_attempt", 0)
         boss_name = get_boss(hc_home) or "boss"
         summary = body.summary if body else ""
         if attempt > 0:
             set_verdict(hc_home, team, task_id, attempt, "approved", summary=summary, reviewer=boss_name)
 
-        updated = _get_task(hc_home, team, task_id)
+        updated = _update_task(hc_home, team, task_id, approval_status="approved")
         _log_event(hc_home, team, f"{format_task_id(task_id)} approved \u2713", task_id=task_id)
         return updated
 
     class RejectBody(BaseModel):
         reason: str
+        summary: str = ""
 
     @app.post("/teams/{team}/tasks/{task_id}/reject")
     def reject_task(team: str, task_id: int, body: RejectBody):
@@ -557,18 +564,21 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
         try:
-            _change_status(hc_home, team, task_id, "rejected")
+            updated = _change_status(hc_home, team, task_id, "rejected")
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        # Record verdict on the reviews table (source of truth)
+        # Record verdict on the review
         attempt = task.get("review_attempt", 0)
         boss_name = get_boss(hc_home) or "boss"
+        # Use reason as summary if no separate summary provided
+        summary = body.summary or body.reason
         if attempt > 0:
-            set_verdict(hc_home, team, task_id, attempt, "rejected", summary=body.reason, reviewer=boss_name)
+            set_verdict(hc_home, team, task_id, attempt, "rejected", summary=summary, reviewer=boss_name)
 
-        # Re-read task after status change (change_status clears approval fields)
-        updated = _get_task(hc_home, team, task_id)
+        updated = _update_task(hc_home, team, task_id,
+                               rejection_reason=body.reason,
+                               approval_status="rejected")
 
         # Send notification to manager via the notify module
         from delegate.notify import notify_rejection
@@ -634,7 +644,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 completed_at = task.get("completed_at")
                 ended = datetime.fromisoformat(completed_at.replace("Z", "+00:00")) if completed_at else datetime.now(timezone.utc)
                 elapsed_seconds = (ended - created).total_seconds()
-                return {"task_id": task_id, "elapsed_seconds": elapsed_seconds, "branch": task.get("branch", ""), "commits": task.get("commits", []), **stats}
+                return {"task_id": task_id, "elapsed_seconds": elapsed_seconds, "branch": task.get("branch", ""), **stats}
             except (FileNotFoundError, Exception):
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
@@ -646,7 +656,20 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             try:
                 task = _get_task(hc_home, t, task_id)
                 diff_dict = _get_task_diff(hc_home, t, task_id)
-                return {"task_id": task_id, "branch": task.get("branch", ""), "repo": task.get("repo", []), "commits": task.get("commits", {}), "diff": diff_dict, "merge_base": task.get("merge_base", {}), "merge_tip": task.get("merge_tip", {})}
+                return {"task_id": task_id, "branch": task.get("branch", ""), "repo": task.get("repo", []), "diff": diff_dict, "merge_base": task.get("merge_base", {}), "merge_tip": task.get("merge_tip", {})}
+            except (FileNotFoundError, Exception):
+                continue
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    @app.get("/tasks/{task_id}/activity")
+    def get_task_activity_global(task_id: int, limit: int | None = None):
+        """Get task activity — scans all teams (legacy compat)."""
+        from delegate.chat import get_task_activity
+
+        for t in _list_teams(hc_home):
+            try:
+                _get_task(hc_home, t, task_id)
+                return get_task_activity(hc_home, t, task_id, limit=limit)
             except (FileNotFoundError, Exception):
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
@@ -665,7 +688,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 summary = body.summary if body else ""
                 if attempt > 0:
                     set_verdict(hc_home, t, task_id, attempt, "approved", summary=summary, reviewer=boss_name)
-                updated = _get_task(hc_home, t, task_id)
+                updated = _update_task(hc_home, t, task_id, approval_status="approved")
                 _log_event(hc_home, t, f"{format_task_id(task_id)} approved \u2713", task_id=task_id)
                 return updated
             except FileNotFoundError:
@@ -679,12 +702,13 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         for t in _list_teams(hc_home):
             try:
                 task = _get_task(hc_home, t, task_id)
+                _change_status(hc_home, t, task_id, "rejected")
                 attempt = task.get("review_attempt", 0)
                 boss_name = get_boss(hc_home) or "boss"
+                summary = body.summary or body.reason
                 if attempt > 0:
-                    set_verdict(hc_home, t, task_id, attempt, "rejected", summary=body.reason, reviewer=boss_name)
-                _change_status(hc_home, t, task_id, "rejected")
-                updated = _get_task(hc_home, t, task_id)
+                    set_verdict(hc_home, t, task_id, attempt, "rejected", summary=summary, reviewer=boss_name)
+                updated = _update_task(hc_home, t, task_id, rejection_reason=body.reason, approval_status="rejected")
                 from delegate.notify import notify_rejection
                 notify_rejection(hc_home, t, task, reason=body.reason)
                 _log_event(hc_home, t, f"{format_task_id(task_id)} rejected \u2014 {body.reason}", task_id=task_id)
@@ -813,6 +837,33 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         sessions.reverse()
         return {"sessions": sessions}
 
+    @app.get("/teams/{team}/agents/{name}/reflections")
+    def get_agent_reflections(team: str, name: str):
+        """Return the agent's reflections markdown."""
+        ad = _agent_dir(hc_home, team, name)
+        if not ad.is_dir():
+            raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+        path = ad / "notes" / "reflections.md"
+        content = path.read_text() if path.exists() else ""
+        return {"content": content}
+
+    @app.get("/teams/{team}/agents/{name}/journal")
+    def get_agent_journal(team: str, name: str):
+        """Return the agent's task journals (one file per task)."""
+        ad = _agent_dir(hc_home, team, name)
+        if not ad.is_dir():
+            raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+        journals_dir = ad / "journals"
+        entries: list[dict] = []
+        if journals_dir.is_dir():
+            for f in sorted(journals_dir.iterdir(), reverse=True):
+                if f.suffix == ".md":
+                    content = f.read_text()
+                    if len(content) > 50 * 1024:
+                        content = content[-(50 * 1024):]
+                    entries.append({"filename": f.name, "content": content})
+        return {"entries": entries}
+
     # --- Shared files endpoints ---
 
     MAX_FILE_SIZE = 1_000_000  # 1 MB truncation limit
@@ -858,15 +909,13 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         entries.sort(key=lambda e: (not e["is_dir"], e["name"].lower()))
         return {"files": entries}
 
-    _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico"}
-    _BINARY_EXTS = {".zip", ".gz", ".tar", ".bin", ".exe", ".woff", ".woff2", ".ttf", ".eot", ".pdf"}
-
     @app.get("/teams/{team}/files/content")
     def read_shared_file(team: str, path: str):
-        """Read a specific file from the team's shared/ directory."""
-        import base64
-        import mimetypes
+        """Read a specific file from the team's shared/ directory.
 
+        For text files, returns content as string.
+        For images and binary files, returns base64-encoded data with content_type.
+        """
         base = _shared_dir(hc_home, team)
         target = (base / path).resolve()
 
@@ -884,35 +933,65 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
         stat = target.stat()
         ext = target.suffix.lower()
-        content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
 
-        # Binary/image handling
-        if ext in _IMAGE_EXTS or ext in _BINARY_EXTS:
-            raw = target.read_bytes()
+        # Image extensions
+        image_types = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".svg": "image/svg+xml",
+            ".webp": "image/webp",
+        }
+
+        # Common binary extensions (non-image)
+        binary_exts = {".pdf", ".zip", ".tar", ".gz", ".exe", ".bin", ".ico"}
+
+        if ext in image_types:
+            # Read as binary and encode as base64
+            data = target.read_bytes()
+            if len(data) > MAX_FILE_SIZE:
+                data = data[:MAX_FILE_SIZE]
             return {
                 "path": str(target.relative_to(base)),
                 "name": target.name,
                 "size": stat.st_size,
+                "content": base64.b64encode(data).decode("utf-8"),
+                "content_type": image_types[ext],
                 "is_binary": True,
-                "content_type": content_type,
-                "content": base64.b64encode(raw).decode() if ext in _IMAGE_EXTS else "",
-                "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                "modified": datetime.fromtimestamp(
+                    stat.st_mtime, tz=timezone.utc
+                ).isoformat(),
             }
-
-        # Text files
-        content = target.read_text(errors="replace")
-        if len(content) > MAX_FILE_SIZE:
-            content = content[:MAX_FILE_SIZE]
-
-        return {
-            "path": str(target.relative_to(base)),
-            "name": target.name,
-            "size": stat.st_size,
-            "is_binary": False,
-            "content_type": content_type,
-            "content": content,
-            "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
-        }
+        elif ext in binary_exts:
+            # Binary file - return metadata only
+            return {
+                "path": str(target.relative_to(base)),
+                "name": target.name,
+                "size": stat.st_size,
+                "content": "",
+                "content_type": "application/octet-stream",
+                "is_binary": True,
+                "modified": datetime.fromtimestamp(
+                    stat.st_mtime, tz=timezone.utc
+                ).isoformat(),
+            }
+        else:
+            # Text file - read as text
+            content = target.read_text(errors="replace")
+            if len(content) > MAX_FILE_SIZE:
+                content = content[:MAX_FILE_SIZE]
+            return {
+                "path": str(target.relative_to(base)),
+                "name": target.name,
+                "size": stat.st_size,
+                "content": content,
+                "content_type": "text/plain",
+                "is_binary": False,
+                "modified": datetime.fromtimestamp(
+                    stat.st_mtime, tz=timezone.utc
+                ).isoformat(),
+            }
 
     # --- Static files ---
     _static_dir = Path(__file__).parent / "static"
@@ -922,15 +1001,9 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     def index():
         return (_static_dir / "index.html").read_text()
 
-    # Catch-all for SPA path-based routing — serves index.html for any
-    # path that doesn't match an API route or a static file.
-    @app.get("/{path:path}", response_class=HTMLResponse, include_in_schema=False)
-    def spa_catch_all(path: str):
-        # Don't intercept /static/ or API paths (already handled above)
-        static_file = _static_dir / path
-        if static_file.is_file():
-            from fastapi.responses import FileResponse
-            return FileResponse(str(static_file))
+    # Catch-all for SPA routing (must be last to not intercept API routes)
+    @app.get("/{full_path:path}", response_class=HTMLResponse)
+    def catch_all(full_path: str = ""):
         return (_static_dir / "index.html").read_text()
 
     return app

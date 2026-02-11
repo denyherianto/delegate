@@ -22,7 +22,7 @@ from pathlib import Path
 
 from delegate.task import format_task_id
 
-from delegate.paths import repos_dir as _repos_dir, repo_path as _repo_path, agent_worktrees_dir
+from delegate.paths import repos_dir as _repos_dir, repo_path as _repo_path, agent_worktrees_dir, task_worktree_dir
 from delegate.config import (
     add_repo as _config_add_repo,
     get_repos as _config_get_repos,
@@ -202,19 +202,17 @@ def _get_main_head(repo_dir: Path) -> str:
     return result.stdout.strip()
 
 
-def create_agent_worktree(
+def create_task_worktree(
     hc_home: Path,
     team: str,
     repo_name: str,
-    agent: str,
     task_id: int,
     branch: str | None = None,
 ) -> Path:
-    """Create a git worktree for an agent working on a task.
+    """Create a git worktree for a task.
 
-    The worktree is created directly against the real repo (via symlink)
-    inside the agent's directory:
-        ~/.delegate/teams/<team>/agents/<agent>/worktrees/<repo_name>-T<task_id>/
+    The worktree lives at ``teams/{team}/worktrees/{repo_name}/T{task_id}/``
+    (one per task+repo, shared by all agents working on the task).
 
     Before creating the branch, fetches the latest from origin (if available)
     and records the base SHA (current main HEAD) on the task.
@@ -223,7 +221,6 @@ def create_agent_worktree(
         hc_home: Delegate home directory.
         team: Team name.
         repo_name: Name of the registered repo.
-        agent: Agent name.
         task_id: Task ID number.
         branch: Branch name (default: delegate/<team>/T<task_id>).
 
@@ -241,19 +238,13 @@ def create_agent_worktree(
 
     # Default branch name
     if branch is None:
-        from delegate.paths import get_team_id
-        tid = get_team_id(hc_home, team)
-        branch = f"delegate/{tid}/{team}/{format_task_id(task_id)}"
+        branch = f"delegate/{team}/{format_task_id(task_id)}"
 
-    # Worktree destination
-    wt_dir = agent_worktrees_dir(hc_home, team, agent)
-    wt_dir.mkdir(parents=True, exist_ok=True)
-    wt_name = f"{repo_name}-{format_task_id(task_id)}"
-    wt_path = wt_dir / wt_name
+    # Worktree destination (task-scoped)
+    wt_path = task_worktree_dir(hc_home, team, repo_name, task_id)
 
     if wt_path.exists():
-        # Worktree exists — backfill base_sha only if somehow missing
-        # (base_sha should always be set at task creation, but be defensive)
+        # Worktree exists — still backfill base_sha if missing on the task
         try:
             from delegate.task import get_task as _get_task, update_task as _update_task
             task = _get_task(hc_home, team, task_id)
@@ -262,15 +253,13 @@ def create_agent_worktree(
                 sha = _get_main_head(real_repo)
                 new_base = {**existing_base, repo_name: sha}
                 _update_task(hc_home, team, task_id, base_sha=new_base)
-                logger.warning(
-                    "Backfilled missing base_sha[%s]=%s for task %s — "
-                    "base_sha should have been set at task creation",
-                    repo_name, sha[:8], task_id,
-                )
+                logger.info("Backfilled base_sha[%s]=%s for existing worktree %s", repo_name, sha[:8], task_id)
         except Exception as exc:
             logger.warning("Could not backfill base_sha for %s: %s", task_id, exc)
         logger.info("Worktree already exists at %s", wt_path)
         return wt_path
+
+    wt_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Fetch latest before creating worktree (best effort)
     subprocess.run(
@@ -280,20 +269,15 @@ def create_agent_worktree(
         check=False,  # Don't fail if fetch fails (offline, no remote)
     )
 
-    # Backfill base_sha if somehow not set at task creation (defensive)
+    # Record base SHA (current main HEAD) on the task (per-repo dict)
     try:
+        sha = _get_main_head(real_repo)
         from delegate.task import get_task as _gt, update_task as _ut
         existing_task = _gt(hc_home, team, task_id)
         existing_base: dict = existing_task.get("base_sha", {})
-        if not existing_base or repo_name not in existing_base:
-            sha = _get_main_head(real_repo)
-            new_base = {**existing_base, repo_name: sha}
-            _ut(hc_home, team, task_id, base_sha=new_base)
-            logger.warning(
-                "Backfilled missing base_sha[%s]=%s for task %s — "
-                "base_sha should have been set at task creation",
-                repo_name, sha[:8], task_id,
-            )
+        new_base = {**existing_base, repo_name: sha}
+        _ut(hc_home, team, task_id, base_sha=new_base)
+        logger.info("Recorded base_sha[%s]=%s for %s", repo_name, sha[:8], task_id)
     except Exception as exc:
         logger.warning("Could not record base_sha for %s: %s", task_id, exc)
 
@@ -309,27 +293,23 @@ def create_agent_worktree(
     return wt_path
 
 
-def remove_agent_worktree(
+def remove_task_worktree(
     hc_home: Path,
     team: str,
     repo_name: str,
-    agent: str,
     task_id: int,
 ) -> None:
-    """Remove an agent's worktree for a task.
+    """Remove the worktree for a task.
 
     Args:
         hc_home: Delegate home directory.
         team: Team name.
         repo_name: Name of the registered repo.
-        agent: Agent name.
         task_id: Task ID number.
     """
     repo_dir = get_repo_path(hc_home, team, repo_name)
     real_repo = repo_dir.resolve()
-    wt_dir = agent_worktrees_dir(hc_home, team, agent)
-    wt_name = f"{repo_name}-{format_task_id(task_id)}"
-    wt_path = wt_dir / wt_name
+    wt_path = task_worktree_dir(hc_home, team, repo_name, task_id)
 
     if not wt_path.exists():
         logger.info("Worktree already removed: %s", wt_path)
@@ -360,6 +340,46 @@ def remove_agent_worktree(
     logger.info("Removed worktree at %s", wt_path)
 
 
+def get_task_worktree_path(
+    hc_home: Path,
+    team: str,
+    repo_name: str,
+    task_id: int,
+) -> Path:
+    """Get the path to a task's worktree.
+
+    Returns the path even if the worktree doesn't exist yet.
+    """
+    return task_worktree_dir(hc_home, team, repo_name, task_id)
+
+
+# ---------------------------------------------------------------------------
+# Legacy wrappers (thin compatibility shims)
+# ---------------------------------------------------------------------------
+
+def create_agent_worktree(
+    hc_home: Path,
+    team: str,
+    repo_name: str,
+    agent: str,
+    task_id: int,
+    branch: str | None = None,
+) -> Path:
+    """Legacy wrapper — delegates to ``create_task_worktree``."""
+    return create_task_worktree(hc_home, team, repo_name, task_id, branch=branch)
+
+
+def remove_agent_worktree(
+    hc_home: Path,
+    team: str,
+    repo_name: str,
+    agent: str,
+    task_id: int,
+) -> None:
+    """Legacy wrapper — delegates to ``remove_task_worktree``."""
+    remove_task_worktree(hc_home, team, repo_name, task_id)
+
+
 def get_worktree_path(
     hc_home: Path,
     team: str,
@@ -367,66 +387,8 @@ def get_worktree_path(
     agent: str,
     task_id: int,
 ) -> Path:
-    """Get the path to an agent's worktree for a task.
-
-    Returns the path even if the worktree doesn't exist yet.
-    """
-    wt_dir = agent_worktrees_dir(hc_home, team, agent)
-    wt_name = f"{repo_name}-{format_task_id(task_id)}"
-    return wt_dir / wt_name
-
-
-def any_worktrees_exist(
-    hc_home: Path,
-    team: str,
-    repo_name: str,
-    task_id: int,
-) -> bool:
-    """Check if any agent still has a worktree for *task_id* in *repo_name*."""
-    from delegate.paths import agents_dir
-    ad = agents_dir(hc_home, team)
-    if not ad.is_dir():
-        return False
-    wt_name = f"{repo_name}-{format_task_id(task_id)}"
-    for agent_d in ad.iterdir():
-        if not agent_d.is_dir():
-            continue
-        wt_path = agent_d / "worktrees" / wt_name
-        if wt_path.exists():
-            return True
-    return False
-
-
-def remove_all_worktrees_for_task(
-    hc_home: Path,
-    team: str,
-    repo_name: str,
-    task_id: int,
-) -> int:
-    """Remove every agent's worktree for *task_id* in *repo_name*.
-
-    Returns the number of worktrees removed.
-    """
-    from delegate.paths import agents_dir
-    ad = agents_dir(hc_home, team)
-    if not ad.is_dir():
-        return 0
-    removed = 0
-    for agent_d in ad.iterdir():
-        if not agent_d.is_dir():
-            continue
-        agent_name = agent_d.name
-        wt_path = get_worktree_path(hc_home, team, repo_name, agent_name, task_id)
-        if wt_path.exists():
-            try:
-                remove_agent_worktree(hc_home, team, repo_name, agent_name, task_id)
-                removed += 1
-            except Exception as exc:
-                logger.warning(
-                    "Failed to remove worktree for %s/%s: %s",
-                    agent_name, format_task_id(task_id), exc,
-                )
-    return removed
+    """Legacy wrapper — delegates to ``get_task_worktree_path``."""
+    return get_task_worktree_path(hc_home, team, repo_name, task_id)
 
 
 def push_branch(

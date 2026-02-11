@@ -46,13 +46,6 @@ function Dropdown({ items, onSelect, onClose, multiSelect, selected, anchorRef }
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose, anchorRef]);
 
-  const filtered = search
-    ? items.filter(it => {
-        const label = typeof it === "string" ? it : it.label;
-        return label.toLowerCase().includes(search.toLowerCase());
-      })
-    : items;
-
   // Keyboard nav
   useEffect(() => {
     const handler = (e) => {
@@ -63,7 +56,14 @@ function Dropdown({ items, onSelect, onClose, multiSelect, selected, anchorRef }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [focusIdx, onClose, onSelect, filtered]);
+  }, [focusIdx, onClose, onSelect, items, search]);
+
+  const filtered = search
+    ? items.filter(it => {
+        const label = typeof it === "string" ? it : it.label;
+        return label.toLowerCase().includes(search.toLowerCase());
+      })
+    : items;
 
   // Reset focus on search change
   useEffect(() => setFocusIdx(0), [search]);
@@ -80,10 +80,9 @@ function Dropdown({ items, onSelect, onClose, multiSelect, selected, anchorRef }
           value={search}
           onInput={(e) => setSearch(e.target.value)}
           autoFocus
-          aria-label="Search filter options"
         />
       )}
-      <div class="fb-dropdown-list" role="listbox">
+      <div class="fb-dropdown-list">
         {filtered.length === 0 && <div class="fb-dropdown-empty">No matches</div>}
         {filtered.map((item, i) => {
           const key = typeof item === "string" ? item : item.key;
@@ -97,8 +96,6 @@ function Dropdown({ items, onSelect, onClose, multiSelect, selected, anchorRef }
                 (i === focusIdx ? " focused" : "") +
                 (isSelected ? " selected" : "")
               }
-              role="option"
-              aria-selected={isSelected}
               onMouseEnter={() => setFocusIdx(i)}
               onClick={() => onSelect(item)}
             >
@@ -184,7 +181,7 @@ function FilterPill({ filter, fieldConfig, onChange, onRemove }) {
       <span class="fb-pill-value" onClick={() => setEditingPart(editingPart === "value" ? null : "value")}>
         {valuesLabel}
       </span>
-      <span class="fb-pill-remove" onClick={onRemove} aria-label="Remove filter">&times;</span>
+      <span class="fb-pill-remove" onClick={onRemove}>&times;</span>
 
       {editingPart === "field" && (
         <Dropdown
@@ -265,7 +262,7 @@ function AddFilterButton({ fieldConfig, onAdd }) {
 
   return (
     <div class="fb-add-wrap" ref={btnRef}>
-      <button class="fb-add-btn" onClick={() => setStep(step ? null : "field")} aria-label="Add filter">
+      <button class="fb-add-btn" onClick={() => setStep(step ? null : "field")}>
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
           <line x1="6" y1="2" x2="6" y2="10" /><line x1="2" y1="6" x2="10" y2="6" />
         </svg>
@@ -320,7 +317,7 @@ export function FilterBar({ filters, onFiltersChange, fieldConfig }) {
   }, [filters, onFiltersChange]);
 
   return (
-    <div class="fb-bar" role="toolbar" aria-label="Task filters">
+    <div class="fb-bar">
       {filters.map((f, i) => (
         <FilterPill
           key={f.field + "-" + i}

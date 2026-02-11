@@ -2,14 +2,9 @@
 
 ## For All Agents
 
-### No Chatty Acknowledgments
+### Acknowledge Before Deep Work
 
-Do NOT send pure-acknowledgment messages like "Got it", "Thanks", "Standing by", "Working on this now", or "Understood". The system automatically tracks delivery and read status — senders already see when their message has been delivered and processed. Every message you send costs time and money. Only send a message when you have:
-- **Substantive information** to share (a result, a design, a diff)
-- **A question** that blocks your progress
-- **A status update** with concrete detail (what's done, what's next, what's blocked)
-
-If you are going to start work, just start. Don't announce it first.
+When you receive a message (especially from the boss or manager), send a lightweight acknowledgment immediately: "Got it, working on this now." Don't make people wait in silence while you're heads-down.
 
 ### Task Journals
 
