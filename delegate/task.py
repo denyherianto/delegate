@@ -47,7 +47,7 @@ _TASK_FIELDS = frozenset({
     "id", "title", "description", "status", "dri", "assignee",
     "project", "priority", "repo", "tags", "created_at", "updated_at",
     "completed_at", "depends_on", "branch", "base_sha", "commits",
-    "rejection_reason", "approval_status", "merge_base", "merge_tip",
+    "merge_base", "merge_tip",
     "attachments", "review_attempt",
 })
 
@@ -107,13 +107,13 @@ def create_task(
                 project, priority, repo, tags,
                 created_at, updated_at, completed_at,
                 depends_on, branch, base_sha, commits,
-                rejection_reason, approval_status, merge_base, merge_tip
+                merge_base, merge_tip
             ) VALUES (
                 ?, ?, 'todo', '', '',
                 ?, ?, ?, ?,
                 ?, ?, '',
                 ?, '', '{}', '{}',
-                '', '', '{}', '{}'
+                '{}', '{}'
             )""",
             (
                 title, description,
@@ -315,14 +315,11 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str) -> dict:
     if status in ("in_review", "in_approval"):
         _backfill_branch_metadata(hc_home, team, old_task, updates)
 
-    # When entering in_approval, increment review_attempt, create a pending
-    # review row, and clear stale task-level approval fields.
+    # When entering in_approval, increment review_attempt and create a pending
+    # review row.
     if status == "in_approval":
         new_attempt = old_task.get("review_attempt", 0) + 1
         updates["review_attempt"] = new_attempt
-        # Clear stale task-level fields so they don't ghost from prior attempts
-        updates["approval_status"] = ""
-        updates["rejection_reason"] = ""
 
     task = update_task(hc_home, team, task_id, **updates)
 

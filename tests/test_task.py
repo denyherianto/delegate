@@ -18,7 +18,6 @@ from delegate.task import (
     get_task_diff,
     VALID_STATUSES,
     VALID_TRANSITIONS,
-    VALID_APPROVAL_STATUSES,
     format_task_id,
 )
 
@@ -409,48 +408,6 @@ class TestBranchAndCommits:
         assert isinstance(task["branch"], str)
         assert isinstance(task["commits"], dict)
 
-
-class TestMergeQueueFields:
-    """Tests for rejection_reason and approval_status fields."""
-
-    def test_create_task_has_new_fields(self, tmp_team):
-        task = create_task(tmp_team, TEAM, title="Merge Queue Task")
-        assert task["rejection_reason"] == ""
-        assert task["approval_status"] == ""
-
-    def test_new_fields_persisted(self, tmp_team):
-        task = create_task(tmp_team, TEAM, title="Merge Queue Task")
-        loaded = get_task(tmp_team, TEAM, task["id"])
-        assert loaded["rejection_reason"] == ""
-        assert loaded["approval_status"] == ""
-
-    def test_update_rejection_reason(self, tmp_team):
-        task = create_task(tmp_team, TEAM, title="Work")
-        updated = update_task(tmp_team, TEAM, task["id"], rejection_reason="Code quality issues")
-        assert updated["rejection_reason"] == "Code quality issues"
-        loaded = get_task(tmp_team, TEAM, task["id"])
-        assert loaded["rejection_reason"] == "Code quality issues"
-
-    def test_update_approval_status(self, tmp_team):
-        task = create_task(tmp_team, TEAM, title="Work")
-        updated = update_task(tmp_team, TEAM, task["id"], approval_status="pending")
-        assert updated["approval_status"] == "pending"
-        loaded = get_task(tmp_team, TEAM, task["id"])
-        assert loaded["approval_status"] == "pending"
-
-    def test_fields_survive_status_change(self, tmp_team):
-        task = create_task(tmp_team, TEAM, title="Work")
-        update_task(tmp_team, TEAM, task["id"], rejection_reason="Needs fixes", approval_status="rejected")
-        updated = change_status(tmp_team, TEAM, task["id"], "in_progress")
-        assert updated["rejection_reason"] == "Needs fixes"
-        assert updated["approval_status"] == "rejected"
-
-    def test_defaults_on_fresh_task(self, tmp_team):
-        """Tasks created fresh should have empty defaults for merge queue fields."""
-        task = create_task(tmp_team, TEAM, title="Fresh Task")
-        loaded = get_task(tmp_team, TEAM, task["id"])
-        assert loaded["rejection_reason"] == ""
-        assert loaded["approval_status"] == ""
 
 
 class TestBranchMetadataBackfill:

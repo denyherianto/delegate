@@ -182,6 +182,13 @@ CREATE TABLE IF NOT EXISTS review_comments (
 CREATE INDEX IF NOT EXISTS idx_review_comments_task_attempt
     ON review_comments(task_id, attempt);
 """,
+
+    # --- V6: drop legacy approval columns from tasks ---
+    # Verdicts now live in the reviews table (keyed on task_id + attempt).
+    """\
+ALTER TABLE tasks DROP COLUMN approval_status;
+ALTER TABLE tasks DROP COLUMN rejection_reason;
+""",
 ]
 
 # Columns that store JSON arrays and need parse/serialize on read/write.

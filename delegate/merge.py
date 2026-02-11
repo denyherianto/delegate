@@ -1,6 +1,6 @@
 """Merge worker — rebase, test, fast-forward merge for approved tasks.
 
-The merge sequence for a task in ``in_approval`` with ``approval_status == 'approved'``
+The merge sequence for a task in ``in_approval`` with an approved review verdict
 (or ``approval == 'auto'`` on the repo):
 
 1. ``git rebase --onto main <base_sha> <branch>``  — rebase the agent's commits onto latest main.
@@ -342,7 +342,7 @@ def merge_once(hc_home: Path, team: str) -> list[MergeResult]:
 
     A task is ready to merge if:
     - status == 'in_approval'
-    - approval_status == 'approved' (for manual-approval repos)
+    - current review verdict == 'approved' (for manual-approval repos)
     - OR the repo has approval == 'auto'
 
     Returns list of merge results.

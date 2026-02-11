@@ -464,8 +464,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         if attempt > 0:
             set_verdict(hc_home, team, task_id, attempt, "approved", summary=summary, reviewer=boss_name)
 
-        # Task-level approval_status kept for merge.py compat (will be removed)
-        updated = _update_task(hc_home, team, task_id, approval_status="approved")
+        updated = _get_task(hc_home, team, task_id)
         _log_event(hc_home, team, f"{format_task_id(task_id)} approved \u2713")
         return updated
 
@@ -590,7 +589,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 summary = body.summary if body else ""
                 if attempt > 0:
                     set_verdict(hc_home, t, task_id, attempt, "approved", summary=summary, reviewer=boss_name)
-                updated = _update_task(hc_home, t, task_id, approval_status="approved")
+                updated = _get_task(hc_home, t, task_id)
                 _log_event(hc_home, t, f"{format_task_id(task_id)} approved \u2713")
                 return updated
             except FileNotFoundError:
