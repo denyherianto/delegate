@@ -28,12 +28,11 @@ class TestMessageSerialization:
             body="Hello Bob!",
         )
         text = msg.serialize()
-        parsed = Message.deserialize(text, filename="test.msg")
+        parsed = Message.deserialize(text)
         assert parsed.sender == "alice"
         assert parsed.recipient == "bob"
         assert parsed.time == "2026-02-08T12:00:00.000000Z"
         assert parsed.body == "Hello Bob!"
-        assert parsed.filename == "test.msg"
 
     def test_multiline_body(self):
         body = "Line 1\nLine 2\nLine 3"
@@ -61,7 +60,7 @@ class TestMessageSerialization:
 class TestSend:
     def test_send_returns_id(self, tmp_team):
         msg_id = send(tmp_team, TEAM, "alice", "bob", "Hello")
-        assert msg_id.isdigit()
+        assert isinstance(msg_id, int) and msg_id > 0
 
     def test_send_delivers_immediately(self, tmp_team):
         """Messages are delivered on send — visible in recipient inbox."""
@@ -202,7 +201,7 @@ class TestDeliver:
             body="Delivered!",
         )
         msg_id = deliver(tmp_team, TEAM, msg)
-        assert msg_id.isdigit()
+        assert isinstance(msg_id, int) and msg_id > 0
 
         inbox = read_inbox(tmp_team, TEAM, "bob")
         assert len(inbox) == 1

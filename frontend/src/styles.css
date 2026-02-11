@@ -405,7 +405,7 @@ body {
 /* ---- Content ---- */
 .content { max-width: 1000px; width: 100%; margin: 0 auto; padding: 24px; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .panel { display: none; }
-.panel.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.panel.active { display: flex; flex-direction: column; flex: 1; min-height: 0; position: relative; }
 
 /* ---- Tasks ---- */
 .task-list { display: flex; flex-direction: column; gap: 2px; }
@@ -517,6 +517,31 @@ body {
 /* Agent name links in events */
 .agent-link { color: var(--text-primary); font-weight: 500; cursor: pointer; transition: color 100ms; }
 .agent-link:hover { color: var(--accent); }
+/* ---- Chat jump-to-bottom button ---- */
+.chat-jump-btn {
+  position: absolute;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  transition: background 100ms, color 100ms;
+}
+.chat-jump-btn:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
 /* ---- Chat Input Container ---- */
 .chat-input-container {
   border: 1px solid var(--border-input);

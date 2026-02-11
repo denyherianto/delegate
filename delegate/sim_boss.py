@@ -161,8 +161,8 @@ async def _process_inbox(
         )
 
         # Mark the message as read
-        if msg.filename:
-            mark_processed(hc_home, team, msg.filename)
+        if msg.id is not None:
+            mark_processed(hc_home, team, msg.id)
 
         processed += 1
 

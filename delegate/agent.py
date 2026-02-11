@@ -682,8 +682,11 @@ def build_reflection_message(hc_home: Path, team: str, agent: str) -> str:
         "This is a dedicated reflection turn — no inbox messages to process.",
         "Please do the following:",
         f"1. Review your recent task journals in {journals_dir}/",
-        f"2. Update {reflections_path} with patterns, lessons, and goals.",
-        "   Keep it concise — bullet points, not essays.",
+        f"2. Update {reflections_path} — bullet points only.",
+        "   ONLY include reflections that are actionable in future situations.",
+        "   Prune stale or obvious entries. Keep the file under 30 bullets.",
+        "   Good: 'Always run tests before in_review — missed broken import.'",
+        "   Bad: 'Worked on T0005, it was challenging but rewarding.'",
         f"3. Optionally review {feedback_path} and incorporate learnings.",
         "4. This file is inlined in your prompt, so future turns benefit "
         "from what you write here.",

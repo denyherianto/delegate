@@ -51,7 +51,7 @@ class TestAgentsWithUnread:
         # Mark it processed
         inbox = read_inbox(tmp_team, TEAM, "alice", unread_only=True)
         assert len(inbox) == 1
-        mark_processed(tmp_team, TEAM, inbox[0].filename)
+        mark_processed(tmp_team, TEAM, inbox[0].id)
         # Now should be empty
         result = agents_with_unread(tmp_team, TEAM)
         assert "alice" not in result

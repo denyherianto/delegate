@@ -475,8 +475,8 @@ def process_inbox(hc_home: Path, team: str) -> list[ReviewResult]:
         else:
             logger.warning("Unrecognized message in QA inbox: %s", msg.body[:100])
 
-        if msg.filename:
-            mark_processed(hc_home, team, msg.filename)
+        if msg.id is not None:
+            mark_processed(hc_home, team, msg.id)
 
     return results
 

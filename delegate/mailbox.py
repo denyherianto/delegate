@@ -34,8 +34,6 @@ class Message:
     time: str
     body: str
     id: int | None = None
-    # Legacy compat: some call sites still reference .filename
-    filename: str | None = None
     delivered_at: str | None = None
     seen_at: str | None = None
     processed_at: str | None = None
@@ -46,7 +44,7 @@ class Message:
         return f"sender: {self.sender}\nrecipient: {self.recipient}\ntime: {self.time}\n---\n{self.body}"
 
     @classmethod
-    def deserialize(cls, text: str, filename: str | None = None) -> "Message":
+    def deserialize(cls, text: str) -> "Message":
         """Parse a message from the legacy file format."""
         header, _, body = text.partition("\n---\n")
         fields = {}
@@ -58,7 +56,6 @@ class Message:
             recipient=fields["recipient"],
             time=fields["time"],
             body=body,
-            filename=filename,
         )
 
 
@@ -74,7 +71,6 @@ def _row_to_message(row) -> Message:
         time=row["created_at"],
         body=row["body"],
         id=row["id"],
-        filename=str(row["id"]),  # backwards compat for code using .filename
         delivered_at=row["delivered_at"],
         seen_at=row["seen_at"],
         processed_at=row["processed_at"],
@@ -94,14 +90,13 @@ def send(
     message: str,
     *,
     task_id: int | None = None,
-) -> str:
+) -> int:
     """Send a message by inserting into the team's mailbox table.
 
     Messages are delivered immediately (``delivered_at`` set on insert).
     Also logs the message to the chat event stream.
 
-    Returns the message id as a string (for backward compatibility with
-    code that expects a filename).
+    Returns the message id.
     """
     # Soft validation: warn when non-boss messages lack task_id
     if task_id is None:
@@ -134,7 +129,7 @@ def send(
     from delegate.chat import log_message
     log_message(hc_home, team, sender, recipient, message, task_id=task_id)
 
-    return str(msg_id)
+    return msg_id
 
 
 def read_inbox(
@@ -187,12 +182,8 @@ def read_outbox(
     return [_row_to_message(r) for r in rows]
 
 
-def mark_seen(hc_home: Path, team: str, msg_identifier: str) -> None:
-    """Mark a message as seen (agent control loop picked it up at turn start).
-
-    *msg_identifier* is the message id as a string.
-    """
-    msg_id = int(msg_identifier)
+def mark_seen(hc_home: Path, team: str, msg_id: int) -> None:
+    """Mark a message as seen (agent control loop picked it up at turn start)."""
     conn = get_connection(hc_home, team)
     try:
         conn.execute(
@@ -204,7 +195,7 @@ def mark_seen(hc_home: Path, team: str, msg_identifier: str) -> None:
         conn.close()
 
 
-def mark_seen_batch(hc_home: Path, team: str, msg_ids: list[str]) -> None:
+def mark_seen_batch(hc_home: Path, team: str, msg_ids: list[int]) -> None:
     """Mark multiple messages as seen in a single transaction."""
     if not msg_ids:
         return
@@ -213,19 +204,15 @@ def mark_seen_batch(hc_home: Path, team: str, msg_ids: list[str]) -> None:
     try:
         conn.executemany(
             "UPDATE mailbox SET seen_at = ? WHERE id = ? AND seen_at IS NULL",
-            [(now, int(mid)) for mid in msg_ids],
+            [(now, mid) for mid in msg_ids],
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def mark_processed(hc_home: Path, team: str, msg_identifier: str) -> None:
-    """Mark a message as processed (agent finished the turn).
-
-    *msg_identifier* is the message id as a string.
-    """
-    msg_id = int(msg_identifier)
+def mark_processed(hc_home: Path, team: str, msg_id: int) -> None:
+    """Mark a message as processed (agent finished the turn)."""
     conn = get_connection(hc_home, team)
     try:
         conn.execute(
@@ -237,7 +224,7 @@ def mark_processed(hc_home: Path, team: str, msg_identifier: str) -> None:
         conn.close()
 
 
-def mark_processed_batch(hc_home: Path, team: str, msg_ids: list[str]) -> None:
+def mark_processed_batch(hc_home: Path, team: str, msg_ids: list[int]) -> None:
     """Mark multiple messages as processed in a single transaction."""
     if not msg_ids:
         return
@@ -246,7 +233,7 @@ def mark_processed_batch(hc_home: Path, team: str, msg_ids: list[str]) -> None:
     try:
         conn.executemany(
             "UPDATE mailbox SET processed_at = ? WHERE id = ? AND processed_at IS NULL",
-            [(now, int(mid)) for mid in msg_ids],
+            [(now, mid) for mid in msg_ids],
         )
         conn.commit()
     finally:
@@ -254,14 +241,13 @@ def mark_processed_batch(hc_home: Path, team: str, msg_ids: list[str]) -> None:
 
 
 def mark_outbox_routed(
-    hc_home: Path, team: str, agent: str, msg_identifier: str,
+    hc_home: Path, team: str, agent: str, msg_id: int,
 ) -> None:
     """Mark a message as delivered/routed (set delivered_at).
 
     With immediate delivery in ``send()``, this is typically a no-op.
     Kept for backward compatibility.
     """
-    msg_id = int(msg_identifier)
     conn = get_connection(hc_home, team)
     try:
         conn.execute(
@@ -273,14 +259,14 @@ def mark_outbox_routed(
         conn.close()
 
 
-def deliver(hc_home: Path, team: str, message: Message) -> str:
+def deliver(hc_home: Path, team: str, message: Message) -> int:
     """Deliver a message directly to the recipient's inbox.
 
     Equivalent to ``send()`` but takes a pre-built Message object.
     Uses ``message.task_id`` if set.
     Used by notification helpers that construct Messages themselves.
 
-    Returns the message id as a string.
+    Returns the message id.
     """
     now = _now()
     conn = get_connection(hc_home, team)
@@ -295,7 +281,7 @@ def deliver(hc_home: Path, team: str, message: Message) -> str:
         msg_id = cursor.lastrowid
     finally:
         conn.close()
-    return str(msg_id)
+    return msg_id
 
 
 def recent_processed(

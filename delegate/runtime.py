@@ -321,7 +321,7 @@ async def run_turn(
             format_task_id(current_task_id), current_task["status"],
             len(batch), agent,
         )
-        msg_ids = [m.filename for m in batch if m.filename]
+        msg_ids = [m.id for m in batch if m.id is not None]
         if msg_ids:
             mark_seen_batch(hc_home, team, msg_ids)
             mark_processed_batch(hc_home, team, msg_ids)
@@ -334,7 +334,7 @@ async def run_turn(
     )
 
     # --- Mark selected messages as seen ---
-    seen_ids = [m.filename for m in batch if m.filename]
+    seen_ids = [m.id for m in batch if m.id is not None]
     if seen_ids:
         mark_seen_batch(hc_home, team, seen_ids)
 
@@ -565,6 +565,6 @@ async def run_turn(
 
 def _mark_batch_processed(hc_home: Path, team: str, batch: list[Message]) -> None:
     """Mark all messages in the batch as processed."""
-    ids = [m.filename for m in batch if m.filename]
+    ids = [m.id for m in batch if m.id is not None]
     if ids:
         mark_processed_batch(hc_home, team, ids)

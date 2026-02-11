@@ -92,14 +92,14 @@ class TestNotifyRejection:
         body = inbox[0].body
         assert "(no reason provided)" in body
 
-    def test_returns_id_string(self, notify_team):
-        """notify_rejection returns the message id as a string."""
+    def test_returns_id_int(self, notify_team):
+        """notify_rejection returns the message id as an int."""
         task = _make_task_at_in_approval(notify_team)
         change_status(notify_team, TEAM, task["id"], "rejected")
 
         result = notify_rejection(notify_team, TEAM, task, reason="Test")
         assert result is not None
-        assert result.isdigit()
+        assert isinstance(result, int) and result > 0
 
 
 class TestNotifyConflict:
@@ -166,12 +166,12 @@ class TestNotifyConflict:
         body = inbox[0].body
         assert "(no details available)" in body
 
-    def test_returns_id_string(self, notify_team):
-        """notify_conflict returns the message id as a string."""
+    def test_returns_id_int(self, notify_team):
+        """notify_conflict returns the message id as an int."""
         task = _make_task_at_in_approval(notify_team)
         change_status(notify_team, TEAM, task["id"], "merging")
         change_status(notify_team, TEAM, task["id"], "merge_failed")
 
         result = notify_conflict(notify_team, TEAM, task, conflict_details="Test")
         assert result is not None
-        assert result.isdigit()
+        assert isinstance(result, int) and result > 0

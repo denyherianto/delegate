@@ -107,6 +107,9 @@ export function ChatPanel() {
   const searchTimerRef = useRef(null);
   const lastMsgTsRef = useRef("");
   const cooldownRef = useRef(false);
+  const isAtBottomRef = useRef(true);
+  const [showJumpBtn, setShowJumpBtn] = useState(false);
+  const initialScrollDone = useRef(false);
 
   const mic = useSpeechRecognition(inputRef);
 
@@ -174,24 +177,44 @@ export function ChatPanel() {
     return filtered;
   }, [msgs, showEvents, filterFrom, filterTo, filterSearch, direction]);
 
-  // Scroll to bottom on initial load
+  // Track scroll position to decide whether to auto-scroll
   useEffect(() => {
     const el = logRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const onScroll = () => {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      isAtBottomRef.current = nearBottom;
+      setShowJumpBtn(!nearBottom);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Auto-scroll when new messages arrive (only if near bottom)
+  // Scroll to bottom on initial load (once messages are available)
   useEffect(() => {
     const el = logRef.current;
-    if (el) {
-      const wasNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-      if (wasNearBottom) {
-        requestAnimationFrame(() => {
-          el.scrollTop = el.scrollHeight;
-        });
-      }
+    if (!el || !filteredMsgs.length || initialScrollDone.current) return;
+    initialScrollDone.current = true;
+    requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+  }, [filteredMsgs]);
+
+  // Auto-scroll when new messages arrive — only if already at bottom
+  useEffect(() => {
+    if (!initialScrollDone.current) return;
+    const el = logRef.current;
+    if (el && isAtBottomRef.current) {
+      requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     }
   }, [filteredMsgs]);
+
+  const jumpToBottom = useCallback(() => {
+    const el = logRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+      isAtBottomRef.current = true;
+      setShowJumpBtn(false);
+    }
+  }, []);
 
   // Agent options for filters and recipient
   const agentOptions = useMemo(() => {
@@ -223,6 +246,13 @@ export function ChatPanel() {
       if (inputRef.current) { inputRef.current.value = ""; inputRef.current.style.height = "auto"; }
       setInputVal("");
       setSendBtnActive(false);
+      // Always scroll to bottom after sending
+      isAtBottomRef.current = true;
+      setShowJumpBtn(false);
+      requestAnimationFrame(() => {
+        const el = logRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
     } catch (e) {
       showToast("Failed to send message", "error");
     }
@@ -340,6 +370,13 @@ export function ChatPanel() {
           );
         })}
       </div>
+      {showJumpBtn && (
+        <button class="chat-jump-btn" onClick={jumpToBottom} title="Jump to latest">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="7" y1="2" x2="7" y2="12" /><polyline points="3,8 7,12 11,8" />
+          </svg>
+        </button>
+      )}
       <div class="chat-input-container">
         <div class="chat-input-top">
           <select value={recipient} onChange={e => setRecipient(e.target.value)}>
