@@ -114,6 +114,10 @@ html, body { height: 100%; }
 .d2h-code-linenumber,
 .d2h-code-side-linenumber {
   position: static !important;
+  width: auto !important;
+  min-width: 28px !important;
+  max-width: 48px !important;
+  padding: 0 6px !important;
 }
 .d2h-file-header {
   position: static !important;
@@ -426,9 +430,8 @@ body {
 .btn-reject { padding: 8px 20px; border-radius: 4px; border: 1px solid rgba(248,113,113,0.4); background: rgba(248,113,113,0.08); color: var(--status-attention); font-family: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 100ms, border-color 100ms; }
 .btn-reject:hover { background: rgba(248,113,113,0.16); border-color: rgba(248,113,113,0.6); }
 .btn-reject:disabled { opacity: 0.5; cursor: not-allowed; }
-.reject-reason-input { width: 100%; padding: 8px 12px; border-radius: 4px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: inherit; font-size: 13px; outline: none; transition: border-color 100ms; }
-.reject-reason-input:focus { border-color: var(--border-focus); }
-.reject-reason-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.review-comment-input { width: 100%; padding: 8px 12px; border-radius: 4px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: inherit; font-size: 13px; outline: none; transition: border-color 100ms; resize: vertical; margin-bottom: 12px; }
+.review-comment-input:focus { border-color: var(--border-focus); }
 .approval-badge { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 4px; font-size: 13px; font-weight: 500; }
 .approval-badge-approved { background: rgba(74,222,128,0.12); color: var(--status-active); }
 .approval-badge-rejected { background: rgba(248,113,113,0.12); color: var(--status-attention); }

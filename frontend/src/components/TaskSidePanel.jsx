@@ -68,10 +68,8 @@ let setTabFromBadge = null;
 // ── Approval Actions (Changes tab) ──
 function ApprovalActions({ task, review, onApproved, onRejected }) {
   const [loading, setLoading] = useState(false);
-  const [showReject, setShowReject] = useState(false);
-  const [rejectReason, setRejectReason] = useState("");
+  const [comment, setComment] = useState("");
   const [result, setResult] = useState(null); // "approved" | "rejected" | null
-  const inputRef = useRef();
 
   const { status } = task;
   const verdict = review ? review.verdict : null;
@@ -81,7 +79,7 @@ function ApprovalActions({ task, review, onApproved, onRejected }) {
     return <div class="task-review-box task-review-box-approved"><div class="approval-badge approval-badge-approved">&#10004; Approved &amp; Merged</div></div>;
   }
   if (status === "rejected" || verdict === "rejected" || result === "rejected") {
-    const reason = result === "rejected" ? rejectReason : summary;
+    const reason = result === "rejected" ? comment : summary;
     return (
       <div class="task-review-box task-review-box-rejected">
         <div class="approval-badge approval-badge-rejected">&#10006; Changes Rejected</div>
@@ -94,7 +92,7 @@ function ApprovalActions({ task, review, onApproved, onRejected }) {
   const handleApprove = async () => {
     setLoading(true);
     try {
-      await api.approveTask(currentTeam.value, task.id);
+      await api.approveTask(currentTeam.value, task.id, comment);
       setResult("approved");
       if (onApproved) onApproved();
     } catch (e) {
@@ -107,7 +105,7 @@ function ApprovalActions({ task, review, onApproved, onRejected }) {
   const handleReject = async () => {
     setLoading(true);
     try {
-      await api.rejectTask(currentTeam.value, task.id, rejectReason || "(no reason)");
+      await api.rejectTask(currentTeam.value, task.id, comment || "(no reason)");
       setResult("rejected");
       if (onRejected) onRejected();
     } catch (e) {
@@ -120,6 +118,14 @@ function ApprovalActions({ task, review, onApproved, onRejected }) {
   return (
     <div class="task-review-box">
       <div class="task-review-box-header">Review changes</div>
+      <textarea
+        class="review-comment-input"
+        placeholder="Leave a comment (optional)..."
+        value={comment}
+        onInput={(e) => setComment(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        rows={3}
+      />
       <div class="task-review-box-actions">
         <button
           class={"btn-approve" + (loading ? " loading" : "")}
@@ -131,37 +137,11 @@ function ApprovalActions({ task, review, onApproved, onRejected }) {
         <button
           class="btn-reject-outline"
           disabled={loading}
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowReject(!showReject);
-            if (!showReject) setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
-          }}
+          onClick={(e) => { e.stopPropagation(); handleReject(); }}
         >
           &#10006; Request Changes
         </button>
       </div>
-      {showReject && (
-        <div class="reject-reason-row">
-          <input
-            ref={inputRef}
-            type="text"
-            class="reject-reason-input"
-            placeholder="Describe what needs to change..."
-            value={rejectReason}
-            onInput={(e) => setRejectReason(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") handleReject(); }}
-          />
-          <button
-            class="btn-reject"
-            disabled={loading}
-            onClick={(e) => { e.stopPropagation(); handleReject(); }}
-            style={{ flexShrink: 0 }}
-          >
-            {loading ? "Rejecting..." : "Submit"}
-          </button>
-        </div>
-      )}
     </div>
   );
 }
