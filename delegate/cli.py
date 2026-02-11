@@ -94,9 +94,29 @@ def start(
     alive, pid = is_running(hc_home)
     if alive:
         click.echo(f"Daemon already running (PID {pid})")
+        url = f"http://localhost:{port}"
+        try:
+            webbrowser.open(url)
+        except Exception:
+            click.echo(f"Open {url} in your browser")
         return
 
     click.echo(f"Starting daemon on port {port}...")
+
+    url = f"http://localhost:{port}"
+
+    if foreground:
+        # In foreground mode, start_daemon() blocks forever (uvicorn.run),
+        # so open the browser from a background thread after a short delay.
+        import threading
+        def _open_browser():
+            time.sleep(1.5)
+            try:
+                webbrowser.open(url)
+            except Exception:
+                click.echo(f"Open {url} in your browser")
+        threading.Thread(target=_open_browser, daemon=True).start()
+
     result_pid = start_daemon(
         hc_home,
         port=port,
@@ -110,14 +130,13 @@ def start(
     elif not foreground:
         click.echo("Daemon started")
 
-    # Open browser — give background daemon a moment to bind the port
     if not foreground:
+        # Background mode — daemon is a separate process; wait for it to bind.
         time.sleep(1.5)
-    url = f"http://localhost:{port}"
-    try:
-        webbrowser.open(url)
-    except Exception:
-        click.echo(f"Open {url} in your browser")
+        try:
+            webbrowser.open(url)
+        except Exception:
+            click.echo(f"Open {url} in your browser")
 
 
 @main.command()
