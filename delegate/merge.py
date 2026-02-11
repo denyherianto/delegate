@@ -603,8 +603,8 @@ def _handle_merge_failure(
     """Route a merge failure based on the failure reason.
 
     - **Retryable** failures: increment ``merge_attempts``.  If still below
-      ``MAX_MERGE_ATTEMPTS``, silently revert to ``in_approval`` (will be
-      retried next daemon cycle).  Otherwise, escalate.
+      ``MAX_MERGE_ATTEMPTS``, the task stays in ``merging`` and will be
+      retried on the next daemon cycle.  Otherwise, escalate.
     - **Non-retryable** failures (or max retries exhausted): set status to
       ``merge_failed``, assign to manager, send ``notify_conflict``.
     """
@@ -623,10 +623,7 @@ def _handle_merge_failure(
                     status_detail=detail)
 
         if current_attempts < MAX_MERGE_ATTEMPTS:
-            # Silent retry: revert status back to in_approval for next cycle
-            change_status(hc_home, team, task_id, "in_approval", suppress_log=True)
-            # Assign back to manager so the merge worker picks it up
-            assign_task(hc_home, team, task_id, manager, suppress_log=True)
+            # Silent retry: stay in 'merging' — merge_once will re-process
             logger.info(
                 "%s: retryable failure (%s), attempt %d/%d — will retry",
                 format_task_id(task_id), reason.name,
@@ -652,34 +649,32 @@ def _handle_merge_failure(
 def merge_once(hc_home: Path, team: str) -> list[MergeResult]:
     """Scan for tasks ready to merge and process them.
 
-    A task is ready to merge if:
-    - status == 'in_approval'
-    - has an approved review verdict (for manual-approval repos)
-    - OR the repo has approval == 'auto'
+    Two categories of tasks are processed:
 
-    When a task enters ``merging``, the assignee is switched to the
-    manager (since the merge worker acts on the manager's behalf).
+    1. **Newly approved** — ``status == 'in_approval'`` with an approved
+       review (or ``approval == 'auto'``).  These transition to ``merging``
+       on first attempt.
+    2. **Retrying** — ``status == 'merging'`` with ``merge_attempts > 0``
+       (a previous attempt hit a retryable failure and stayed in
+       ``merging``).
 
-    On failure, ``_handle_merge_failure()`` routes the failure based on
-    the ``MergeFailureReason``: retryable failures are silently retried
-    (up to ``MAX_MERGE_ATTEMPTS``), while non-retryable failures are
-    escalated to the manager.
+    On failure, ``_handle_merge_failure()`` routes the outcome: retryable
+    failures stay in ``merging`` (up to ``MAX_MERGE_ATTEMPTS``), while
+    non-retryable failures escalate to ``merge_failed``.
 
     Returns list of merge results.
     """
-    tasks = list_tasks(hc_home, team, status="in_approval")
     results = []
     manager = _get_manager_name(hc_home, team)
 
-    for task in tasks:
+    # --- 1. Newly approved tasks ---
+    for task in list_tasks(hc_home, team, status="in_approval"):
         task_id = task["id"]
         repos: list[str] = task.get("repo", [])
 
         if not repos:
-            # No repo — can't auto-merge, just skip
             continue
 
-        # Check approval mode — use the first repo's setting (most common case)
         approval_mode = get_repo_approval(hc_home, team, repos[0])
 
         ready = False
@@ -706,6 +701,25 @@ def merge_once(hc_home: Path, team: str) -> list[MergeResult]:
         # Transition to merging with assignee = manager
         transition_task(hc_home, team, task_id, "merging", manager)
 
+        result = merge_task(hc_home, team, task_id)
+        results.append(result)
+
+        if not result.success:
+            _handle_merge_failure(hc_home, team, task_id, result)
+
+    # --- 2. Retry tasks still in 'merging' with prior attempts ---
+    for task in list_tasks(hc_home, team, status="merging"):
+        task_id = task["id"]
+        attempts = task.get("merge_attempts", 0)
+        if attempts == 0:
+            # First attempt is handled above (in_approval -> merging);
+            # if attempts==0 and status==merging, it's mid-flight — skip.
+            continue
+
+        logger.info(
+            "%s: retrying merge (attempt %d/%d)",
+            format_task_id(task_id), attempts + 1, MAX_MERGE_ATTEMPTS,
+        )
         result = merge_task(hc_home, team, task_id)
         results.append(result)
 

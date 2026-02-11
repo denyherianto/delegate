@@ -26,6 +26,17 @@ from pathlib import Path
 
 from delegate.db import get_connection, task_row_to_dict, _JSON_COLUMNS
 
+_log = logging.getLogger(__name__)
+
+
+def _broadcast_update(task_id: int, changes: dict) -> None:
+    """Best-effort SSE broadcast of a task mutation."""
+    try:
+        from delegate.activity import broadcast_task_update
+        broadcast_task_update(task_id, changes)
+    except Exception:
+        pass
+
 
 VALID_STATUSES = ("todo", "in_progress", "in_review", "in_approval", "merging", "done", "rejected", "merge_failed", "cancelled")
 VALID_PRIORITIES = ("low", "medium", "high", "critical")
@@ -37,9 +48,9 @@ VALID_TRANSITIONS = {
     "in_progress": {"in_review", "cancelled"},
     "in_review": {"in_approval", "in_progress", "cancelled"},
     "in_approval": {"merging", "rejected", "cancelled"},
-    "merging": {"done", "merge_failed", "in_approval", "cancelled"},
+    "merging": {"done", "merge_failed", "cancelled"},
     "rejected": {"in_progress", "cancelled"},
-    "merge_failed": {"in_progress", "in_approval", "cancelled"},
+    "merge_failed": {"merging", "in_progress", "cancelled"},
     # Terminal states — no transitions out
     "done": set(),
     "cancelled": set(),
@@ -259,6 +270,7 @@ def assign_task(hc_home: Path, team: str, task_id: int, assignee: str, suppress_
     if not suppress_log:
         from delegate.chat import log_event
         log_event(hc_home, team, f"{format_task_id(task_id)} assigned to {assignee.capitalize()}", task_id=task_id)
+        _broadcast_update(task_id, {"assignee": assignee})
 
     return task
 
@@ -474,6 +486,7 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_
         new_status = status.replace("_", " ").title()
         from delegate.chat import log_event
         log_event(hc_home, team, f"{format_task_id(task_id)} {old_status} \u2192 {new_status}", task_id=task_id)
+        _broadcast_update(task_id, {"status": status})
 
     return task
 
@@ -511,6 +524,7 @@ def transition_task(hc_home: Path, team: str, task_id: int, new_status: str, new
         f"{format_task_id(task_id)}: {old_status} \u2192 {new_status_title}, assigned to {new_assignee.capitalize()}",
         task_id=task_id,
     )
+    _broadcast_update(task_id, {"status": new_status, "assignee": new_assignee})
 
     return task
 

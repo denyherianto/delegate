@@ -620,8 +620,8 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         """Retry a failed merge.
 
         Resets ``merge_attempts`` to 0, clears ``status_detail``, and
-        transitions the task back to ``in_approval`` with the manager as
-        assignee.  The merge worker will pick it up on the next daemon cycle.
+        transitions the task to ``merging`` with the manager as assignee.
+        The merge worker will pick it up on the next daemon cycle.
         """
         try:
             task = _get_task(hc_home, team, task_id)
@@ -638,10 +638,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         # Reset counters and detail
         _update_task(hc_home, team, task_id,
                      merge_attempts=0, status_detail="")
-        # Transition back to in_approval with manager as assignee
+        # Transition to merging with manager as assignee
         from delegate.bootstrap import get_member_by_role
         manager = get_member_by_role(hc_home, team, "manager") or "manager"
-        updated = transition_task(hc_home, team, task_id, "in_approval", manager)
+        updated = transition_task(hc_home, team, task_id, "merging", manager)
         return updated
 
     @app.post("/teams/{team}/tasks/{task_id}/cancel")

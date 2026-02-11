@@ -41,7 +41,7 @@ function ApprovalBadge({ task, currentReview }) {
   if (status === "done" || approval_status === "approved") {
     return (
       <div class="task-approval-status">
-        <div class="approval-badge approval-badge-approved">&#10004; Approved &amp; Merged{attemptLabel}</div>
+        <div class="approval-badge approval-badge-approved">&#10004; Approved{attemptLabel}</div>
         {reviewSummary && <div class="approval-rejection-reason" style={{ color: "var(--text-secondary)" }}>{reviewSummary}</div>}
       </div>
     );
@@ -133,7 +133,7 @@ function ApprovalActions({ task, currentReview, onApproved, onRejected }) {
   if (status === "done" || approval_status === "approved" || result === "approved") {
     return (
       <div class="task-review-box task-review-box-approved">
-        <div class="approval-badge approval-badge-approved">&#10004; Approved &amp; Merged{attemptLabel}</div>
+        <div class="approval-badge approval-badge-approved">&#10004; Approved{attemptLabel}</div>
         {(summary || reviewSummary) && <div class="approval-rejection-reason" style={{ color: "var(--text-secondary)" }}>{summary || reviewSummary}</div>}
       </div>
     );
@@ -203,7 +203,7 @@ function ApprovalActions({ task, currentReview, onApproved, onRejected }) {
           disabled={loading}
           onClick={(e) => { e.stopPropagation(); handleApprove(); }}
         >
-          {loading ? "Merging..." : "\u2714 Approve & Merge"}
+          {loading ? "Approving..." : "\u2714 Approve"}
         </button>
         <button
           class="btn-reject-outline"
@@ -541,6 +541,13 @@ export function TaskSidePanel() {
       } catch (e) { }
     })();
   }, [id, team]);
+
+  // Sync task from signal when SSE pushes updates
+  useEffect(() => {
+    if (id === null) return;
+    const updated = allTasks.find(t => t.id === id);
+    if (updated) setTask(prev => prev ? { ...prev, ...updated } : updated);
+  }, [allTasks, id]);
 
   // Load review data when panel opens or task changes
   useEffect(() => {

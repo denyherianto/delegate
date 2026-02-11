@@ -199,6 +199,22 @@ function App() {
           const entry = JSON.parse(evt.data);
           if (entry.type === "connected") return; // handshake
 
+          // Task updates: patch the tasks signal in-place
+          if (entry.type === "task_update") {
+            const tid = entry.task_id;
+            const cur = tasks.value;
+            const idx = cur.findIndex(t => t.id === tid);
+            if (idx !== -1) {
+              const updated = { ...cur[idx] };
+              if (entry.status !== undefined) updated.status = entry.status;
+              if (entry.assignee !== undefined) updated.assignee = entry.assignee;
+              const next = [...cur];
+              next[idx] = updated;
+              tasks.value = next;
+            }
+            return;
+          }
+
           // Update per-agent last activity
           const prev = agentLastActivity.value;
           agentLastActivity.value = { ...prev, [entry.agent]: entry };

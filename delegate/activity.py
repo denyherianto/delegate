@@ -97,19 +97,8 @@ def unsubscribe(q: asyncio.Queue) -> None:
 # Broadcast
 # ---------------------------------------------------------------------------
 
-def broadcast(agent: str, tool: str, detail: str) -> None:
-    """Push an activity entry to the ring buffer and notify all SSE clients.
-
-    This is called from the turn execution loop in ``runtime.py`` for
-    every tool invocation observed in the SDK response stream.
-
-    Safe to call from any coroutine — the queue puts are non-blocking
-    (entries are silently dropped for slow subscribers).
-    """
-    entry = ActivityEntry(agent=agent, tool=tool, detail=detail)
-    _get_ring(agent).append(entry)
-
-    payload = entry.to_dict()
+def _push_to_subscribers(payload: dict) -> None:
+    """Push a payload dict to all SSE subscriber queues (non-blocking)."""
     dead: list[asyncio.Queue] = []
     for q in _subscribers:
         try:
@@ -124,3 +113,35 @@ def broadcast(agent: str, tool: str, detail: str) -> None:
 
     for q in dead:
         _subscribers.discard(q)
+
+
+def broadcast(agent: str, tool: str, detail: str) -> None:
+    """Push an activity entry to the ring buffer and notify all SSE clients.
+
+    This is called from the turn execution loop in ``runtime.py`` for
+    every tool invocation observed in the SDK response stream.
+
+    Safe to call from any coroutine — the queue puts are non-blocking
+    (entries are silently dropped for slow subscribers).
+    """
+    entry = ActivityEntry(agent=agent, tool=tool, detail=detail)
+    _get_ring(agent).append(entry)
+    _push_to_subscribers(entry.to_dict())
+
+
+def broadcast_task_update(task_id: int, changes: dict[str, Any]) -> None:
+    """Broadcast a task mutation to all SSE clients.
+
+    ``changes`` should be a dict of the fields that changed, e.g.
+    ``{"status": "merging", "assignee": "manager"}``.
+
+    The SSE event has ``type: "task_update"`` so the frontend can
+    distinguish it from agent activity events.
+    """
+    payload = {
+        "type": "task_update",
+        "task_id": task_id,
+        **changes,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    _push_to_subscribers(payload)
