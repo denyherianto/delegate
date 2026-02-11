@@ -57,8 +57,12 @@ function App() {
       const valid = ["chat", "tasks", "agents"];
       if (valid.includes(path)) {
         activeTab.value = path;
-      } else if (path === "") {
+      } else {
+        // Unknown or empty path — default to chat
         activeTab.value = "chat";
+        if (path !== "") {
+          window.history.replaceState(null, "", "/chat");
+        }
       }
     };
     window.addEventListener("popstate", onPath);
