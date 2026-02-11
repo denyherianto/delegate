@@ -995,15 +995,22 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
     # --- Static files ---
     _static_dir = Path(__file__).parent / "static"
-    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+    if _static_dir.is_dir():
+        app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     def index():
-        return (_static_dir / "index.html").read_text()
+        index_html = _static_dir / "index.html"
+        if index_html.is_file():
+            return index_html.read_text()
+        return "Frontend not built. Run esbuild or npm run build."
 
     # Catch-all for SPA routing (must be last to not intercept API routes)
     @app.get("/{full_path:path}", response_class=HTMLResponse)
     def catch_all(full_path: str = ""):
-        return (_static_dir / "index.html").read_text()
+        index_html = _static_dir / "index.html"
+        if index_html.is_file():
+            return index_html.read_text()
+        return "Frontend not built. Run esbuild or npm run build."
 
     return app
