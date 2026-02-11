@@ -197,8 +197,8 @@ class TestCurrentTask:
 
 class TestGlobalAgentsEndpoint:
     def test_global_agents_include_new_fields(self, client, tmp_team):
-        """The /agents endpoint should also include last_active_at and current_task."""
-        resp = client.get("/agents")
+        """The /api/agents endpoint should also include last_active_at and current_task."""
+        resp = client.get("/api/agents")
         assert resp.status_code == 200
         agents = resp.json()
         for agent in agents:

@@ -16,10 +16,10 @@ Provides:
     GET  /teams/{team}/agents/{name}/outbox — agent outbox messages
     GET  /teams/{team}/agents/{name}/logs   — agent worklog sessions
 
-    Legacy convenience (aggregate across all teams):
-    GET  /tasks       — list tasks across all teams
-    GET  /messages    — messages across all teams
-    POST /messages    — send message (includes team in body)
+    Legacy convenience (aggregate across all teams, /api prefix):
+    GET  /api/tasks       — list tasks across all teams
+    GET  /api/messages    — messages across all teams
+    POST /api/messages    — send message (includes team in body)
 
 When started via the daemon, the daemon loop (message routing +
 agent turn dispatch + merge processing) runs as an asyncio background
@@ -618,8 +618,9 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         return {"status": "queued"}
 
     # --- Legacy global endpoints (aggregate across all teams) ---
+    # Prefixed with /api/ to avoid colliding with SPA routes (/tasks, /agents).
 
-    @app.get("/tasks")
+    @app.get("/api/tasks")
     def get_tasks(status: str | None = None, assignee: str | None = None):
         """List tasks across all teams (for backward compat)."""
         all_tasks = []
@@ -633,7 +634,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 pass
         return all_tasks
 
-    @app.get("/tasks/{task_id}/stats")
+    @app.get("/api/tasks/{task_id}/stats")
     def get_task_stats_global(task_id: int):
         """Get task stats — scans all teams for the task (legacy compat)."""
         for t in _list_teams(hc_home):
@@ -649,7 +650,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
-    @app.get("/tasks/{task_id}/diff")
+    @app.get("/api/tasks/{task_id}/diff")
     def get_task_diff_global(task_id: int):
         """Get task diff — scans all teams (legacy compat)."""
         for t in _list_teams(hc_home):
@@ -661,7 +662,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
-    @app.get("/tasks/{task_id}/activity")
+    @app.get("/api/tasks/{task_id}/activity")
     def get_task_activity_global(task_id: int, limit: int | None = None):
         """Get task activity — scans all teams (legacy compat)."""
         from delegate.chat import get_task_activity
@@ -674,7 +675,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
-    @app.post("/tasks/{task_id}/approve")
+    @app.post("/api/tasks/{task_id}/approve")
     def approve_task_global(task_id: int, body: ApproveBody | None = None):
         """Approve task — scans all teams (legacy compat)."""
         from delegate.review import set_verdict
@@ -695,7 +696,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
-    @app.post("/tasks/{task_id}/reject")
+    @app.post("/api/tasks/{task_id}/reject")
     def reject_task_global(task_id: int, body: RejectBody):
         """Reject task — scans all teams (legacy compat)."""
         from delegate.review import set_verdict
@@ -717,7 +718,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
-    @app.get("/messages")
+    @app.get("/api/messages")
     def get_messages(since: str | None = None, between: str | None = None, type: str | None = None, limit: int | None = None):
         """Messages across all teams (legacy compat)."""
         between_tuple = None
@@ -739,7 +740,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             all_msgs = all_msgs[:limit]
         return all_msgs
 
-    @app.post("/messages")
+    @app.post("/api/messages")
     def post_message(msg: SendMessage):
         """Boss sends a message (legacy — uses msg.team field)."""
         team = msg.team or _first_team(hc_home)
@@ -756,7 +757,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
     # --- Agent endpoints (team-scoped) ---
 
-    @app.get("/agents")
+    @app.get("/api/agents")
     def get_all_agents():
         """List all agents across all teams."""
         all_agents = []
