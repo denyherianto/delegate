@@ -10,6 +10,7 @@ import {
   linkifyTaskRefs, linkifyFilePaths, agentifyRefs, msgStatusIcon, taskIdStr,
 } from "../utils.js";
 import { playMsgSound } from "../audio.js";
+import { showToast } from "../toast.js";
 
 // ── Linked content with event delegation ──
 function LinkedDiv({ html, class: cls, style }) {
@@ -63,7 +64,7 @@ function useSpeechRecognition(inputRef) {
     };
     rec.onend = () => { setActive(false); stoppingRef.current = false; };
     rec.onerror = (e) => {
-      if (e.error !== "aborted" && e.error !== "no-speech") console.warn("Speech error:", e.error);
+      if (e.error !== "aborted" && e.error !== "no-speech") showToast("Voice input error: " + e.error, "error");
       setActive(false); stoppingRef.current = false;
     };
     recRef.current = rec;
@@ -223,7 +224,7 @@ export function ChatPanel() {
       setInputVal("");
       setSendBtnActive(false);
     } catch (e) {
-      console.error("Send error:", e);
+      showToast("Failed to send message", "error");
     }
   }, [team, recipient, mic]);
 

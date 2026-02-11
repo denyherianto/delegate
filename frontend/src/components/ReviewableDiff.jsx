@@ -19,6 +19,7 @@ import { useState, useRef, useCallback, useMemo } from "preact/hooks";
 import { diff2HtmlParse } from "../utils.js";
 import * as api from "../api.js";
 import { currentTeam } from "../state.js";
+import { showToast } from "../toast.js";
 
 // ── Helpers ──
 
@@ -60,7 +61,7 @@ function InlineCommentForm({ file, line, taskId, onSaved, onCancel }) {
       setBody("");
       if (onSaved) onSaved(comment);
     } catch (e) {
-      console.error("Failed to save comment:", e);
+      showToast("Failed to save comment", "error");
     } finally {
       setSaving(false);
     }

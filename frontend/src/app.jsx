@@ -14,6 +14,8 @@ import { TasksPanel } from "./components/TasksPanel.jsx";
 import { AgentsPanel } from "./components/AgentsPanel.jsx";
 import { TaskSidePanel } from "./components/TaskSidePanel.jsx";
 import { DiffPanel } from "./components/DiffPanel.jsx";
+import { ToastContainer } from "./components/Toast.jsx";
+import { showToast } from "./toast.js";
 
 // ── Attention Banner ──
 function AttentionBanner() {
@@ -145,7 +147,7 @@ function App() {
           });
         }
       } catch (e) {
-        console.warn("Poll error:", e);
+        showToast("Failed to refresh data", "error");
       }
     };
 
@@ -194,6 +196,7 @@ function App() {
       </div>
       <TaskSidePanel />
       <DiffPanel />
+      <ToastContainer />
     </>
   );
 }

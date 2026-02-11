@@ -10,6 +10,7 @@ import {
   flattenDiffDict, flattenCommitsDict, diff2HtmlRender, diff2HtmlParse,
 } from "../utils.js";
 import { ReviewableDiff } from "./ReviewableDiff.jsx";
+import { showToast } from "../toast.js";
 
 // ── Event delegation for linked content ──
 function LinkedDiv({ html, class: cls, style }) {
@@ -156,7 +157,7 @@ function ApprovalActions({ task, currentReview, onApproved, onRejected }) {
       setResult("approved");
       if (onApproved) onApproved();
     } catch (e) {
-      alert("Failed to approve: " + e.message);
+      showToast("Failed to approve: " + e.message, "error");
     } finally {
       setLoading(false);
     }
@@ -169,7 +170,7 @@ function ApprovalActions({ task, currentReview, onApproved, onRejected }) {
       setResult("rejected");
       if (onRejected) onRejected();
     } catch (e) {
-      alert("Failed to reject: " + e.message);
+      showToast("Failed to reject: " + e.message, "error");
     } finally {
       setLoading(false);
     }
