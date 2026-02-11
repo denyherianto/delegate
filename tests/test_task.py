@@ -782,12 +782,13 @@ class TestCancelTask:
         with pytest.raises(ValueError, match="already 'done'"):
             cancel_task(tmp_team, TEAM, task["id"])
 
-    def test_cancel_already_cancelled_raises(self, tmp_team):
-        """Cannot cancel a task that is already cancelled."""
+    def test_cancel_already_cancelled_is_idempotent(self, tmp_team):
+        """Cancelling an already-cancelled task re-runs cleanup without error."""
         task = create_task(tmp_team, TEAM, title="Twice", assignee="alice")
         cancel_task(tmp_team, TEAM, task["id"])
-        with pytest.raises(ValueError, match="already 'cancelled'"):
-            cancel_task(tmp_team, TEAM, task["id"])
+        # Should not raise — idempotent cleanup
+        result = cancel_task(tmp_team, TEAM, task["id"])
+        assert result["status"] == "cancelled"
 
     def test_cancelled_is_terminal(self, tmp_team):
         """A cancelled task cannot transition to any other status."""
@@ -829,3 +830,16 @@ class TestCancelTask:
         events = [item for item in timeline if item["type"] == "event"]
         cancelled_events = [e for e in events if "cancelled" in e["content"].lower()]
         assert len(cancelled_events) == 1
+
+    def test_cancel_cli(self, tmp_team, capsys):
+        """The cancel CLI subcommand works."""
+        task = create_task(tmp_team, TEAM, title="CLI Cancel", assignee="alice")
+        with patch("sys.argv", [
+            "delegate.task", "cancel", str(tmp_team), TEAM, str(task["id"])
+        ]):
+            from delegate.task import main
+            main()
+            captured = capsys.readouterr()
+            assert "cancelled" in captured.out.lower()
+        refreshed = get_task(tmp_team, TEAM, task["id"])
+        assert refreshed["status"] == "cancelled"

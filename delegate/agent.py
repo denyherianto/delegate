@@ -485,6 +485,9 @@ Other commands:
     # Task comments (durable notes on a task — specs, findings, decisions)
     {python} -m delegate.task comment {hc_home} {team} <task_id> {agent} "<body>"
 
+    # Cancel a task (manager only — cleans up worktrees and branches)
+    {python} -m delegate.task cancel {hc_home} {team} <task_id>
+
     # Check your inbox
     {python} -m delegate.mailbox inbox {hc_home} {team} {agent}
 {inlined_notes_block}

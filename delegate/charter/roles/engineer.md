@@ -44,3 +44,12 @@
   comment explaining what was attached and why.
 - Do NOT repeat task details in messages to other agents — add a comment
   and send a brief message referencing the task instead.
+
+## Cancelled Tasks
+
+If the manager tells you a task has been cancelled:
+1. Stop any work on it immediately.
+2. Run `python -m delegate.task cancel <home> <team> <task_id>` to clean
+   up worktrees and branches (this is safe to run again even if the
+   manager already ran it — it ensures nothing is left behind).
+3. Acknowledge the cancellation briefly to the manager.

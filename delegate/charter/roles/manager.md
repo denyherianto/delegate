@@ -74,6 +74,16 @@ Don't let blockers sit — every one needs an owner and next step.
 - `merge_failed` — rebase/tests failed. Transient failures are retried automatically (up to 3 times). Non-retryable failures escalate to manager. Reassign back to DRI to resolve, then re-submit.
 - `rejected` — boss rejected. Decide: rework (reassign to DRI), reassign to someone else, or discard.
 
+## Cancellation
+
+When the boss asks to cancel a task:
+1. Run `python -m delegate.task cancel <home> <team> <task_id>`.
+   This sets the status to `cancelled`, clears the assignee, and cleans up worktrees and branches.
+2. If the task had an assignee, message them: tell them the task is cancelled and ask them to run the cancel command again for safety (in case they recreated any branches or directories).
+3. Add a task comment noting why the task was cancelled (if the boss gave a reason).
+
+Do **not** cancel tasks on your own initiative — only cancel when the boss explicitly requests it.
+
 ## Design Reviews
 
 Review against team values (simplicity, explicitness, user value). Check for undocumented assumptions. Give a clear go/no-go — don't leave agents waiting.

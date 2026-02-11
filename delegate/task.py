@@ -529,10 +529,15 @@ def cancel_task(hc_home: Path, team: str, task_id: int) -> dict:
     """
     task = get_task(hc_home, team, task_id)
 
-    if task["status"] in ("done", "cancelled"):
+    if task["status"] == "done":
         raise ValueError(
-            f"Task {format_task_id(task_id)} is already '{task['status']}' and cannot be cancelled."
+            f"Task {format_task_id(task_id)} is already 'done' and cannot be cancelled."
         )
+
+    if task["status"] == "cancelled":
+        # Idempotent: re-run cleanup only (agent may have recreated branches)
+        _cleanup_cancelled_task(hc_home, team, task)
+        return task
 
     # Transition to cancelled and clear assignee
     updated = change_status(hc_home, team, task_id, "cancelled", suppress_log=True)
@@ -942,6 +947,12 @@ def main():
     p_comment.add_argument("author", help="Name of the comment author")
     p_comment.add_argument("body", help="Comment body text")
 
+    # cancel
+    p_cancel = sub.add_parser("cancel", help="Cancel a task and clean up worktrees/branches")
+    p_cancel.add_argument("home", type=Path)
+    p_cancel.add_argument("team")
+    p_cancel.add_argument("task_id", type=int)
+
     args = parser.parse_args()
 
     if args.command == "create":
@@ -1010,6 +1021,10 @@ def main():
     elif args.command == "comment":
         cid = add_comment(args.home, args.team, args.task_id, args.author, args.body)
         print(f"Comment #{cid} added to {format_task_id(args.task_id)} by {args.author}")
+
+    elif args.command == "cancel":
+        task = cancel_task(args.home, args.team, args.task_id)
+        print(f"{format_task_id(args.task_id)} cancelled")
 
 
 if __name__ == "__main__":
