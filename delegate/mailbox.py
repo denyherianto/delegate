@@ -81,7 +81,15 @@ def _row_to_message(row) -> Message:
 # Core operations
 # ---------------------------------------------------------------------------
 
-def send(hc_home: Path, team: str, sender: str, recipient: str, message: str) -> str:
+def send(
+    hc_home: Path,
+    team: str,
+    sender: str,
+    recipient: str,
+    message: str,
+    *,
+    task_id: int | None = None,
+) -> str:
     """Send a message by inserting into the team's mailbox table.
 
     Messages are delivered immediately (``delivered_at`` set on insert).
@@ -95,9 +103,9 @@ def send(hc_home: Path, team: str, sender: str, recipient: str, message: str) ->
     try:
         cursor = conn.execute(
             """\
-            INSERT INTO mailbox (sender, recipient, body, created_at, delivered_at)
-            VALUES (?, ?, ?, ?, ?)""",
-            (sender, recipient, message, now, now),
+            INSERT INTO mailbox (sender, recipient, body, created_at, delivered_at, task_id)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (sender, recipient, message, now, now, task_id),
         )
         conn.commit()
         msg_id = cursor.lastrowid
@@ -106,7 +114,7 @@ def send(hc_home: Path, team: str, sender: str, recipient: str, message: str) ->
 
     # Log to the chat event stream
     from delegate.chat import log_message
-    log_message(hc_home, team, sender, recipient, message)
+    log_message(hc_home, team, sender, recipient, message, task_id=task_id)
 
     return str(msg_id)
 

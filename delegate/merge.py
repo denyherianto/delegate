@@ -259,7 +259,7 @@ def merge_task(
             return MergeResult(task_id, False, f"repo not found: {real_repo}")
         repo_dirs[repo_name] = str(real_repo)
 
-    log_event(hc_home, team, f"{format_task_id(task_id)} merge started ({branch})")
+    log_event(hc_home, team, f"{format_task_id(task_id)} merge started ({branch})", task_id=task_id)
 
     # Step 0: Remove agent worktrees in all repos.
     dri = task.get("dri", "") or task.get("assignee", "")
@@ -284,7 +284,7 @@ def merge_task(
         if not ok:
             change_status(hc_home, team, task_id, "conflict")
             notify_conflict(hc_home, team, task, conflict_details=f"[{repo_name}] {output[:500]}")
-            log_event(hc_home, team, f"{format_task_id(task_id)} merge conflict during rebase ({repo_name})")
+            log_event(hc_home, team, f"{format_task_id(task_id)} merge conflict during rebase ({repo_name})", task_id=task_id)
             return MergeResult(task_id, False, f"Rebase conflict in {repo_name}: {output[:200]}")
 
         # Step 2: Run pre-merge script / tests (optional)
@@ -293,7 +293,7 @@ def merge_task(
             if not ok:
                 change_status(hc_home, team, task_id, "conflict")
                 notify_conflict(hc_home, team, task, conflict_details=f"[{repo_name}] Pre-merge checks failed:\n{output[:500]}")
-                log_event(hc_home, team, f"{format_task_id(task_id)} merge blocked — pre-merge checks failed ({repo_name})")
+                log_event(hc_home, team, f"{format_task_id(task_id)} merge blocked — pre-merge checks failed ({repo_name})", task_id=task_id)
                 return MergeResult(task_id, False, f"Pre-merge checks failed in {repo_name}: {output[:200]}")
 
         # Step 3: Fast-forward merge
@@ -304,7 +304,7 @@ def merge_task(
         if not ok:
             change_status(hc_home, team, task_id, "conflict")
             notify_conflict(hc_home, team, task, conflict_details=f"[{repo_name}] {output[:500]}")
-            log_event(hc_home, team, f"{format_task_id(task_id)} merge failed ({repo_name})")
+            log_event(hc_home, team, f"{format_task_id(task_id)} merge failed ({repo_name})", task_id=task_id)
             return MergeResult(task_id, False, f"Merge failed in {repo_name}: {output[:200]}")
 
         post_merge = _run_git(["rev-parse", "main"], cwd=repo_str)
@@ -313,7 +313,7 @@ def merge_task(
     # Step 4: Record per-repo merge_base and merge_tip, then mark as done
     update_task(hc_home, team, task_id, merge_base=merge_base_dict, merge_tip=merge_tip_dict)
     change_status(hc_home, team, task_id, "done")
-    log_event(hc_home, team, f"{format_task_id(task_id)} merged to main ✓")
+    log_event(hc_home, team, f"{format_task_id(task_id)} merged to main ✓", task_id=task_id)
 
     # Step 5: Clean up branches (best effort).
     shared = _other_unmerged_tasks_on_branch(hc_home, team, branch, exclude_task_id=task_id)

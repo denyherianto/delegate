@@ -134,7 +134,7 @@ def create_task(
         conn.close()
 
     from delegate.chat import log_event
-    log_event(hc_home, team, f"{format_task_id(task_id)} created \u2014 {title}")
+    log_event(hc_home, team, f"{format_task_id(task_id)} created \u2014 {title}", task_id=task_id)
 
     return task
 
@@ -225,7 +225,7 @@ def assign_task(hc_home: Path, team: str, task_id: int, assignee: str) -> dict:
     task = update_task(hc_home, team, task_id, **updates)
 
     from delegate.chat import log_event
-    log_event(hc_home, team, f"{format_task_id(task_id)} assigned to {assignee.capitalize()}")
+    log_event(hc_home, team, f"{format_task_id(task_id)} assigned to {assignee.capitalize()}", task_id=task_id)
 
     return task
 
@@ -337,7 +337,7 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str) -> dict:
 
     new_status = status.replace("_", " ").title()
     from delegate.chat import log_event
-    log_event(hc_home, team, f"{format_task_id(task_id)} {old_status} \u2192 {new_status}")
+    log_event(hc_home, team, f"{format_task_id(task_id)} {old_status} \u2192 {new_status}", task_id=task_id)
 
     return task
 

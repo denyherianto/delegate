@@ -12,12 +12,20 @@ from pathlib import Path
 from delegate.db import get_connection
 
 
-def log_message(hc_home: Path, team: str, sender: str, recipient: str, content: str) -> int:
+def log_message(
+    hc_home: Path,
+    team: str,
+    sender: str,
+    recipient: str,
+    content: str,
+    *,
+    task_id: int | None = None,
+) -> int:
     """Log a chat message. Returns the message ID."""
     conn = get_connection(hc_home, team)
     cursor = conn.execute(
-        "INSERT INTO messages (sender, recipient, content, type) VALUES (?, ?, ?, 'chat')",
-        (sender, recipient, content),
+        "INSERT INTO messages (sender, recipient, content, type, task_id) VALUES (?, ?, ?, 'chat', ?)",
+        (sender, recipient, content, task_id),
     )
     conn.commit()
     msg_id = cursor.lastrowid
@@ -25,12 +33,12 @@ def log_message(hc_home: Path, team: str, sender: str, recipient: str, content: 
     return msg_id
 
 
-def log_event(hc_home: Path, team: str, description: str) -> int:
+def log_event(hc_home: Path, team: str, description: str, *, task_id: int | None = None) -> int:
     """Log a system event. Returns the event ID."""
     conn = get_connection(hc_home, team)
     cursor = conn.execute(
-        "INSERT INTO messages (sender, recipient, content, type) VALUES ('system', 'system', ?, 'event')",
-        (description,),
+        "INSERT INTO messages (sender, recipient, content, type, task_id) VALUES ('system', 'system', ?, 'event', ?)",
+        (description, task_id),
     )
     conn.commit()
     msg_id = cursor.lastrowid
@@ -48,7 +56,7 @@ def get_messages(
 ) -> list[dict]:
     """Query messages with optional filters."""
     conn = get_connection(hc_home, team)
-    query = "SELECT id, timestamp, sender, recipient, content, type FROM messages WHERE 1=1"
+    query = "SELECT id, timestamp, sender, recipient, content, type, task_id FROM messages WHERE 1=1"
     params: list = []
 
     if since:

@@ -465,7 +465,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             set_verdict(hc_home, team, task_id, attempt, "approved", summary=summary, reviewer=boss_name)
 
         updated = _get_task(hc_home, team, task_id)
-        _log_event(hc_home, team, f"{format_task_id(task_id)} approved \u2713")
+        _log_event(hc_home, team, f"{format_task_id(task_id)} approved \u2713", task_id=task_id)
         return updated
 
     class RejectBody(BaseModel):
@@ -498,7 +498,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         from delegate.notify import notify_rejection
         notify_rejection(hc_home, team, task, reason=body.reason)
 
-        _log_event(hc_home, team, f"{format_task_id(task_id)} rejected \u2014 {body.reason}")
+        _log_event(hc_home, team, f"{format_task_id(task_id)} rejected \u2014 {body.reason}", task_id=task_id)
         return updated
 
     # --- Message endpoints (team-scoped) ---
@@ -590,7 +590,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 if attempt > 0:
                     set_verdict(hc_home, t, task_id, attempt, "approved", summary=summary, reviewer=boss_name)
                 updated = _get_task(hc_home, t, task_id)
-                _log_event(hc_home, t, f"{format_task_id(task_id)} approved \u2713")
+                _log_event(hc_home, t, f"{format_task_id(task_id)} approved \u2713", task_id=task_id)
                 return updated
             except FileNotFoundError:
                 continue
@@ -611,7 +611,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 updated = _get_task(hc_home, t, task_id)
                 from delegate.notify import notify_rejection
                 notify_rejection(hc_home, t, task, reason=body.reason)
-                _log_event(hc_home, t, f"{format_task_id(task_id)} rejected \u2014 {body.reason}")
+                _log_event(hc_home, t, f"{format_task_id(task_id)} rejected \u2014 {body.reason}", task_id=task_id)
                 return updated
             except (FileNotFoundError, ValueError):
                 continue
