@@ -31,17 +31,16 @@ function App() {
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
-  // Hash routing
+  // Path-based routing
   useEffect(() => {
-    const onHash = () => {
-      const hash = window.location.hash.replace("#", "");
-      const valid = ["chat", "tasks", "agents"];
-      if (valid.includes(hash)) activeTab.value = hash;
+    const validTabs = ["chat", "tasks", "agents"];
+    const readPath = () => {
+      const path = window.location.pathname.replace(/^\/+/, "").split("/")[0];
+      if (validTabs.includes(path)) activeTab.value = path;
     };
-    window.addEventListener("hashchange", onHash);
-    // Init from hash
-    onHash();
-    return () => window.removeEventListener("hashchange", onHash);
+    window.addEventListener("popstate", readPath);
+    readPath();
+    return () => window.removeEventListener("popstate", readPath);
   }, []);
 
   // Initial bootstrap: fetch config + teams
@@ -143,9 +142,9 @@ function App() {
   return (
     <>
       <Sidebar />
-      <div class="main">
+      <div class="main" role="main">
         <Header />
-        <div class="content">
+        <div class="content" aria-label="Main content area">
           <ChatPanel />
           <TasksPanel />
           <AgentsPanel />

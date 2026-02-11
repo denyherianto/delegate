@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 from delegate.paths import daemon_pid_path
+from delegate.logging_setup import configure_logging, log_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,7 @@ def start_daemon(
     if foreground:
         # Run in current process (blocking)
         os.environ.update(env)
+        configure_logging(hc_home, console=True)
         import uvicorn
 
         pid_path = daemon_pid_path(hc_home)
@@ -106,11 +108,15 @@ def start_daemon(
         "--log-level", "info",
     ]
 
+    # Redirect stderr to the log file so agent output is captured
+    log_dest = log_file_path(hc_home)
+    log_fh = open(log_dest, "a")
+
     proc = subprocess.Popen(
         cmd,
         env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=log_fh,
+        stderr=log_fh,
         start_new_session=True,
     )
 

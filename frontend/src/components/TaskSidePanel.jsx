@@ -9,6 +9,7 @@ import {
   fmtRelativeTime, taskIdStr, renderMarkdown, linkifyTaskRefs, linkifyFilePaths,
   flattenDiffDict, flattenCommitsDict, diff2HtmlRender, diff2HtmlParse,
 } from "../utils.js";
+import { ReviewableDiff } from "./ReviewableDiff.jsx";
 
 // ── Event delegation for linked content ──
 function LinkedDiv({ html, class: cls, style }) {
@@ -56,8 +57,11 @@ function ApprovalBadge({ task, review }) {
       </div>
     );
   }
+  if (status === "merging") {
+    return <div class="task-approval-status"><div class="approval-badge approval-badge-merging">&#8987; Merging…</div></div>;
+  }
   if (status === "conflict") {
-    return <div class="task-approval-status"><div class="approval-badge" style={{ background: "rgba(251,146,60,0.12)", color: "#fb923c" }}>&#9888; Merge Conflict</div></div>;
+    return <div class="task-approval-status"><div class="approval-badge approval-badge-conflict">&#9888; Merge Conflict</div></div>;
   }
   return null;
 }
@@ -132,7 +136,7 @@ function ApprovalActions({ task, review, onApproved, onRejected }) {
           disabled={loading}
           onClick={(e) => { e.stopPropagation(); handleApprove(); }}
         >
-          {loading ? "Merging..." : "\u2714 Approve & Merge"}
+          {loading ? "Approving..." : "\u2714 Approve"}
         </button>
         <button
           class="btn-reject-outline"
@@ -200,7 +204,7 @@ function ActivitySection({ taskId, task }) {
 }
 
 // ── Diff tabs content ──
-function DiffContent({ diffRaw, taskId, diffTab, setDiffTab }) {
+function DiffContent({ diffRaw, taskId, diffTab, setDiffTab, review, oldComments, isReviewable }) {
   const [commitsData, setCommitsData] = useState(null);
   const team = currentTeam.value;
 
@@ -236,8 +240,17 @@ function DiffContent({ diffRaw, taskId, diffTab, setDiffTab }) {
 
   const renderFullDiff = () => {
     if (!diffRaw) return <div class="diff-empty">No changes</div>;
-    const html = diff2HtmlRender(diffRaw, { outputFormat: "line-by-line", drawFileList: false, matching: "lines" });
-    return <div dangerouslySetInnerHTML={{ __html: html }} />;
+    // Use ReviewableDiff for interactive inline commenting
+    const currentComments = (review && review.comments) || [];
+    return (
+      <ReviewableDiff
+        diffRaw={diffRaw}
+        taskId={taskId}
+        currentComments={currentComments}
+        oldComments={oldComments || []}
+        isReviewable={isReviewable}
+      />
+    );
   };
 
   const renderCommits = () => {
@@ -268,7 +281,7 @@ function DiffContent({ diffRaw, taskId, diffTab, setDiffTab }) {
             class={"diff-tab" + (diffTab === tab ? " active" : "")}
             onClick={() => setDiffTab(tab)}
           >
-            {tab === "files" ? "Files Changed" : tab === "diff" ? "Full Diff" : "Commits"}
+            {tab === "files" ? "Files Changed" : tab === "diff" ? "Review Diff" : "Commits"}
           </button>
         ))}
       </div>
@@ -306,7 +319,7 @@ function CommitList({ commits, multiRepo }) {
             {isOpen && (
               <div class="commit-diff">
                 {c.diff && c.diff !== "(empty diff)" ? (
-                  <div dangerouslySetInnerHTML={{ __html: diff2HtmlRender(c.diff, { outputFormat: "line-by-line", drawFileList: false, matching: "lines" }) }} />
+                  <div dangerouslySetInnerHTML={{ __html: diff2HtmlRender(c.diff, { outputFormat: "line-by-line", drawFileList: false, matching: "words" }) }} />
                 ) : (
                   <div class="diff-empty">Empty diff</div>
                 )}
@@ -407,7 +420,7 @@ export function TaskSidePanel() {
             <span class="task-panel-assignee">{t && t.assignee ? cap(t.assignee) : ""}</span>
             <span class="task-panel-priority">{t && t.priority ? cap(t.priority) : ""}</span>
           </div>
-          <button class="task-panel-close" onClick={close}>&times;</button>
+          <button class="task-panel-close" onClick={close} aria-label="Close task panel">&times;</button>
         </div>
         <div class="task-panel-tabs">
           {["details", "changes"].map(tab => (
@@ -530,6 +543,29 @@ function DetailsTab({ task, stats, review }) {
 // ── Changes tab content ──
 function ChangesTab({ task, stats, review, diffRaw, diffTab, setDiffTab, onApproved }) {
   const t = task;
+  const team = currentTeam.value;
+  const [oldComments, setOldComments] = useState([]);
+
+  // Fetch comments from previous review attempts (for dimmed display)
+  useEffect(() => {
+    if (!team || !t || !review || !review.attempt || review.attempt <= 1) {
+      setOldComments([]);
+      return;
+    }
+    // Fetch all reviews to collect comments from prior attempts
+    api.fetchReviews(team, t.id).then(reviews => {
+      const old = [];
+      for (const r of reviews) {
+        if (r.attempt < review.attempt && r.comments) {
+          for (const c of r.comments) old.push({ ...c, attempt: r.attempt });
+        }
+      }
+      setOldComments(old);
+    }).catch(() => setOldComments([]));
+  }, [team, t && t.id, review && review.attempt]);
+
+  // A task is reviewable when it is in_approval (or in_review) and has an active review
+  const isReviewable = t && (t.status === "in_approval" || t.status === "in_review") && review && review.attempt > 0;
 
   return (
     <div>
@@ -564,7 +600,15 @@ function ChangesTab({ task, stats, review, diffRaw, diffTab, setDiffTab, onAppro
         </div>
       )}
       {/* Diff */}
-      <DiffContent diffRaw={diffRaw} taskId={t.id} diffTab={diffTab} setDiffTab={setDiffTab} />
+      <DiffContent
+        diffRaw={diffRaw}
+        taskId={t.id}
+        diffTab={diffTab}
+        setDiffTab={setDiffTab}
+        review={review}
+        oldComments={oldComments}
+        isReviewable={isReviewable}
+      />
       {/* Approval actions */}
       <ApprovalActions task={t} review={review} onApproved={onApproved} onRejected={onApproved} />
     </div>

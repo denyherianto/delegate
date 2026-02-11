@@ -7,7 +7,7 @@ import {
 import * as api from "../api.js";
 import {
   cap, esc, fmtTimestamp, renderMarkdown, avatarColor, avatarInitial,
-  linkifyTaskRefs, linkifyFilePaths, agentifyRefs, msgStatusIcon,
+  linkifyTaskRefs, linkifyFilePaths, agentifyRefs, msgStatusIcon, taskIdStr,
 } from "../utils.js";
 import { playMsgSound } from "../audio.js";
 
@@ -173,10 +173,19 @@ export function ChatPanel() {
     return filtered;
   }, [msgs, showEvents, filterFrom, filterTo, filterSearch, direction]);
 
-  // Auto-scroll
+  // Scroll to bottom on initial load
+  const initialScrollDone = useRef(false);
+  useEffect(() => {
+    if (!initialScrollDone.current && logRef.current && filteredMsgs.length > 0) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+      initialScrollDone.current = true;
+    }
+  }, [filteredMsgs]);
+
+  // Auto-scroll on new messages (only if near bottom)
   useEffect(() => {
     const el = logRef.current;
-    if (el) {
+    if (el && initialScrollDone.current) {
       const wasNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
       if (wasNearBottom) el.scrollTop = el.scrollHeight;
     }
@@ -274,7 +283,7 @@ export function ChatPanel() {
           {" "}Activity
         </label>
       </div>
-      <div class="chat-log" ref={logRef}>
+      <div class="chat-log" ref={logRef} role="log" aria-label="Chat messages" aria-live="polite">
         {filteredMsgs.map((m, i) => {
           if (m.type === "event") {
             const eventHtml = agentifyRefs(linkifyFilePaths(linkifyTaskRefs(esc(m.content))), agNames);
@@ -292,20 +301,36 @@ export function ChatPanel() {
           }
           const c = avatarColor(m.sender);
           const contentHtml = linkifyFilePaths(linkifyTaskRefs(renderMarkdown(m.content)));
+          const statusHtml = msgStatusIcon(m);
           return (
             <div key={m.id || i} class="msg">
               <div class="msg-avatar" style={{ background: c }}>{avatarInitial(m.sender)}</div>
               <div class="msg-body">
                 <div class="msg-header">
-                  <span
-                    class="msg-sender"
-                    style={{ cursor: "pointer" }}
-                    onClick={() => { diffPanelMode.value = "agent"; diffPanelTarget.value = m.sender; }}
-                  >
-                    {cap(m.sender)}
+                  <span class="msg-left-group">
+                    <span
+                      class="msg-sender"
+                      style={{ cursor: "pointer" }}
+                      onClick={() => { diffPanelMode.value = "agent"; diffPanelTarget.value = m.sender; }}
+                    >
+                      {cap(m.sender)}
+                    </span>
+                    <span class="msg-separator">&middot;</span>
+                    <span class="msg-recipient">{cap(m.recipient)}</span>
+                    {m.task_id && (
+                      <span
+                        class="msg-task-badge"
+                        onClick={() => { taskPanelId.value = m.task_id; }}
+                        style={{ cursor: "pointer" }}
+                      >
+                        {taskIdStr(m.task_id)}
+                      </span>
+                    )}
                   </span>
-                  <span class="msg-recipient">&rarr; {cap(m.recipient)}</span>
-                  <span class="msg-time">{fmtTimestamp(m.timestamp)}</span>
+                  <span class="msg-right-group">
+                    <span class="msg-time">{fmtTimestamp(m.timestamp)}</span>
+                    {m.type === "chat" && <span dangerouslySetInnerHTML={{ __html: statusHtml }} />}
+                  </span>
                 </div>
                 <LinkedDiv class="msg-content md-content" html={contentHtml} />
               </div>
@@ -315,7 +340,7 @@ export function ChatPanel() {
       </div>
       <div class="chat-input-container">
         <div class="chat-input-top">
-          <select value={recipient} onChange={e => setRecipient(e.target.value)}>
+          <select value={recipient} onChange={e => setRecipient(e.target.value)} aria-label="Message recipient">
             {recipientOptions.map(a => (
               <option key={a.name} value={a.name}>{cap(a.name)} ({a.role || "worker"})</option>
             ))}
@@ -325,6 +350,7 @@ export function ChatPanel() {
           ref={inputRef}
           placeholder="Send a message..."
           rows="1"
+          aria-label="Message input"
           onKeyDown={handleKeydown}
           onInput={(e) => {
             e.target.style.height = "auto";

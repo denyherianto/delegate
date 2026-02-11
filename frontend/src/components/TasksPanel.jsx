@@ -1,43 +1,81 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "preact/hooks";
-import { currentTeam, tasks, activeTab, taskPanelId } from "../state.js";
-import { cap, esc, fmtStatus, taskIdStr } from "../utils.js";
+import { currentTeam, tasks, activeTab, taskPanelId, taskFilterPreset } from "../state.js";
+import { cap, fmtStatus, taskIdStr } from "../utils.js";
 import { playTaskSound } from "../audio.js";
+import { FilterBar, applyFilters } from "./FilterBar.jsx";
+
+// ── Static field configs (enum options that don't change) ──
+const STATUS_OPTIONS = [
+  "todo", "in_progress", "in_review", "in_approval", "merging", "done", "rejected",
+];
+const PRIORITY_OPTIONS = ["low", "medium", "high", "critical"];
 
 export function TasksPanel() {
   const team = currentTeam.value;
   const allTasks = tasks.value;
 
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterAssignee, setFilterAssignee] = useState("");
-  const [filterPriority, setFilterPriority] = useState("");
-  const [filterRepo, setFilterRepo] = useState("");
+  const [filters, setFilters] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const searchTimerRef = useRef(null);
   const prevStatusRef = useRef({});
 
-  // Restore filters from session storage
+  // Restore filters from session storage on mount
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem("taskFilters");
+      const raw = sessionStorage.getItem("taskFilters2");
       if (!raw) return;
-      const f = JSON.parse(raw);
-      if (f.search) setSearchQuery(f.search);
-      if (f.status) setFilterStatus(f.status);
-      if (f.assignee) setFilterAssignee(f.assignee);
-      if (f.priority) setFilterPriority(f.priority);
-      if (f.repo) setFilterRepo(f.repo);
+      const saved = JSON.parse(raw);
+      if (saved.filters) setFilters(saved.filters);
+      if (saved.search) setSearchQuery(saved.search);
     } catch (e) { }
   }, []);
 
-  // Save filters
+  // Pick up pre-filter from sidebar banner click
+  useEffect(() => {
+    const preset = taskFilterPreset.value;
+    if (!preset) return;
+    // Convert preset into FilterBar-compatible filters
+    const newFilters = [];
+    if (preset.assignee) newFilters.push({ field: "assignee", operator: "is", values: [preset.assignee] });
+    if (preset.status) newFilters.push({ field: "status", operator: "is", values: [preset.status] });
+    setFilters(newFilters);
+    taskFilterPreset.value = null; // consume it
+  }, [taskFilterPreset.value]);
+
+  // Save filters to session storage
   useEffect(() => {
     try {
-      sessionStorage.setItem("taskFilters", JSON.stringify({
-        search: searchQuery, status: filterStatus,
-        assignee: filterAssignee, priority: filterPriority, repo: filterRepo,
+      sessionStorage.setItem("taskFilters2", JSON.stringify({
+        filters, search: searchQuery,
       }));
     } catch (e) { }
-  }, [searchQuery, filterStatus, filterAssignee, filterPriority, filterRepo]);
+  }, [filters, searchQuery]);
+
+  // History API: push state on filter change
+  const filtersRef = useRef(filters);
+  const searchRef = useRef(searchQuery);
+  useEffect(() => {
+    // Skip the initial mount (no push on restore)
+    if (filtersRef.current === filters && searchRef.current === searchQuery) return;
+    filtersRef.current = filters;
+    searchRef.current = searchQuery;
+    window.history.pushState(
+      { taskFilters: filters, taskSearch: searchQuery },
+      "",
+    );
+  }, [filters, searchQuery]);
+
+  // History API: restore on popstate
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.state && e.state.taskFilters !== undefined) {
+        setFilters(e.state.taskFilters);
+        setSearchQuery(e.state.taskSearch || "");
+      }
+    };
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, []);
 
   // Task status change sound
   useEffect(() => {
@@ -52,37 +90,42 @@ export function TasksPanel() {
     if (soundNeeded) playTaskSound();
   }, [allTasks]);
 
-  // Dynamic filter options
-  const { assignees, repos } = useMemo(() => {
+  // Build dynamic field config from task data
+  const fieldConfig = useMemo(() => {
     const assigneeSet = new Set();
+    const driSet = new Set();
     const repoSet = new Set();
+
     for (const t of allTasks) {
       if (t.assignee) assigneeSet.add(t.assignee);
+      if (t.dri) driSet.add(t.dri);
       if (t.repo) {
-        const taskRepos = Array.isArray(t.repo) ? t.repo : [t.repo];
-        taskRepos.forEach(r => { if (r) repoSet.add(r); });
+        const repos = Array.isArray(t.repo) ? t.repo : [t.repo];
+        repos.forEach(r => { if (r) repoSet.add(r); });
       }
     }
-    return { assignees: [...assigneeSet].sort(), repos: [...repoSet].sort() };
+
+    return [
+      { key: "status", label: "Status", options: STATUS_OPTIONS },
+      { key: "assignee", label: "Assignee", options: [...assigneeSet].sort() },
+      { key: "dri", label: "DRI", options: [...driSet].sort() },
+      { key: "priority", label: "Priority", options: PRIORITY_OPTIONS },
+      { key: "repo", label: "Repo", options: [...repoSet].sort() },
+    ];
   }, [allTasks]);
 
-  // Filter + sort
+  // Apply filters + search + sort
   const filtered = useMemo(() => {
-    let list = allTasks;
-    if (filterStatus) list = list.filter(t => t.status === filterStatus);
-    if (filterPriority) list = list.filter(t => t.priority === filterPriority);
-    if (filterAssignee) list = list.filter(t => t.assignee === filterAssignee);
-    if (filterRepo) list = list.filter(t => {
-      const r = Array.isArray(t.repo) ? t.repo : [t.repo];
-      return r.includes(filterRepo);
-    });
+    let list = applyFilters(allTasks, filters);
     const sq = searchQuery.toLowerCase().trim();
-    if (sq) list = list.filter(t =>
-      (t.title || "").toLowerCase().includes(sq) ||
-      (t.description || "").toLowerCase().includes(sq)
-    );
+    if (sq) {
+      list = list.filter(t =>
+        (t.title || "").toLowerCase().includes(sq) ||
+        (t.description || "").toLowerCase().includes(sq)
+      );
+    }
     return [...list].sort((a, b) => b.id - a.id);
-  }, [allTasks, filterStatus, filterPriority, filterAssignee, filterRepo, searchQuery]);
+  }, [allTasks, filters, searchQuery]);
 
   const onSearchInput = useCallback((e) => {
     const val = e.target.value;
@@ -107,36 +150,14 @@ export function TasksPanel() {
             placeholder="Search tasks..."
             value={searchQuery}
             onInput={onSearchInput}
+            aria-label="Search tasks"
           />
         </div>
-        <span class="filter-label">Status</span>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-          <option value="">All</option>
-          <option value="todo">Todo</option>
-          <option value="in_progress">In Progress</option>
-          <option value="in_review">In Review</option>
-          <option value="in_approval">In Approval</option>
-          <option value="done">Done</option>
-          <option value="rejected">Rejected</option>
-        </select>
-        <span class="filter-label">Assignee</span>
-        <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}>
-          <option value="">All</option>
-          {assignees.map(n => <option key={n} value={n}>{cap(n)}</option>)}
-        </select>
-        <span class="filter-label">Priority</span>
-        <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
-          <option value="">All</option>
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-          <option value="critical">Critical</option>
-        </select>
-        <span class="filter-label">Repo</span>
-        <select value={filterRepo} onChange={e => setFilterRepo(e.target.value)}>
-          <option value="">All</option>
-          {repos.map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
+        <FilterBar
+          filters={filters}
+          onFiltersChange={setFilters}
+          fieldConfig={fieldConfig}
+        />
       </div>
       <div>
         {!allTasks.length ? (

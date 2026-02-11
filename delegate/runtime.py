@@ -23,6 +23,7 @@ from typing import Any
 
 import yaml
 
+from delegate.logging_setup import log_caller
 from delegate.agent import (
     AgentLogger,
     build_system_prompt,
@@ -152,6 +153,11 @@ async def run_turn(
     # --- Setup ---
     ad = _agent_dir(hc_home, team, agent)
     state = _read_state(ad)
+    role = state.get("role", "engineer")
+
+    # Set logging caller context for all log lines during this turn
+    _prev_caller = log_caller.set(f"{agent}:{role}")
+
     seniority = state.get("seniority", DEFAULT_SENIORITY)
     model = SENIORITY_MODELS.get(seniority, SENIORITY_MODELS[DEFAULT_SENIORITY])
     token_budget = state.get("token_budget")
@@ -253,6 +259,7 @@ async def run_turn(
             f"{agent.capitalize()} went offline ({total_tokens:,} tokens{cost_str})",
             task_id=current_task_id,
         )
+        log_caller.reset(_prev_caller)
         return result
 
     # Log turn end
@@ -377,5 +384,8 @@ async def run_turn(
         f"Turns: {turn_num}\n"
         f"Tokens: {total_tokens}\n"
     )
+
+    # Restore logging caller context
+    log_caller.reset(_prev_caller)
 
     return result

@@ -30,7 +30,7 @@ from delegate.config import get_repo_approval, get_pre_merge_script
 from delegate.notify import notify_conflict
 from delegate.task import get_task, change_status, update_task, list_tasks, format_task_id
 from delegate.chat import log_event
-from delegate.repo import get_repo_path, remove_agent_worktree
+from delegate.repo import get_repo_path, remove_all_worktrees_for_task, any_worktrees_exist
 
 logger = logging.getLogger(__name__)
 
@@ -342,16 +342,19 @@ def merge_task(
         repo_dirs[repo_name] = str(real_repo)
 
     log_event(hc_home, team, f"{format_task_id(task_id)} merge started ({branch})", task_id=task_id)
+    change_status(hc_home, team, task_id, "merging")
 
-    # Step 0: Remove agent worktrees so the branch is free to check out.
-    dri = task.get("dri", "") or task.get("assignee", "")
-    if dri:
-        for repo_name in repos:
-            try:
-                remove_agent_worktree(hc_home, team, repo_name, dri, task_id)
-                logger.info("Removed worktree for %s (%s) before merge", format_task_id(task_id), repo_name)
-            except Exception as exc:
-                logger.warning("Could not remove worktree for %s (%s) before merge: %s", format_task_id(task_id), repo_name, exc)
+    # Step 0: Remove ALL agent worktrees for this task so the branch is free.
+    for repo_name in repos:
+        removed = remove_all_worktrees_for_task(hc_home, team, repo_name, task_id)
+        if removed:
+            logger.info("Removed %d worktree(s) for %s (%s) before merge", removed, format_task_id(task_id), repo_name)
+        # Verify none remain — fail hard rather than risk merge-time confusion
+        if any_worktrees_exist(hc_home, team, repo_name, task_id):
+            return MergeResult(
+                task_id, False,
+                f"Worktrees for {format_task_id(task_id)} in {repo_name} still exist after cleanup — aborting merge",
+            )
 
     base_sha_dict: dict = task.get("base_sha", {})
 
@@ -433,13 +436,7 @@ def merge_task(
         for repo_name in repos:
             _cleanup_branch(repo_dirs[repo_name], branch)
 
-    # Step 7: Clean up agent worktrees (best effort).
-    if dri and not shared:
-        for repo_name in repos:
-            try:
-                remove_agent_worktree(hc_home, team, repo_name, dri, task_id)
-            except Exception as exc:
-                logger.warning("Could not remove worktree for %s (%s): %s", task_id, repo_name, exc)
+    # Note: agent worktrees were already removed in Step 0.
 
     return MergeResult(task_id, True, "Merged successfully")
 

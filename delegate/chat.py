@@ -54,25 +54,38 @@ def get_messages(
     msg_type: str | None = None,
     limit: int | None = None,
 ) -> list[dict]:
-    """Query messages with optional filters."""
+    """Query messages with optional filters.
+
+    For chat messages, includes ``delivered_at``, ``seen_at``, and
+    ``processed_at`` fields by LEFT JOINing with the ``mailbox`` table.
+    """
     conn = get_connection(hc_home, team)
-    query = "SELECT id, timestamp, sender, recipient, content, type, task_id FROM messages WHERE 1=1"
+    query = """\
+        SELECT m.id, m.timestamp, m.sender, m.recipient, m.content, m.type, m.task_id,
+               mb.delivered_at, mb.seen_at, mb.processed_at
+        FROM messages m
+        LEFT JOIN mailbox mb
+            ON  m.type = 'chat'
+            AND mb.sender = m.sender
+            AND mb.recipient = m.recipient
+            AND mb.body = m.content
+        WHERE 1=1"""
     params: list = []
 
     if since:
-        query += " AND timestamp > ?"
+        query += " AND m.timestamp > ?"
         params.append(since)
 
     if between:
         a, b = between
-        query += " AND ((sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?))"
+        query += " AND ((m.sender = ? AND m.recipient = ?) OR (m.sender = ? AND m.recipient = ?))"
         params.extend([a, b, b, a])
 
     if msg_type:
-        query += " AND type = ?"
+        query += " AND m.type = ?"
         params.append(msg_type)
 
-    query += " ORDER BY id ASC"
+    query += " ORDER BY m.id ASC"
 
     if limit:
         query += " LIMIT ?"

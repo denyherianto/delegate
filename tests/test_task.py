@@ -377,12 +377,12 @@ class TestBranchAndCommits:
         task = create_task(tmp_team, TEAM, title="Feature X")
         set_task_branch(tmp_team, TEAM, task["id"], "alice/backend/0001-feature-x")
 
-        # Three-dot diff fails — no fallback, should return '(no diff available)'
+        # All git calls fail — should return '(no diff available)'
         fail_result = MagicMock()
         fail_result.returncode = 1
         fail_result.stdout = ""
 
-        mock_run.side_effect = [fail_result]
+        mock_run.return_value = fail_result
 
         diff = get_task_diff(tmp_team, TEAM, task["id"])
         assert diff["_default"] == "(no diff available)"

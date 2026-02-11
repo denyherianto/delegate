@@ -315,6 +315,66 @@ def recent_processed(
     return [_row_to_message(r) for r in reversed(rows)]
 
 
+def recent_conversation(
+    hc_home: Path,
+    team: str,
+    agent: str,
+    other: str,
+    limit: int = 10,
+) -> list[Message]:
+    """Return recent messages between *agent* and *other* (bidirectional).
+
+    Includes both messages sent by *agent* TO *other* and messages received
+    by *agent* FROM *other*, ordered chronologically (oldest first).
+    Only already-processed received messages are included to avoid leaking
+    future messages into the context.
+    """
+    conn = get_connection(hc_home, team)
+    try:
+        rows = conn.execute(
+            """\
+            SELECT * FROM mailbox
+            WHERE (
+                (sender = ? AND recipient = ?)
+                OR
+                (sender = ? AND recipient = ? AND processed_at IS NOT NULL)
+            )
+            ORDER BY id DESC LIMIT ?""",
+            (agent, other, other, agent, limit),
+        ).fetchall()
+    finally:
+        conn.close()
+    # Return in chronological order (oldest first)
+    return [_row_to_message(r) for r in reversed(rows)]
+
+
+def recent_messages_from_others(
+    hc_home: Path,
+    team: str,
+    agent: str,
+    exclude_sender: str,
+    limit: int = 5,
+) -> list[Message]:
+    """Return recent processed messages from senders OTHER than *exclude_sender*.
+
+    Useful for building context about what other people have been saying to
+    the agent recently.  Results are in chronological order (oldest first).
+    """
+    conn = get_connection(hc_home, team)
+    try:
+        rows = conn.execute(
+            """\
+            SELECT * FROM mailbox
+            WHERE recipient = ? AND sender != ?
+              AND processed_at IS NOT NULL
+            ORDER BY id DESC LIMIT ?""",
+            (agent, exclude_sender, limit),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [_row_to_message(r) for r in reversed(rows)]
+
+
 def has_unread(hc_home: Path, team: str, agent: str) -> bool:
     """Check if an agent has any unread delivered messages.
 

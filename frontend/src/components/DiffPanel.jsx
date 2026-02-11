@@ -50,7 +50,7 @@ function DiffView({ taskId }) {
 
   const renderFull = () => {
     if (!rawDiff) return <div class="diff-empty">No changes</div>;
-    return <div dangerouslySetInnerHTML={{ __html: diff2HtmlRender(rawDiff, { outputFormat: "line-by-line", drawFileList: false, matching: "lines" }) }} />;
+    return <div dangerouslySetInnerHTML={{ __html: diff2HtmlRender(rawDiff, { outputFormat: "line-by-line", drawFileList: false, matching: "words" }) }} />;
   };
 
   return (
@@ -200,42 +200,52 @@ function AgentView({ agentName }) {
 // ── File viewer ──
 function FileView({ filePath }) {
   const team = currentTeam.value;
-  const [content, setContent] = useState(null);
-  const [modified, setModified] = useState("");
+  const [fileData, setFileData] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!filePath || !team) return;
-    setContent(null); setError(null);
+    setFileData(null); setError(null);
     let apiPath = filePath;
     if (apiPath.startsWith("shared/")) apiPath = apiPath.substring(7);
-    api.fetchFileContent(team, apiPath).then(data => {
-      setContent(data.content);
-      setModified(data.modified || "");
-    }).catch(e => setError(e.message));
+    api.fetchFileContent(team, apiPath).then(d => setFileData(d)).catch(e => setError(e.message));
   }, [filePath, team]);
 
   const ext = filePath ? (filePath.lastIndexOf(".") !== -1 ? filePath.substring(filePath.lastIndexOf(".") + 1).toLowerCase() : "") : "";
-  const breadcrumb = filePath ? filePath.split("/").map((p, i, arr) => (
-    <span key={i}>
-      {i < arr.length - 1
-        ? <><span class="file-breadcrumb-dir">{p}</span><span class="file-breadcrumb-sep">/</span></>
-        : <span class="file-breadcrumb-current">{p}</span>
+
+  // Show only the filename + parent dir (truncate long paths)
+  const truncatePath = (p) => {
+    if (!p) return "";
+    const parts = p.split("/");
+    if (parts.length <= 2) return p;
+    return "…/" + parts.slice(-2).join("/");
+  };
+
+  const renderFileContent = () => {
+    if (!fileData) return <div class="diff-empty">Loading file...</div>;
+    const { content, is_binary, content_type } = fileData;
+
+    if (is_binary) {
+      if (content_type && content_type.startsWith("image/") && content) {
+        return <div class="file-viewer-content"><img class="file-viewer-image" src={`data:${content_type};base64,${content}`} alt={filePath} /></div>;
       }
-    </span>
-  )) : null;
+      return <div class="diff-empty">Binary file ({content_type || "unknown type"})</div>;
+    }
+
+    if (ext === "md" || ext === "markdown") {
+      return <div class="file-viewer-content md-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />;
+    }
+    return <div class="file-viewer-content"><pre class="file-viewer-code"><code>{content}</code></pre></div>;
+  };
 
   return (
     <>
-      <div class="diff-panel-title">{breadcrumb}</div>
-      <div class="diff-panel-branch">{modified ? "Modified " + fmtTimestamp(modified) : ""}</div>
+      <div class="diff-panel-title file-viewer-header">
+        <span class="file-viewer-path" title={filePath}>{truncatePath(filePath)}</span>
+      </div>
+      <div class="diff-panel-branch">{fileData && fileData.modified ? "Modified " + fmtTimestamp(fileData.modified) : ""}</div>
       <div class="diff-panel-body">
-        {error ? <div class="diff-empty">{error}</div>
-          : content === null ? <div class="diff-empty">Loading file...</div>
-          : (ext === "md" || ext === "markdown")
-            ? <div class="file-viewer-content md-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />
-            : <div class="file-viewer-content"><pre class="file-viewer-code"><code>{content}</code></pre></div>
-        }
+        {error ? <div class="diff-empty">{error}</div> : renderFileContent()}
       </div>
     </>
   );
@@ -264,7 +274,7 @@ export function DiffPanel() {
           {mode === "diff" && <div class="diff-panel-title">{"T" + String(target).padStart(4, "0")}</div>}
           {mode === "agent" && <div class="diff-panel-title">{cap(target || "")}</div>}
           {mode === "file" && null /* FileView renders its own title */}
-          <button class="diff-panel-close" onClick={close}>&times;</button>
+          <button class="diff-panel-close" onClick={close} aria-label="Close panel">&times;</button>
         </div>
         {mode === "diff" && <DiffView taskId={target} />}
         {mode === "agent" && <AgentView agentName={target} />}

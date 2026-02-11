@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "preact/hooks";
 import {
   currentTeam, teams, bossName, tasks, agents, agentStatsMap,
   activeTab, actionItems, openTaskCount, taskPanelId, diffPanelMode, diffPanelTarget,
+  taskFilterPreset,
 } from "../state.js";
 import {
   cap, esc, fmtStatus, fmtCost, fmtRelativeTime, fmtRelativeTimeShort,
@@ -72,7 +73,11 @@ function ActionWidget() {
           )}
         </span>
         {items.length > 0 && (
-          <a class="sidebar-see-all" onClick={() => { activeTab.value = "tasks"; }}>
+          <a class="sidebar-see-all" onClick={() => {
+            taskFilterPreset.value = { assignee: bossName.value.toLowerCase() };
+            activeTab.value = "tasks";
+            window.history.pushState(null, "", "/tasks");
+          }}>
             See All &rarr;
           </a>
         )}

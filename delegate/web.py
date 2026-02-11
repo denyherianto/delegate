@@ -377,6 +377,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             override=Path(os.environ["DELEGATE_HOME"]) if "DELEGATE_HOME" in os.environ else None
         )
 
+    # Unified logging (file + console) — safe to call multiple times
+    from delegate.logging_setup import configure_logging
+    configure_logging(hc_home, console=True)
+
     # Apply any pending database migrations on startup (per team).
     from delegate.db import ensure_schema
     for team_name in _list_teams(hc_home):
@@ -854,9 +858,15 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         entries.sort(key=lambda e: (not e["is_dir"], e["name"].lower()))
         return {"files": entries}
 
+    _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico"}
+    _BINARY_EXTS = {".zip", ".gz", ".tar", ".bin", ".exe", ".woff", ".woff2", ".ttf", ".eot", ".pdf"}
+
     @app.get("/teams/{team}/files/content")
     def read_shared_file(team: str, path: str):
         """Read a specific file from the team's shared/ directory."""
+        import base64
+        import mimetypes
+
         base = _shared_dir(hc_home, team)
         target = (base / path).resolve()
 
@@ -873,6 +883,23 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             )
 
         stat = target.stat()
+        ext = target.suffix.lower()
+        content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+
+        # Binary/image handling
+        if ext in _IMAGE_EXTS or ext in _BINARY_EXTS:
+            raw = target.read_bytes()
+            return {
+                "path": str(target.relative_to(base)),
+                "name": target.name,
+                "size": stat.st_size,
+                "is_binary": True,
+                "content_type": content_type,
+                "content": base64.b64encode(raw).decode() if ext in _IMAGE_EXTS else "",
+                "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            }
+
+        # Text files
         content = target.read_text(errors="replace")
         if len(content) > MAX_FILE_SIZE:
             content = content[:MAX_FILE_SIZE]
@@ -881,10 +908,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             "path": str(target.relative_to(base)),
             "name": target.name,
             "size": stat.st_size,
+            "is_binary": False,
+            "content_type": content_type,
             "content": content,
-            "modified": datetime.fromtimestamp(
-                stat.st_mtime, tz=timezone.utc
-            ).isoformat(),
+            "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
         }
 
     # --- Static files ---
@@ -893,6 +920,17 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def index():
+        return (_static_dir / "index.html").read_text()
+
+    # Catch-all for SPA path-based routing — serves index.html for any
+    # path that doesn't match an API route or a static file.
+    @app.get("/{path:path}", response_class=HTMLResponse, include_in_schema=False)
+    def spa_catch_all(path: str):
+        # Don't intercept /static/ or API paths (already handled above)
+        static_file = _static_dir / path
+        if static_file.is_file():
+            from fastapi.responses import FileResponse
+            return FileResponse(str(static_file))
         return (_static_dir / "index.html").read_text()
 
     return app

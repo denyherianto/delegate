@@ -93,6 +93,19 @@ export async function rejectTask(team, taskId, reason) {
   return r.json();
 }
 
+export async function postReviewComment(team, taskId, { file, line, body }) {
+  const r = await fetch(`/teams/${team}/tasks/${taskId}/reviews/comments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ file, line, body }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
 export async function fetchAgentTab(team, agentName, tab) {
   const r = await fetch(`/teams/${team}/agents/${agentName}/${tab}`);
   return r.ok ? r.json() : null;

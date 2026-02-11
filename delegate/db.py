@@ -223,6 +223,7 @@ def ensure_schema(hc_home: Path, team: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
 
     # Bootstrap the meta table (always idempotent).
     conn.execute("""\
@@ -259,6 +260,7 @@ def get_connection(hc_home: Path, team: str) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 

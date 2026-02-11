@@ -376,6 +376,59 @@ def get_worktree_path(
     return wt_dir / wt_name
 
 
+def any_worktrees_exist(
+    hc_home: Path,
+    team: str,
+    repo_name: str,
+    task_id: int,
+) -> bool:
+    """Check if any agent still has a worktree for *task_id* in *repo_name*."""
+    from delegate.paths import agents_dir
+    ad = agents_dir(hc_home, team)
+    if not ad.is_dir():
+        return False
+    wt_name = f"{repo_name}-{format_task_id(task_id)}"
+    for agent_d in ad.iterdir():
+        if not agent_d.is_dir():
+            continue
+        wt_path = agent_d / "worktrees" / wt_name
+        if wt_path.exists():
+            return True
+    return False
+
+
+def remove_all_worktrees_for_task(
+    hc_home: Path,
+    team: str,
+    repo_name: str,
+    task_id: int,
+) -> int:
+    """Remove every agent's worktree for *task_id* in *repo_name*.
+
+    Returns the number of worktrees removed.
+    """
+    from delegate.paths import agents_dir
+    ad = agents_dir(hc_home, team)
+    if not ad.is_dir():
+        return 0
+    removed = 0
+    for agent_d in ad.iterdir():
+        if not agent_d.is_dir():
+            continue
+        agent_name = agent_d.name
+        wt_path = get_worktree_path(hc_home, team, repo_name, agent_name, task_id)
+        if wt_path.exists():
+            try:
+                remove_agent_worktree(hc_home, team, repo_name, agent_name, task_id)
+                removed += 1
+            except Exception as exc:
+                logger.warning(
+                    "Failed to remove worktree for %s/%s: %s",
+                    agent_name, format_task_id(task_id), exc,
+                )
+    return removed
+
+
 def push_branch(
     hc_home: Path,
     team: str,

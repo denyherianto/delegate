@@ -30,6 +30,9 @@ export const knownAgentNames = signal([]);
 // ── Chat filter direction ──
 export const chatFilterDirection = signal("one-way"); // "one-way" | "bidi"
 
+// ── Task pre-filter (set by sidebar banner → picked up by TasksPanel) ──
+export const taskFilterPreset = signal(null); // { assignee?: string } | null
+
 // ── Computed helpers ──
 export const actionItems = computed(() => {
   const boss = bossName.value.toLowerCase();

@@ -22,7 +22,10 @@ from typing import Any
 import yaml
 
 from delegate.paths import agent_dir as _resolve_agent_dir, agents_dir, base_charter_dir
-from delegate.mailbox import read_inbox, mark_seen_batch, mark_processed_batch, has_unread, recent_processed
+from delegate.mailbox import (
+    read_inbox, mark_seen_batch, mark_processed_batch, has_unread,
+    recent_conversation, recent_messages_from_others,
+)
 from delegate.task import format_task_id
 
 logger = logging.getLogger(__name__)
@@ -364,44 +367,24 @@ def setup_task_worktree(
     return primary_wt
 
 
-def push_task_branch(hc_home: Path, team: str, task: dict) -> bool:
-    """Push the task's branch to origin in all repos.
-
-    Returns True if at least one push succeeded, False otherwise.
-    """
-    repos: list[str] = task.get("repo", [])
-    branch = task.get("branch", "")
-    if not repos or not branch:
-        return False
-
-    any_ok = False
-    from delegate.repo import push_branch
-    for repo_name in repos:
-        try:
-            if push_branch(hc_home, team, repo_name, branch):
-                any_ok = True
-        except Exception as exc:
-            logger.warning("Failed to push branch %s in repo %s: %s", branch, repo_name, exc)
-    return any_ok
-
-
 def cleanup_task_worktree(
     hc_home: Path,
     team: str,
     agent: str,
     task: dict,
 ) -> None:
-    """Push the branch and remove the agent's worktrees for a completed task."""
+    """Remove the agent's worktrees for a completed task.
+
+    Branches are local-only — the merge worker handles rebasing and
+    fast-forward merging directly, so agents never push to origin.
+    """
     repos: list[str] = task.get("repo", [])
     if not repos:
         return
 
     task_id = task["id"]
 
-    # Push first
-    push_task_branch(hc_home, team, task)
-
-    # Then remove worktrees in all repos
+    # Remove worktrees in all repos
     from delegate.repo import remove_agent_worktree
     for repo_name in repos:
         try:
@@ -665,8 +648,7 @@ GIT WORKTREE:
 
     - Commit your changes frequently with clear messages.
     - Do NOT switch branches — stay on {branch}.
-    - When the task is done, push your branch in each repo:
-        git push origin {branch}
+    - Do NOT push — the merge worker handles rebasing and merging.
     - Other agents have their own worktrees and cannot interfere with your work.
 """
 
@@ -770,22 +752,32 @@ def build_user_message(
         included_msg_ids = [m.filename for m in messages if m.filename]
         primary_sender = messages[0].sender
 
-        # Fetch recent processed messages from the primary sender
-        history_same = recent_processed(
-            hc_home, team, agent, from_sender=primary_sender,
+        # Bidirectional conversation history with the primary sender
+        # Shows BOTH sent and received messages so the agent can see
+        # what it already said (prevents re-responding to old messages).
+        convo = recent_conversation(
+            hc_home, team, agent, other=primary_sender,
             limit=CONTEXT_MSGS_SAME_SENDER,
         )
-        # Fetch recent processed messages from anyone else
-        history_others = [
-            m for m in recent_processed(hc_home, team, agent, limit=CONTEXT_MSGS_OTHERS * 2)
-            if m.sender != primary_sender
-        ][:CONTEXT_MSGS_OTHERS]
+        # Recent messages from other people (received only)
+        others = recent_messages_from_others(
+            hc_home, team, agent, exclude_sender=primary_sender,
+            limit=CONTEXT_MSGS_OTHERS,
+        )
 
-        if history_same or history_others:
-            parts.append("=== RECENT CONVERSATION HISTORY ===")
-            parts.append("(Previously processed messages — for context only.)\n")
-            for msg in sorted(history_same + history_others, key=lambda m: m.id or 0):
-                parts.append(f"[{msg.time}] From {msg.sender}:\n{msg.body}\n")
+        if convo or others:
+            parts.append("=== CONVERSATION HISTORY (read-only context) ===")
+            if convo:
+                parts.append(f"Thread with {primary_sender}:")
+                for msg in convo:
+                    direction = "You" if msg.sender == agent else msg.sender
+                    parts.append(f"  [{msg.time}] {direction}: {msg.body}")
+                parts.append("")
+            if others:
+                parts.append("Recent from others:")
+                for msg in others:
+                    parts.append(f"  [{msg.time}] {msg.sender}: {msg.body}")
+                parts.append("")
 
     # --- New messages — act on ALL of them ---
     if messages:
