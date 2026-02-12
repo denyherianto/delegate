@@ -14,8 +14,10 @@ export function ManagerActivityBar() {
   const turnCtx = managerTurnContext.value;
   const lastActivity = agentLastActivity.value;
 
-  // Safety timeout: if no activity update for 10 seconds and no turn_ended, clear context
-  // Increased from 5s to 10s to avoid clearing too aggressively
+  // Safety timeout: clear the indicator if no activity arrives for 30 seconds.
+  // The timestamp on managerTurnContext is bumped on every activity SSE event
+  // for the manager (see app.jsx), so this only fires if the stream truly stalls
+  // (e.g. SSE disconnect without a turn_ended).
   useEffect(() => {
     if (!turnCtx) return;
 
@@ -23,10 +25,10 @@ export function ManagerActivityBar() {
       if (managerTurnContext.value && managerTurnContext.value.agent === turnCtx.agent) {
         managerTurnContext.value = null;
       }
-    }, 10000);
+    }, 30000);
 
     return () => clearTimeout(timer);
-  }, [turnCtx?.agent, turnCtx?.timestamp]); // Only re-trigger on agent or timestamp change, not on lastActivity
+  }, [turnCtx?.agent, turnCtx?.timestamp]);
 
   if (!turnCtx) return null;
 

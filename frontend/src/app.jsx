@@ -267,6 +267,13 @@ function App() {
           const prev = agentLastActivity.value;
           agentLastActivity.value = { ...prev, [entry.agent]: entry };
 
+          // Keep manager activity bar alive: bump timestamp on every activity event
+          // from the active manager so the safety timeout keeps resetting.
+          const mtc = managerTurnContext.value;
+          if (mtc && mtc.agent === entry.agent) {
+            managerTurnContext.value = { ...mtc, timestamp: entry.timestamp };
+          }
+
           const log = agentActivityLog.value;
           const next = log.length >= MAX_LOG_ENTRIES
             ? [...log.slice(log.length - MAX_LOG_ENTRIES + 1), entry]
