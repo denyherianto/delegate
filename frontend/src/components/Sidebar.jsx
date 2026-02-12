@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "preact/hooks";
 import {
   currentTeam, teams, tasks, agents, agentStatsMap,
-  activeTab, taskPanelId, diffPanelMode, diffPanelTarget,
+  activeTab, openPanel,
   agentLastActivity, sidebarCollapsed,
 } from "../state.js";
 import {
@@ -161,7 +161,7 @@ function AgentsWidget({ collapsed }) {
           <div
             key={a.name}
             class="sb-agent-row"
-            onClick={() => { diffPanelMode.value = "agent"; diffPanelTarget.value = a.name; }}
+            onClick={() => { openPanel("agent", a.name); }}
           >
             <div class="sb-agent-line1">
               <span class={"sb-dot " + dotClass}></span>
@@ -212,7 +212,7 @@ function TasksWidget({ collapsed }) {
           <div
             key={t.id}
             class="sb-task-row"
-            onClick={() => { taskPanelId.value = t.id; }}
+            onClick={() => { openPanel("task", t.id); }}
           >
             <div class="sb-task-line1">
               <span class={"sb-dot dot-" + t.status}></span>

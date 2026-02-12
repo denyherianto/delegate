@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks";
 import {
   currentTeam, messages, agents, activeTab,
-  chatFilterDirection, diffPanelMode, diffPanelTarget, taskPanelId,
+  chatFilterDirection, openPanel,
   knownAgentNames, isMuted, bossName, expandedMessages,
 } from "../state.js";
 import * as api from "../api.js";
@@ -27,11 +27,11 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
     const taskLink = e.target.closest("[data-task-id]");
     if (taskLink) {
       e.stopPropagation();
-      taskPanelId.value = parseInt(taskLink.dataset.taskId, 10);
+      openPanel("task", parseInt(taskLink.dataset.taskId, 10));
       return;
     }
     const agentLink = e.target.closest("[data-agent-name]");
-    if (agentLink) { e.stopPropagation(); diffPanelMode.value = "agent"; diffPanelTarget.value = agentLink.dataset.agentName; return; }
+    if (agentLink) { e.stopPropagation(); openPanel("agent", agentLink.dataset.agentName); return; }
     const fileLink = e.target.closest("[data-file-path]");
     if (fileLink) {
       e.stopPropagation();
@@ -41,7 +41,7 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
       if (isHtmlFile) {
         window.open(`/teams/${currentTeam.value}/files/raw?path=${encodeURIComponent(toApiPath(fpath, currentTeam.value))}`, "_blank");
       } else {
-        diffPanelMode.value = "file"; diffPanelTarget.value = fpath;
+        openPanel("file", fpath);
       }
       return;
     }
@@ -457,7 +457,7 @@ export function ChatPanel() {
                 <div class="msg-header">
                   <span
                     class="msg-sender copyable"
-                    onClick={() => { diffPanelMode.value = "agent"; diffPanelTarget.value = m.sender; }}
+                    onClick={() => { openPanel("agent", m.sender); }}
                   >
                     {cap(m.sender)}<CopyBtn text={m.sender} />
                   </span>
@@ -468,7 +468,7 @@ export function ChatPanel() {
                       <span
                         class="msg-task-badge copyable"
                         title={`Task ${taskIdStr(m.task_id)}`}
-                        onClick={(e) => { e.stopPropagation(); taskPanelId.value = m.task_id; }}
+                        onClick={(e) => { e.stopPropagation(); openPanel("task", m.task_id); }}
                       >
                         {taskIdStr(m.task_id)}<CopyBtn text={taskIdStr(m.task_id)} />
                       </span>

@@ -4,7 +4,7 @@ import { batch } from "@preact/signals";
 import {
   currentTeam, teams, bossName, tasks, agents, agentStatsMap, messages,
   activeTab, knownAgentNames,
-  taskPanelId, diffPanelMode, diffPanelTarget,
+  panelStack, popPanel, closeAllPanels,
   agentLastActivity, agentActivityLog, managerTurnContext,
   helpOverlayOpen, sidebarCollapsed,
 } from "./state.js";
@@ -36,14 +36,13 @@ function App() {
 
       // Helper to check if any overlay is open
       const isOverlayOpen = () => {
-        return taskPanelId.value !== null || diffPanelMode.value !== null || helpOverlayOpen.value;
+        return panelStack.value.length > 0 || helpOverlayOpen.value;
       };
 
-      // Escape: close panels/overlays or blur input
+      // Escape: pop one panel level (or close last), close overlays, or blur input
       if (e.key === "Escape") {
         if (helpOverlayOpen.value) { helpOverlayOpen.value = false; return; }
-        if (taskPanelId.value !== null) { taskPanelId.value = null; return; }
-        if (diffPanelMode.value !== null) { diffPanelMode.value = null; diffPanelTarget.value = null; return; }
+        if (panelStack.value.length > 0) { popPanel(); return; }
         if (isInputFocused()) { document.activeElement.blur(); return; }
         return;
       }

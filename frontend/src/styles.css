@@ -1199,13 +1199,14 @@ select option:hover {
 .diff-panel.open { transform: translateX(0); }
 .diff-backdrop { position: fixed; inset: 0; background: var(--backdrop-bg); z-index: 199; opacity: 0; pointer-events: none; transition: opacity 200ms ease; }
 .diff-backdrop.open { opacity: 1; pointer-events: auto; }
-.diff-panel-header { padding: 16px 20px 12px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
+.diff-panel-header { padding: 16px 20px 12px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; position: relative; }
 .diff-panel-title { font-size: 15px; font-weight: 600; color: var(--text-heading); margin-bottom: 4px; }
 .diff-panel-branch { font-size: 12px; color: var(--text-secondary); font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; margin-bottom: 8px; }
 .diff-panel-commits { display: flex; flex-wrap: wrap; gap: 6px; }
 .diff-panel-commit { font-size: 11px; font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; background: var(--bg-active); color: var(--text-secondary); padding: 2px 8px; border-radius: 4px; }
 .diff-panel-close { position: absolute; top: 14px; right: 16px; background: none; border: none; color: var(--text-muted); font-size: 22px; cursor: pointer; line-height: 1; padding: 4px; transition: color 100ms; }
 .diff-panel-close:hover { color: var(--text-primary); }
+.diff-panel-role { font-size: 12px; color: var(--text-secondary); font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; padding: 0 20px 8px; }
 .diff-panel-tabs { display: flex; gap: 0; padding: 0 20px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
 .diff-tab { padding: 8px 14px; cursor: pointer; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-family: inherit; font-size: 12px; font-weight: 500; transition: color 100ms; }
 .diff-tab:hover { color: var(--text-secondary); }
@@ -1340,6 +1341,29 @@ select option:hover {
 .agent-markdown-content pre { background: var(--bg-active); padding: 8px 12px; border-radius: 6px; overflow-x: auto; }
 .agent-markdown-content pre code { background: none; padding: 0; }
 .agent-markdown-content p { margin: 10px 0; }
+
+/* ================================================================
+   Panel back bar (shared by task-panel and diff-panel for stacking)
+   ================================================================ */
+.panel-back-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 100ms, background 100ms;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel-back-bar:hover { color: var(--text-primary); background: var(--bg-hover); }
+.panel-back-arrow { font-size: 14px; flex-shrink: 0; }
 
 /* ================================================================
    Task detail side panel

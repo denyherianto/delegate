@@ -1,5 +1,5 @@
 import { useMemo } from "preact/hooks";
-import { currentTeam, tasks, agents, agentStatsMap, activeTab, taskPanelId, diffPanelMode, diffPanelTarget } from "../state.js";
+import { currentTeam, tasks, agents, agentStatsMap, activeTab, openPanel } from "../state.js";
 import {
   cap, esc, fmtTokensShort, fmtCost, fmtDuration, fmtRelativeTime, taskIdStr,
   roleBadgeMap, getAgentDotClass, getAgentDotTooltip,
@@ -41,7 +41,7 @@ export function AgentsPanel() {
         const taskLink = currentTask ? (
           <span
             class="agent-card-task-link"
-            onClick={(e) => { e.stopPropagation(); taskPanelId.value = currentTask.id; }}
+            onClick={(e) => { e.stopPropagation(); openPanel("task", currentTask.id); }}
           >
             {taskIdStr(currentTask.id)}
           </span>
@@ -68,7 +68,7 @@ export function AgentsPanel() {
           <div
             key={a.name}
             class="agent-card-rich"
-            onClick={() => { diffPanelMode.value = "agent"; diffPanelTarget.value = a.name; }}
+            onClick={() => { openPanel("agent", a.name); }}
           >
             <div class="agent-card-row1">
               <span class={"agent-card-dot " + dotClass} title={dotTooltip}></span>

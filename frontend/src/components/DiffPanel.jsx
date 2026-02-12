@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "preact/hooks";
 import {
-  currentTeam, diffPanelMode, diffPanelTarget, taskPanelId,
+  currentTeam, diffPanelMode, diffPanelTarget, tasks,
+  panelStack, pushPanel, closeAllPanels, popPanel,
   agentActivityLog,
 } from "../state.js";
 import * as api from "../api.js";
@@ -210,7 +211,7 @@ function AgentView({ agentName }) {
               {e.task_id != null && (
                 <span
                   class="agent-activity-task"
-                  onClick={(ev) => { ev.stopPropagation(); taskPanelId.value = e.task_id; }}
+                  onClick={(ev) => { ev.stopPropagation(); pushPanel("task", e.task_id); }}
                   title={`Task ${taskIdStr(e.task_id)}`}
                 >
                   {taskIdStr(e.task_id)}
@@ -231,7 +232,7 @@ function AgentView({ agentName }) {
 
   return (
     <>
-      <div class="diff-panel-branch">{role}</div>
+      {role && <div class="diff-panel-role">{role}</div>}
       <div class="diff-panel-tabs">
         {TABS.map(t => (
           <button key={t} class={"diff-tab" + (tab === t ? " active" : "")} onClick={() => switchTab(t)}>
@@ -348,25 +349,40 @@ function FileView({ filePath }) {
   );
 }
 
+// ── Panel title helper (for back-bar) ──
+function panelTitle(entry, allTasks) {
+  if (!entry) return "";
+  if (entry.type === "task") {
+    const t = (allTasks || []).find(t => t.id === entry.target);
+    return "T" + String(entry.target).padStart(4, "0") + (t ? " " + t.title : "");
+  }
+  if (entry.type === "agent") return cap(entry.target || "");
+  if (entry.type === "file") return (entry.target || "").split("/").pop() || "File";
+  return "";
+}
+
 // ── Main DiffPanel ──
 export function DiffPanel() {
   const mode = diffPanelMode.value;
   const target = diffPanelTarget.value;
   const isOpen = mode !== null;
+  const allTasks = tasks.value;
 
-  const close = useCallback(() => {
-    diffPanelMode.value = null;
-    diffPanelTarget.value = null;
-  }, []);
+  const close = useCallback(() => { closeAllPanels(); }, []);
 
-  // Close task panel if opening diff/agent/file panel
-  useEffect(() => {
-    if (isOpen) taskPanelId.value = null;
-  }, [isOpen]);
+  const stack = panelStack.value;
+  const hasPrev = stack.length > 1;
+  const prev = hasPrev ? stack[stack.length - 2] : null;
 
   return (
     <>
       <div class={"diff-panel" + (isOpen ? " open" : "")}>
+        {/* Back bar */}
+        {hasPrev && (
+          <div class="panel-back-bar" onClick={popPanel}>
+            <span class="panel-back-arrow">&larr;</span> Back to {panelTitle(prev, allTasks)}
+          </div>
+        )}
         <div class="diff-panel-header">
           {mode === "diff" && <div class="diff-panel-title">{"T" + String(target).padStart(4, "0")}</div>}
           {mode === "agent" && <div class="diff-panel-title">{cap(target || "")}</div>}

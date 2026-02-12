@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "preact/hooks";
-import { currentTeam, tasks, activeTab, taskPanelId } from "../state.js";
+import { currentTeam, tasks, activeTab, openPanel } from "../state.js";
 import { cap, fmtStatus, taskIdStr } from "../utils.js";
 import { playTaskSound } from "../audio.js";
 import { FilterBar, applyFilters } from "./FilterBar.jsx";
@@ -170,7 +170,7 @@ export function TasksPanel() {
               <div
                 key={t.id}
                 class="task-row"
-                onClick={() => { taskPanelId.value = t.id; }}
+                onClick={() => { openPanel("task", t.id); }}
               >
                 <div class="task-summary">
                   <span class="task-id copyable">{taskIdStr(t.id)}<CopyBtn text={taskIdStr(t.id)} /></span>

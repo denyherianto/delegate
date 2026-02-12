@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks";
 import {
   currentTeam, tasks, taskPanelId, knownAgentNames, bossName,
-  diffPanelMode, diffPanelTarget,
+  panelStack, pushPanel, closeAllPanels, popPanel,
 } from "../state.js";
 import * as api from "../api.js";
 import {
@@ -25,6 +25,18 @@ function _setCache(team, id, patch) {
   _cache.set(key, { ...(_cache.get(key) || {}), ...patch });
 }
 
+// ── Panel title helper (for back-bar) ──
+function panelTitle(entry, allTasks) {
+  if (!entry) return "";
+  if (entry.type === "task") {
+    const t = (allTasks || []).find(t => t.id === entry.target);
+    return taskIdStr(entry.target) + (t ? " " + t.title : "");
+  }
+  if (entry.type === "agent") return cap(entry.target || "");
+  if (entry.type === "file") return (entry.target || "").split("/").pop() || "File";
+  return "";
+}
+
 // ── Event delegation for linked content ──
 function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
   const internalRef = useRef();
@@ -44,11 +56,11 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
       const copyBtn = e.target.closest(".copy-btn");
       if (copyBtn) { e.stopPropagation(); e.preventDefault(); handleCopyClick(copyBtn); return; }
       const taskLink = e.target.closest("[data-task-id]");
-      if (taskLink) { e.stopPropagation(); taskPanelId.value = parseInt(taskLink.dataset.taskId, 10); return; }
+      if (taskLink) { e.stopPropagation(); pushPanel("task", parseInt(taskLink.dataset.taskId, 10)); return; }
       const agentLink = e.target.closest("[data-agent-name]");
-      if (agentLink) { e.stopPropagation(); diffPanelMode.value = "agent"; diffPanelTarget.value = agentLink.dataset.agentName; return; }
+      if (agentLink) { e.stopPropagation(); pushPanel("agent", agentLink.dataset.agentName); return; }
       const fileLink = e.target.closest("[data-file-path]");
-      if (fileLink) { e.stopPropagation(); diffPanelMode.value = "file"; diffPanelTarget.value = fileLink.dataset.filePath; return; }
+      if (fileLink) { e.stopPropagation(); pushPanel("file", fileLink.dataset.filePath); return; }
     };
     el.addEventListener("click", handler);
     return () => el.removeEventListener("click", handler);
@@ -314,7 +326,7 @@ function OverviewTab({ task, stats }) {
               <span
                 key={d}
                 class="task-link"
-                onClick={(e) => { e.stopPropagation(); taskPanelId.value = d; }}
+                onClick={(e) => { e.stopPropagation(); pushPanel("task", d); }}
               >
                 <span class={"badge badge-" + depStatus} style={{ fontSize: "11px", marginRight: "4px", cursor: "pointer" }}>
                   {taskIdStr(d)}
@@ -350,7 +362,7 @@ function OverviewTab({ task, stats }) {
                       if (isHtmlFile) {
                         window.open(`/teams/${currentTeam.value}/files/raw?path=${encodeURIComponent(toApiPath(fpath, currentTeam.value))}`, "_blank");
                       } else {
-                        diffPanelMode.value = "file"; diffPanelTarget.value = fpath;
+                        pushPanel("file", fpath);
                       }
                     }}
                   >
@@ -777,7 +789,7 @@ export function TaskSidePanel() {
     }).catch(() => {});
   }, [visitedTabs.merge, mergePreviewLoaded, id, team]);
 
-  const close = useCallback(() => { taskPanelId.value = null; }, []);
+  const close = useCallback(() => { closeAllPanels(); }, []);
 
   const handleAction = useCallback(() => {
     if (team) api.fetchTasks(team).then(list => { tasks.value = list; });
@@ -790,9 +802,19 @@ export function TaskSidePanel() {
   const TABS = ["overview", "changes", "merge", "activity"];
   const TAB_LABELS = { overview: "Overview", changes: "Changes", merge: "Merge Preview", activity: "Activity" };
 
+  const stack = panelStack.value;
+  const hasPrev = stack.length > 1;
+  const prev = hasPrev ? stack[stack.length - 2] : null;
+
   return (
     <>
       <div class={"task-panel" + (isOpen ? " open" : "")}>
+        {/* Back bar */}
+        {hasPrev && (
+          <div class="panel-back-bar" onClick={popPanel}>
+            <span class="panel-back-arrow">&larr;</span> Back to {panelTitle(prev, allTasks)}
+          </div>
+        )}
         {/* Header */}
         <div class="task-panel-header">
           <div class="task-panel-title-row">

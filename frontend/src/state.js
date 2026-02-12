@@ -20,11 +20,48 @@ export const activeTab = signal("chat");
 export const isMuted = signal(localStorage.getItem("delegate-muted") === "true");
 export const sidebarCollapsed = signal(localStorage.getItem("delegate-sidebar-collapsed") === "true");
 
-// ── Panel state ──
-export const taskPanelId = signal(null);       // numeric task id or null
-export const diffPanelMode = signal(null);     // "diff" | "agent" | "file" | null
-export const diffPanelTarget = signal(null);   // taskId, agentName, or filePath
+// ── Panel stack ──
+// Each entry: { type: "task"|"agent"|"file"|"diff", target: any }
+export const panelStack = signal([]);
 export const helpOverlayOpen = signal(false);  // keyboard shortcuts help overlay
+
+/** Open a panel from the main UI — replaces the entire stack. */
+export function openPanel(type, target) {
+  panelStack.value = [{ type, target }];
+}
+/** Push a panel from inside another panel — stacks on top. */
+export function pushPanel(type, target) {
+  panelStack.value = [...panelStack.value, { type, target }];
+}
+/** Go back one level (closes if only one panel). */
+export function popPanel() {
+  const s = panelStack.value;
+  panelStack.value = s.length > 1 ? s.slice(0, -1) : [];
+}
+/** Close all panels. */
+export function closeAllPanels() {
+  panelStack.value = [];
+}
+
+// Backward-compatible computed views of the top panel entry.
+export const taskPanelId = computed(() => {
+  const s = panelStack.value;
+  if (!s.length) return null;
+  const top = s[s.length - 1];
+  return top.type === "task" ? top.target : null;
+});
+export const diffPanelMode = computed(() => {
+  const s = panelStack.value;
+  if (!s.length) return null;
+  const top = s[s.length - 1];
+  return top.type !== "task" ? top.type : null;
+});
+export const diffPanelTarget = computed(() => {
+  const s = panelStack.value;
+  if (!s.length) return null;
+  const top = s[s.length - 1];
+  return top.type !== "task" ? top.target : null;
+});
 
 // ── Known agent names (for linkify / agentify references) ──
 export const knownAgentNames = signal([]);
