@@ -45,9 +45,8 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
           const sharedIdx = apiPath.indexOf(sharedMarker);
           const agentsIdx = apiPath.indexOf(agentsMarker);
           if (sharedIdx !== -1) apiPath = apiPath.substring(sharedIdx + sharedMarker.length);
-          else if (agentsIdx !== -1) apiPath = apiPath.substring(agentsIdx + agentsMarker.length);
+          else if (agentsIdx !== -1) apiPath = apiPath.substring(agentsIdx + 1); // +1 to skip leading /
           else if (apiPath.startsWith("shared/")) apiPath = apiPath.substring(7);
-          else if (apiPath.startsWith("agents/")) apiPath = apiPath.substring(7);
           window.open(`/teams/${currentTeam.value}/files/raw?path=${encodeURIComponent(apiPath)}`, "_blank");
         } else {
           diffPanelMode.value = "file"; diffPanelTarget.value = fpath;
