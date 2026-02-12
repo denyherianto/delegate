@@ -21,12 +21,12 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
   const internalRef = useRef();
 
   useEffect(() => {
-    const el = externalRef?.current || internalRef.current;
-    console.log('[LinkedDiv useEffect] el:', el, 'externalRef:', externalRef?.current, 'internalRef:', internalRef.current);
-    if (!el) {
+    console.log('[LinkedDiv useEffect] internalRef:', internalRef.current, 'externalRef:', externalRef?.current);
+    if (!internalRef.current) {
       console.log('[LinkedDiv useEffect] No element, returning early');
       return;
     }
+    const el = internalRef.current;
     const handler = (e) => {
       console.log('[LinkedDiv] Click event:', e.target, 'classList:', e.target.classList);
       // Copy button click
