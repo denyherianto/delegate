@@ -229,6 +229,9 @@ def _build_greeting(
 # Daemon loop — runs as a background asyncio task inside the lifespan
 # ---------------------------------------------------------------------------
 
+# Module-level tracking of active agent asyncio tasks for shutdown
+_active_agent_tasks: set[asyncio.Task] = set()
+
 async def _daemon_loop(
     hc_home: Path,
     interval: float,
@@ -270,6 +273,9 @@ async def _daemon_loop(
                         "Turn complete | agent=%s | team=%s | tokens=%d | cost=$%.4f",
                         agent, team, total, result.cost_usd,
                     )
+            except asyncio.CancelledError:
+                logger.info("Turn cancelled | agent=%s | team=%s", agent, team)
+                raise
             except Exception:
                 logger.exception("Uncaught error in turn | agent=%s | team=%s", agent, team)
             finally:
@@ -351,7 +357,9 @@ async def _daemon_loop(
                     key = (team, agent)
                     if key not in in_flight:
                         in_flight.add(key)
-                        asyncio.create_task(_dispatch_turn(team, agent))
+                        agent_task = asyncio.create_task(_dispatch_turn(team, agent))
+                        _active_agent_tasks.add(agent_task)
+                        agent_task.add_done_callback(_active_agent_tasks.discard)
 
                 # Process merge queue (serialized — one merge at a time)
                 async def _run_merge(t: str) -> None:
@@ -448,10 +456,31 @@ async def _lifespan(app: FastAPI):
             esbuild_proc.kill()
 
     if task is not None:
+        # Cancel the daemon loop first
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
         logger.info("Daemon loop stopped")
+
+        # Cancel all in-flight agent tasks with timeout
+        if _active_agent_tasks:
+            logger.info("Waiting for %d agent session(s) to finish...", len(_active_agent_tasks))
+            for agent_task in _active_agent_tasks:
+                agent_task.cancel()
+
+            # Wait for tasks to finish with 10 second timeout
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*_active_agent_tasks, return_exceptions=True),
+                    timeout=10.0
+                )
+                logger.info("All agent sessions finished")
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Timeout waiting for agent sessions — %d task(s) still running",
+                    len([t for t in _active_agent_tasks if not t.done()])
+                )
+            _active_agent_tasks.clear()
 
 
 # ---------------------------------------------------------------------------

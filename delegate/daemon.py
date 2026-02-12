@@ -16,6 +16,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from delegate.paths import daemon_pid_path
@@ -128,8 +129,11 @@ def start_daemon(
     return proc.pid
 
 
-def stop_daemon(hc_home: Path) -> bool:
+def stop_daemon(hc_home: Path, timeout: float = 15.0) -> bool:
     """Stop the running daemon.
+
+    Sends SIGTERM and waits up to *timeout* seconds for the process to exit.
+    If still alive after timeout, sends SIGKILL.
 
     Returns True if a daemon was stopped, False if none was running.
     """
@@ -143,7 +147,47 @@ def stop_daemon(hc_home: Path) -> bool:
         logger.info("Sent SIGTERM to daemon PID %d", pid)
     except OSError as e:
         logger.warning("Failed to kill daemon PID %d: %s", pid, e)
+        pid_path = daemon_pid_path(hc_home)
+        pid_path.unlink(missing_ok=True)
+        return False
 
+    # Wait for process to exit with timeout
+    logger.info("Waiting for daemon to stop...")
+    start_time = time.time()
+    poll_interval = 0.1
+    while time.time() - start_time < timeout:
+        try:
+            os.kill(pid, 0)  # Check if process is still alive
+            time.sleep(poll_interval)
+        except (OSError, ProcessLookupError):
+            # Process is gone
+            elapsed = time.time() - start_time
+            logger.info("Daemon stopped (%.1fs)", elapsed)
+            pid_path = daemon_pid_path(hc_home)
+            pid_path.unlink(missing_ok=True)
+            return True
+
+    # Timeout expired — force kill
+    logger.warning("Daemon did not stop after %.1fs — sending SIGKILL", timeout)
+    try:
+        os.kill(pid, signal.SIGKILL)
+        logger.info("Sent SIGKILL to daemon PID %d", pid)
+    except (OSError, ProcessLookupError) as e:
+        logger.warning("Failed to SIGKILL daemon PID %d: %s", pid, e)
+
+    # Wait briefly for SIGKILL to take effect
+    for _ in range(10):
+        try:
+            os.kill(pid, 0)
+            time.sleep(0.1)
+        except (OSError, ProcessLookupError):
+            logger.info("Daemon force-killed")
+            pid_path = daemon_pid_path(hc_home)
+            pid_path.unlink(missing_ok=True)
+            return True
+
+    # Still alive after SIGKILL (very unlikely)
+    logger.error("Daemon PID %d did not respond to SIGKILL", pid)
     pid_path = daemon_pid_path(hc_home)
     pid_path.unlink(missing_ok=True)
     return True
