@@ -263,6 +263,7 @@ function FileView({ filePath }) {
   useEffect(() => {
     if (!filePath || !team) return;
     setFileData(null); setError(null);
+    const abortCtrl = new AbortController();
     let apiPath = filePath;
     // Handle absolute paths containing shared/ or agents/
     const sharedMarker = '/shared/';
@@ -278,9 +279,15 @@ function FileView({ filePath }) {
     } else if (apiPath.startsWith("agents/")) {
       apiPath = apiPath.substring(7);
     }
-    api.fetchFileContent(team, apiPath).then(data => {
-      setFileData(data);
-    }).catch(e => setError(e.message));
+    api.fetchFileContent(team, apiPath, { signal: abortCtrl.signal }).then(data => {
+      if (!abortCtrl.signal.aborted) setFileData(data);
+    }).catch(e => {
+      if (!abortCtrl.signal.aborted) {
+        console.error('FileView fetch failed:', e);
+        setError((e && e.message) || String(e) || 'Failed to load file');
+      }
+    });
+    return () => abortCtrl.abort();
   }, [filePath, team]);
 
   const ext = filePath ? (filePath.lastIndexOf(".") !== -1 ? filePath.substring(filePath.lastIndexOf(".") + 1).toLowerCase() : "") : "";

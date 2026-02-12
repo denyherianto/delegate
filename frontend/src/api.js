@@ -182,8 +182,8 @@ export async function fetchAgentStats(team, agentName) {
   return r.ok ? r.json() : null;
 }
 
-export async function fetchFileContent(team, path) {
-  const r = await fetch(`/teams/${team}/files/content?path=${encodeURIComponent(path)}`);
+export async function fetchFileContent(team, path, opts = {}) {
+  const r = await fetch(`/teams/${team}/files/content?path=${encodeURIComponent(path)}`, { signal: opts.signal });
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
     throw new Error(err.detail || "Failed to load file");
