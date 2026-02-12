@@ -208,7 +208,7 @@ function ApprovalActions({ task, currentReview, onApproved, onRejected }) {
           disabled={loading}
           onClick={(e) => { e.stopPropagation(); handleReject(); }}
         >
-          {loading ? "Rejecting..." : "&#10006; Request Changes"}
+          {loading ? "Rejecting..." : "\u2716 Request Changes"}
         </button>
       </div>
     </div>
