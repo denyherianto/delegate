@@ -231,6 +231,8 @@ def _build_greeting(
 
 # Module-level tracking of active agent asyncio tasks for shutdown
 _active_agent_tasks: set[asyncio.Task] = set()
+_active_merge_tasks: set[asyncio.Task] = set()
+_shutdown_flag: bool = False
 
 async def _daemon_loop(
     hc_home: Path,
@@ -339,10 +341,20 @@ async def _daemon_loop(
     # --- Main loop ---
     while True:
         try:
+            # Check shutdown flag at the top of each iteration
+            global _shutdown_flag
+            if _shutdown_flag:
+                logger.info("Shutdown flag set — exiting daemon loop")
+                break
+
             teams = _list_teams(hc_home)
             boss_name = get_boss(hc_home)
 
             for team in teams:
+                # Check shutdown flag before dispatching new tasks
+                if _shutdown_flag:
+                    break
+
                 routed = route_once(hc_home, team, boss_name=boss_name)
                 if routed > 0:
                     logger.info("Routed %d message(s) for team %s", routed, team)
@@ -354,6 +366,10 @@ async def _daemon_loop(
                     if a in ai_agents
                 ]
                 for agent in needing_turn:
+                    # Check shutdown flag before dispatching
+                    if _shutdown_flag:
+                        break
+
                     key = (team, agent)
                     if key not in in_flight:
                         in_flight.add(key)
@@ -362,16 +378,22 @@ async def _daemon_loop(
                         agent_task.add_done_callback(_active_agent_tasks.discard)
 
                 # Process merge queue (serialized — one merge at a time)
-                async def _run_merge(t: str) -> None:
-                    async with merge_sem:
-                        results = await asyncio.to_thread(merge_once, hc_home, t)
-                        for mr in results:
-                            if mr.success:
-                                logger.info("Merged %s in %s: %s", mr.task_id, t, mr.message)
-                            else:
-                                logger.warning("Merge failed %s in %s: %s", mr.task_id, t, mr.message)
+                if not _shutdown_flag:
+                    async def _run_merge(t: str) -> None:
+                        async with merge_sem:
+                            results = await asyncio.to_thread(merge_once, hc_home, t)
+                            for mr in results:
+                                if mr.success:
+                                    logger.info("Merged %s in %s: %s", mr.task_id, t, mr.message)
+                                else:
+                                    logger.warning("Merge failed %s in %s: %s", mr.task_id, t, mr.message)
 
-                asyncio.create_task(_run_merge(team))
+                    merge_task = asyncio.create_task(_run_merge(team))
+                    _active_merge_tasks.add(merge_task)
+                    merge_task.add_done_callback(_active_merge_tasks.discard)
+        except asyncio.CancelledError:
+            logger.info("Daemon loop cancelled")
+            raise
         except Exception:
             logger.exception("Error during daemon cycle")
         await asyncio.sleep(interval)
@@ -456,16 +478,42 @@ async def _lifespan(app: FastAPI):
             esbuild_proc.kill()
 
     if task is not None:
-        # Cancel the daemon loop first
+        # Set shutdown flag before cancelling the daemon loop
+        global _shutdown_flag
+        _shutdown_flag = True
+        logger.info("Setting shutdown flag and cancelling daemon loop")
+
+        # Cancel the daemon loop
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
         logger.info("Daemon loop stopped")
 
+        # Cancel all in-flight merge tasks
+        if _active_merge_tasks:
+            logger.info("Cancelling %d merge task(s)...", len(_active_merge_tasks))
+            # Snapshot the set before iteration to avoid mutation during iteration
+            for merge_task in list(_active_merge_tasks):
+                merge_task.cancel()
+
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*_active_merge_tasks, return_exceptions=True),
+                    timeout=5.0
+                )
+                logger.info("All merge tasks cancelled")
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Timeout waiting for merge tasks — %d task(s) still running",
+                    len([t for t in _active_merge_tasks if not t.done()])
+                )
+            _active_merge_tasks.clear()
+
         # Cancel all in-flight agent tasks with timeout
         if _active_agent_tasks:
             logger.info("Waiting for %d agent session(s) to finish...", len(_active_agent_tasks))
-            for agent_task in _active_agent_tasks:
+            # Snapshot the set before iteration to avoid mutation during iteration
+            for agent_task in list(_active_agent_tasks):
                 agent_task.cancel()
 
             # Wait for tasks to finish with 10 second timeout

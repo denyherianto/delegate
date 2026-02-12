@@ -393,28 +393,35 @@ async def run_turn(
     # --- Main turn: execute SDK query ---
     turn = TurnTokens()
     turn_tools: list[str] = []
+    error_occurred = False
 
     try:
-        async for msg in sdk_query(prompt=user_msg, options=options):
-            # Standard processing: tokens, worklog, tool list
-            _process_turn_messages(
-                msg, alog, turn, turn_tools, worklog_lines,
-                agent=agent, task_label=task_label,
-            )
+        try:
+            async for msg in sdk_query(prompt=user_msg, options=options):
+                # Standard processing: tokens, worklog, tool list
+                _process_turn_messages(
+                    msg, alog, turn, turn_tools, worklog_lines,
+                    agent=agent, task_label=task_label,
+                )
 
-            # Stream tool summaries to activity ring buffer + SSE
-            if hasattr(msg, "content"):
-                for block in msg.content:
-                    tool_name, detail = _extract_tool_summary(block)
-                    if tool_name:
-                        broadcast_activity(agent, tool_name, detail, task_id=current_task_id)
+                # Stream tool summaries to activity ring buffer + SSE
+                if hasattr(msg, "content"):
+                    for block in msg.content:
+                        tool_name, detail = _extract_tool_summary(block)
+                        if tool_name:
+                            broadcast_activity(agent, tool_name, detail, task_id=current_task_id)
 
-    except Exception as exc:
-        alog.session_error(exc)
-        result.error = str(exc)
-        result.turns = 1
-        # Still mark messages as processed so they don't replay forever
-        _mark_batch_processed(hc_home, team, batch)
+        except Exception as exc:
+            alog.session_error(exc)
+            result.error = str(exc)
+            result.turns = 1
+            error_occurred = True
+            # Still mark messages as processed so they don't replay forever
+            _mark_batch_processed(hc_home, team, batch)
+            _write_worklog(ad, worklog_lines)
+            # Don't raise - let the finally block run and then return
+    finally:
+        # Always end the session, even if cancelled or errored
         try:
             end_session(
                 hc_home, team, session_id,
@@ -424,8 +431,10 @@ async def run_turn(
                 cache_write_tokens=turn.cache_write,
             )
         except Exception:
-            logger.exception("Failed to end session after error")
-        _write_worklog(ad, worklog_lines)
+            logger.exception("Failed to end session")
+
+    # Early return if there was an error
+    if error_occurred:
         log_caller.reset(_prev_caller)
         return result
 
@@ -479,82 +488,89 @@ async def run_turn(
     # Increment in-memory turn counter
     _turn_counts[agent] = _turn_counts.get(agent, 0) + 1
 
-    if random.random() < REFLECTION_PROBABILITY:
-        turn_num = 2
-        ref_msg = build_reflection_message(hc_home, team, agent)
-        worklog_lines.append(f"\n## Turn 2 (reflection)\n{ref_msg}")
-        alog.turn_start(2, ref_msg)
+    try:
+        if random.random() < REFLECTION_PROBABILITY:
+            turn_num = 2
+            ref_msg = build_reflection_message(hc_home, team, agent)
+            worklog_lines.append(f"\n## Turn 2 (reflection)\n{ref_msg}")
+            alog.turn_start(2, ref_msg)
 
-        ref = TurnTokens()
-        ref_tools: list[str] = []
+            ref = TurnTokens()
+            ref_tools: list[str] = []
 
-        try:
-            ref_options = _build_options()  # rebuild for fresh system prompt
-            async for msg in sdk_query(prompt=ref_msg, options=ref_options):
-                _process_turn_messages(
-                    msg, alog, ref, ref_tools, worklog_lines,
-                    agent=agent, task_label=task_label,
+            try:
+                ref_options = _build_options()  # rebuild for fresh system prompt
+                async for msg in sdk_query(prompt=ref_msg, options=ref_options):
+                    _process_turn_messages(
+                        msg, alog, ref, ref_tools, worklog_lines,
+                        agent=agent, task_label=task_label,
+                    )
+
+                total.input += ref.input
+                total.output += ref.output
+                total.cache_read += ref.cache_read
+                total.cache_write += ref.cache_write
+                total.cost_usd += ref.cost_usd
+
+                alog.turn_end(
+                    2,
+                    tokens_in=ref.input,
+                    tokens_out=ref.output,
+                    cost_usd=ref.cost_usd,
+                    cumulative_tokens_in=total.input,
+                    cumulative_tokens_out=total.output,
+                    cumulative_cost=total.cost_usd,
+                    tool_calls=ref_tools or None,
                 )
 
-            total.input += ref.input
-            total.output += ref.output
-            total.cache_read += ref.cache_read
-            total.cache_write += ref.cache_write
-            total.cost_usd += ref.cost_usd
+                # DO NOT mark mail during reflection — no inbox message was acted on
+                alog.info("Reflection turn completed")
+            except Exception as exc:
+                alog.error("Reflection turn failed: %s", exc)
+    finally:
+        # --- Finalize session (always runs) ---
+        result.tokens_in = total.input
+        result.tokens_out = total.output
+        result.cache_read = total.cache_read
+        result.cache_write = total.cache_write
+        result.cost_usd = total.cost_usd
+        result.turns = turn_num
 
-            alog.turn_end(
-                2,
-                tokens_in=ref.input,
-                tokens_out=ref.output,
-                cost_usd=ref.cost_usd,
-                cumulative_tokens_in=total.input,
-                cumulative_tokens_out=total.output,
-                cumulative_cost=total.cost_usd,
-                tool_calls=ref_tools or None,
+        # Update session with final totals (already called end_session in the first finally block)
+        # This updates the session that was already ended with the final token counts
+        try:
+            update_session_tokens(
+                hc_home, team, session_id,
+                tokens_in=total.input,
+                tokens_out=total.output,
+                cost_usd=total.cost_usd,
+                cache_read_tokens=total.cache_read,
+                cache_write_tokens=total.cache_write,
             )
+        except Exception:
+            logger.exception("Failed to update session tokens")
 
-            # DO NOT mark mail during reflection — no inbox message was acted on
-            alog.info("Reflection turn completed")
-        except Exception as exc:
-            alog.error("Reflection turn failed: %s", exc)
+        # Log session summary
+        alog.session_end_log(
+            turns=turn_num,
+            tokens_in=total.input,
+            tokens_out=total.output,
+            cost_usd=total.cost_usd,
+        )
 
-    # --- Finalize session ---
-    result.tokens_in = total.input
-    result.tokens_out = total.output
-    result.cache_read = total.cache_read
-    result.cache_write = total.cache_write
-    result.cost_usd = total.cost_usd
-    result.turns = turn_num
+        # Write worklog
+        _write_worklog(ad, worklog_lines)
 
-    end_session(
-        hc_home, team, session_id,
-        tokens_in=total.input, tokens_out=total.output,
-        cost_usd=total.cost_usd,
-        cache_read_tokens=total.cache_read,
-        cache_write_tokens=total.cache_write,
-    )
+        # Save context.md for next session
+        total_tokens = total.input + total.output
+        (ad / "context.md").write_text(
+            f"Last session: {datetime.now(timezone.utc).isoformat()}\n"
+            f"Turns: {turn_num}\n"
+            f"Tokens: {total_tokens}\n"
+        )
 
-    # Log session summary
-    alog.session_end_log(
-        turns=turn_num,
-        tokens_in=total.input,
-        tokens_out=total.output,
-        cost_usd=total.cost_usd,
-    )
-
-    # Write worklog
-    _write_worklog(ad, worklog_lines)
-
-    # Save context.md for next session
-    total_tokens = total.input + total.output
-    (ad / "context.md").write_text(
-        f"Last session: {datetime.now(timezone.utc).isoformat()}\n"
-        f"Turns: {turn_num}\n"
-        f"Tokens: {total_tokens}\n"
-    )
-
-    # Restore logging caller context
-    log_caller.reset(_prev_caller)
+        # Restore logging caller context
+        log_caller.reset(_prev_caller)
 
     return result
 

@@ -79,6 +79,7 @@ def main():
         reload=reload,
         reload_dirs=["delegate"] if reload else None,
         log_level="info",
+        timeout_graceful_shutdown=15,
     )
 
 

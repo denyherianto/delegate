@@ -94,6 +94,7 @@ def start_daemon(
                 host="0.0.0.0",
                 port=port,
                 log_level="info",
+                timeout_graceful_shutdown=15,
             )
         finally:
             pid_path.unlink(missing_ok=True)
