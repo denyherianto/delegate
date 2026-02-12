@@ -72,7 +72,7 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
     el.addEventListener("click", handler);
     return () => {
       console.log('[LinkedDiv useEffect cleanup] Removing click handler from:', el);
-      el.removeEventListener("click", handler);
+      if (el) el.removeEventListener("click", handler);
     };
   }, [html, externalRef]);
 
