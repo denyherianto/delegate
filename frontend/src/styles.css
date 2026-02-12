@@ -781,50 +781,40 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-  opacity: 1;
-  transition: opacity 200ms ease;
-  min-height: 28px;
-}
-.manager-activity-bar.hidden {
-  opacity: 0;
-  pointer-events: none;
+  padding: 4px 14px;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  min-height: 26px;
 }
 .manager-activity-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: #22c55e;
   animation: pulse-dot 1.5s ease-in-out infinite;
   flex-shrink: 0;
 }
 @keyframes pulse-dot {
-  0%, 100% { opacity: 0.5; }
+  0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
 }
-.manager-activity-text {
+.manager-activity-content {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.4;
 }
-.manager-activity-text .arrow {
-  color: var(--text-secondary);
-}
-.manager-activity-text .tool-name {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-weight: 600;
-}
-.manager-activity-text .tool-command {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-}
-.manager-activity-text .thinking {
-  font-style: italic;
-  color: var(--text-secondary);
-}
+.mgr-context { color: var(--text-primary); flex-shrink: 0; }
+.mgr-name { font-weight: 600; }
+.mgr-sep { color: var(--text-muted); }
+.mgr-task { color: var(--text-secondary); }
+.mgr-sender { color: var(--text-secondary); }
+.mgr-status { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
+.mgr-tool { font-weight: 600; color: var(--text-secondary); }
+.mgr-thinking { font-style: italic; }
 
 /* ================================================================
    Chat input — Cursor-style
