@@ -123,31 +123,26 @@ let setTabFromBadge = null;
 // ── Approval Actions (Changes tab) ──
 function ApprovalActions({ task, currentReview, onApproved, onRejected }) {
   const [loading, setLoading] = useState(false);
-  const [showReject, setShowReject] = useState(false);
-  const [rejectReason, setRejectReason] = useState("");
   const [summary, setSummary] = useState("");
   const [result, setResult] = useState(null); // "approved" | "rejected" | null
-  const inputRef = useRef();
 
   const { status, approval_status, rejection_reason } = task;
-  const attempt = task.review_attempt || 0;
-  const attemptLabel = attempt > 1 ? ` (attempt ${attempt})` : "";
   const reviewSummary = currentReview && currentReview.summary;
   const commentCount = currentReview && currentReview.comments ? currentReview.comments.length : 0;
 
   if (status === "done" || approval_status === "approved" || result === "approved") {
     return (
       <div class="task-review-box task-review-box-approved">
-        <div class="approval-badge approval-badge-approved">&#10004; Approved{attemptLabel}</div>
+        <div class="approval-badge approval-badge-approved">&#10004; Approved</div>
         {(summary || reviewSummary) && <div class="approval-rejection-reason" style={{ color: "var(--text-secondary)" }}>{summary || reviewSummary}</div>}
       </div>
     );
   }
   if (status === "rejected" || approval_status === "rejected" || result === "rejected") {
-    const reason = result === "rejected" ? (summary || rejectReason) : (reviewSummary || rejection_reason);
+    const reason = result === "rejected" ? summary : (reviewSummary || rejection_reason);
     return (
       <div class="task-review-box task-review-box-rejected">
-        <div class="approval-badge approval-badge-rejected">&#10006; Changes Rejected{attemptLabel}</div>
+        <div class="approval-badge approval-badge-rejected">&#10006; Changes Rejected</div>
         {reason && <div class="approval-rejection-reason">{reason}</div>}
         {commentCount > 0 && <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>{commentCount} inline comment{commentCount !== 1 ? "s" : ""}</div>}
       </div>
@@ -171,7 +166,7 @@ function ApprovalActions({ task, currentReview, onApproved, onRejected }) {
   const handleReject = async () => {
     setLoading(true);
     try {
-      await api.rejectTask(currentTeam.value, task.id, rejectReason || summary || "(no reason)", summary);
+      await api.rejectTask(currentTeam.value, task.id, summary || "(no reason)", summary);
       setResult("rejected");
       if (onRejected) onRejected();
     } catch (e) {
@@ -184,7 +179,7 @@ function ApprovalActions({ task, currentReview, onApproved, onRejected }) {
   return (
     <div class="task-review-box">
       <div class="task-review-box-header">
-        Review changes{attemptLabel}
+        Review changes
         {commentCount > 0 && (
           <span style={{ marginLeft: "8px", fontSize: "11px", color: "var(--accent)" }}>
             {commentCount} comment{commentCount !== 1 ? "s" : ""}
@@ -211,39 +206,13 @@ function ApprovalActions({ task, currentReview, onApproved, onRejected }) {
           {loading ? "Approving..." : "\u2714 Approve"}
         </button>
         <button
-          class="btn-reject-outline"
+          class="btn-reject"
           disabled={loading}
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowReject(!showReject);
-            if (!showReject) setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
-          }}
+          onClick={(e) => { e.stopPropagation(); handleReject(); }}
         >
-          &#10006; Request Changes
+          {loading ? "Rejecting..." : "&#10006; Request Changes"}
         </button>
       </div>
-      {showReject && (
-        <div class="reject-reason-row">
-          <input
-            ref={inputRef}
-            type="text"
-            class="reject-reason-input"
-            placeholder="Describe what needs to change..."
-            value={rejectReason}
-            onInput={(e) => setRejectReason(e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") handleReject(); }}
-          />
-          <button
-            class="btn-reject"
-            disabled={loading}
-            onClick={(e) => { e.stopPropagation(); handleReject(); }}
-            style={{ flexShrink: 0 }}
-          >
-            {loading ? "Rejecting..." : "Submit"}
-          </button>
-        </div>
-      )}
     </div>
   );
 }

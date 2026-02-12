@@ -467,6 +467,7 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_
     if status == "in_approval":
         new_attempt = old_task.get("review_attempt", 0) + 1
         updates["review_attempt"] = new_attempt
+        updates["approval_status"] = ""
 
     task = update_task(hc_home, team, task_id, **updates)
 
