@@ -273,10 +273,8 @@ function FileView({ filePath }) {
     if (sharedIdx !== -1) {
       apiPath = apiPath.substring(sharedIdx + sharedMarker.length);
     } else if (agentsIdx !== -1) {
-      apiPath = apiPath.substring(agentsIdx + agentsMarker.length);
+      apiPath = apiPath.substring(agentsIdx + 1); // +1 to skip leading /
     } else if (apiPath.startsWith("shared/")) {
-      apiPath = apiPath.substring(7);
-    } else if (apiPath.startsWith("agents/")) {
       apiPath = apiPath.substring(7);
     }
     api.fetchFileContent(team, apiPath, { signal: abortCtrl.signal }).then(data => {
