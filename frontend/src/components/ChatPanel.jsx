@@ -71,7 +71,7 @@ function CollapsibleMessage({ html, messageId, isBoss }) {
 
     // Re-check on resize
     const observer = new ResizeObserver(checkOverflow);
-    observer.observe(contentRef.current);
+    if (contentRef.current) observer.observe(contentRef.current);
     return () => observer.disconnect();
   }, [html]);
 
