@@ -569,6 +569,27 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         )
         return result
 
+    class ReviewCommentUpdateBody(BaseModel):
+        body: str
+
+    @app.put("/teams/{team}/tasks/{task_id}/reviews/comments/{comment_id}")
+    def edit_review_comment(team: str, task_id: int, comment_id: int, payload: ReviewCommentUpdateBody):
+        """Edit an existing review comment's body."""
+        from delegate.review import update_comment
+        result = update_comment(hc_home, team, comment_id, payload.body)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        return result
+
+    @app.delete("/teams/{team}/tasks/{task_id}/reviews/comments/{comment_id}")
+    def remove_review_comment(team: str, task_id: int, comment_id: int):
+        """Delete a review comment."""
+        from delegate.review import delete_comment
+        deleted = delete_comment(hc_home, team, comment_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        return {"ok": True}
+
     # --- Task approval endpoints (team-scoped) ---
 
     class ApproveBody(BaseModel):

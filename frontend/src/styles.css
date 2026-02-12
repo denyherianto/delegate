@@ -478,6 +478,7 @@ body {
   grid-template-columns: 56px 1fr auto auto auto;
   gap: 12px;
   align-items: center;
+  justify-items: start;
   padding: 10px 12px;
   font-size: 13px;
 }
@@ -659,15 +660,15 @@ body {
   transition: background 100ms;
 }
 .msg:last-child { border-bottom: none; }
-.msg:hover { background: var(--bg-hover); }
+.msg:hover { background: rgba(255, 255, 255, 0.02); }
 
-/* Boss messages: slightly lifted */
+/* Boss messages: subtle left border accent, very slight background lift */
 .msg-boss {
-  background: var(--bg-elevated);
-  border-left: 2px solid var(--text-faint);
+  background: rgba(255, 255, 255, 0.015);
+  border-left: 2px solid var(--border-default);
   padding-left: 10px;
 }
-.msg-boss:hover { background: var(--bg-active); }
+.msg-boss:hover { background: rgba(255, 255, 255, 0.03); }
 
 .msg-body { min-width: 0; }
 .msg-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
@@ -682,7 +683,7 @@ body {
 .msg-sender:hover { text-decoration: underline; }
 .msg-recipient { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; color: var(--text-muted); font-size: 11px; }
 .msg-time { color: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; margin-left: auto; flex-shrink: 0; }
-.msg-checkmark { flex-shrink: 0; margin-left: 4px; }
+.msg-checkmark { flex-shrink: 0; margin-left: 4px; min-width: 16px; display: inline-block; text-align: left; }
 .msg-content { color: var(--text-primary); font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 
 /* Event messages */
@@ -1154,9 +1155,14 @@ select option:hover {
 .rc-comment-cell { padding: 0 8px 4px 8px; background: var(--bg-surface); }
 .rc-comment { background: var(--bg-hover); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 8px 10px; margin: 4px 0; }
 .rc-comment-dimmed { opacity: 0.5; border-style: dashed; }
-.rc-comment-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.rc-comment-header { display: flex; align-items: center; gap: 6px; padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid var(--border-subtle); }
 .rc-comment-author { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-size: 12px; font-weight: 400; color: var(--text-primary); }
 .rc-comment-attempt { font-size: 10px; color: var(--text-faint); background: var(--bg-active); padding: 1px 5px; border-radius: 4px; }
+.rc-comment-actions { margin-left: auto; display: flex; gap: 4px; opacity: 0; transition: opacity 100ms; }
+.rc-comment:hover .rc-comment-actions { opacity: 1; }
+.rc-comment-action { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 2px; border-radius: 3px; display: flex; align-items: center; }
+.rc-comment-action:hover { color: var(--text-primary); background: var(--bg-active); }
+.rc-comment-delete:hover { color: var(--semantic-red); }
 .rc-comment-body { font-size: 12px; color: var(--text-secondary); line-height: 1.4; white-space: pre-wrap; }
 
 /* Comment form */
@@ -1295,26 +1301,94 @@ select option:hover {
 .file-link:hover { text-decoration: underline; }
 
 /* ================================================================
-   Copy button — inline icon, visible on hover of .copyable parent
+   Custom select (Cursor-style dropdown)
+   ================================================================ */
+.csel-wrap { position: relative; display: inline-block; }
+.csel-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 4px 8px 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 100ms, color 100ms;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.csel-trigger:hover { border-color: var(--text-muted); color: var(--text-primary); }
+.csel-trigger.csel-open { border-color: var(--border-focus); color: var(--text-primary); }
+.csel-chevron { flex-shrink: 0; color: var(--text-muted); transition: transform 120ms; }
+.csel-trigger.csel-open .csel-chevron { transform: rotate(180deg); }
+.csel-label { overflow: hidden; text-overflow: ellipsis; }
+.csel-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  padding: 4px 0;
+  z-index: 500;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+/* Filter selects at top: dropdown opens downward */
+.chat-filter-select .csel-menu {
+  bottom: auto;
+  top: calc(100% + 4px);
+}
+.csel-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 80ms;
+}
+.csel-option:hover { background: var(--bg-active); color: var(--text-primary); }
+.csel-option.csel-selected { color: var(--text-primary); }
+.csel-check {
+  width: 14px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.csel-option-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ================================================================
+   Copy button — inline icon, visible ONLY on hover of .copyable parent
    ================================================================ */
 .copy-btn {
-  display: inline-flex;
+  display: none;
   align-items: center;
   justify-content: center;
   margin-left: 4px;
   padding: 1px;
   cursor: pointer;
   color: var(--text-faint);
-  opacity: 0;
-  transition: opacity 120ms ease, color 120ms ease;
+  transition: color 120ms ease;
   vertical-align: middle;
   line-height: 1;
   border-radius: 3px;
 }
-.copyable:hover .copy-btn,
-.copy-btn:focus { opacity: 1; }
+.copyable:hover .copy-btn { display: inline-flex; }
 .copy-btn:hover { color: var(--text-secondary); }
-.copy-btn.copied { color: var(--text-secondary); opacity: 1; }
+.copy-btn.copied { display: inline-flex; color: var(--text-secondary); }
 
 /* ================================================================
    Mic button recording pulse

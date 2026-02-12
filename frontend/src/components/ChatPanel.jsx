@@ -13,6 +13,7 @@ import {
 import { playMsgSound } from "../audio.js";
 import { showToast } from "../toast.js";
 import { CopyBtn } from "./CopyBtn.jsx";
+import { CustomSelect } from "./CustomSelect.jsx";
 
 // ── Linked content with event delegation ──
 function LinkedDiv({ html, class: cls, style }) {
@@ -321,10 +322,12 @@ export function ChatPanel() {
             onInput={onSearchInput}
           />
         </div>
-        <select value={filterFrom} onChange={e => setFilterFrom(e.target.value)}>
-          <option value="">From: All</option>
-          {agentOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        <CustomSelect
+          className="chat-filter-select"
+          value={filterFrom}
+          options={[{ value: "", label: "From: All" }, ...agentOptions]}
+          onChange={setFilterFrom}
+        />
         <span
           class={"filter-arrow" + (direction === "bidi" ? " bidi" : "")}
           onClick={toggleDirection}
@@ -332,10 +335,12 @@ export function ChatPanel() {
         >
           {direction === "bidi" ? "\u2194" : "\u2192"}
         </span>
-        <select value={filterTo} onChange={e => setFilterTo(e.target.value)}>
-          <option value="">To: All</option>
-          {agentOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        <CustomSelect
+          className="chat-filter-select"
+          value={filterTo}
+          options={[{ value: "", label: "To: All" }, ...agentOptions]}
+          onChange={setFilterTo}
+        />
         <label>
           <input type="checkbox" checked={showEvents} onChange={e => setShowEvents(e.target.checked)} />
           {" "}Events
@@ -422,11 +427,13 @@ export function ChatPanel() {
           }}
         />
         <div class="chat-input-toolbar">
-          <select class="chat-input-recipient" value={recipient} onChange={e => setRecipient(e.target.value)}>
-            {recipientOptions.map(a => (
-              <option key={a.name} value={a.name}>{cap(a.name)}</option>
-            ))}
-          </select>
+          <CustomSelect
+            className="chat-input-recipient"
+            value={recipient}
+            options={recipientOptions.map(a => ({ value: a.name, label: cap(a.name) }))}
+            onChange={setRecipient}
+            renderLabel={(o) => o.label}
+          />
           <div class="chat-input-toolbar-spacer" />
           {mic.supported && (
             <button

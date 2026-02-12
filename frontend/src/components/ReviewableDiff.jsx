@@ -16,7 +16,7 @@
  */
 
 import { useState, useRef, useCallback, useMemo } from "preact/hooks";
-import { diff2HtmlParse } from "../utils.js";
+import { diff2HtmlParse, cap } from "../utils.js";
 import * as api from "../api.js";
 import { currentTeam } from "../state.js";
 import { showToast } from "../toast.js";
@@ -98,15 +98,82 @@ function InlineCommentForm({ file, line, taskId, onSaved, onCancel }) {
   );
 }
 
+// ── InlineEditForm — edit an existing comment ──
+
+function InlineEditForm({ comment, taskId, onSaved, onCancel }) {
+  const [body, setBody] = useState(comment.body);
+  const [saving, setSaving] = useState(false);
+  const ref = useRef();
+
+  const handleSave = useCallback(async () => {
+    if (!body.trim()) return;
+    setSaving(true);
+    try {
+      const updated = await api.updateReviewComment(currentTeam.value, taskId, comment.id, body.trim());
+      if (onSaved) onSaved(updated);
+    } catch (e) {
+      showToast("Failed to update comment", "error");
+    } finally {
+      setSaving(false);
+    }
+  }, [body, taskId, comment.id, onSaved]);
+
+  const setRef = useCallback((el) => {
+    ref.current = el;
+    if (el) setTimeout(() => el.focus(), 50);
+  }, []);
+
+  return (
+    <div class="rc-comment-form">
+      <textarea
+        ref={setRef}
+        class="rc-comment-textarea"
+        value={body}
+        onInput={(e) => setBody(e.target.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSave();
+          if (e.key === "Escape") onCancel && onCancel();
+        }}
+        rows="2"
+      />
+      <div class="rc-comment-form-actions">
+        <button class="rc-btn rc-btn-cancel" onClick={onCancel} disabled={saving}>Cancel</button>
+        <button class="rc-btn rc-btn-save" onClick={handleSave} disabled={saving || !body.trim()}>
+          {saving ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── InlineComment display ──
 
-function InlineComment({ comment, dimmed }) {
+function InlineComment({ comment, dimmed, onEdit, onDelete }) {
   return (
     <div class={"rc-comment" + (dimmed ? " rc-comment-dimmed" : "")}>
       <div class="rc-comment-header">
-        <span class="rc-comment-author">{comment.author}</span>
+        <span class="rc-comment-author">{cap(comment.author)}</span>
         {dimmed && comment.attempt && (
           <span class="rc-comment-attempt">Attempt {comment.attempt}</span>
+        )}
+        {(onEdit || onDelete) && (
+          <span class="rc-comment-actions">
+            {onEdit && (
+              <button class="rc-comment-action" title="Edit" onClick={onEdit}>
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11.5 1.5l3 3L5 14H2v-3z" />
+                </svg>
+              </button>
+            )}
+            {onDelete && (
+              <button class="rc-comment-action rc-comment-delete" title="Delete" onClick={onDelete}>
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="4" y1="4" x2="12" y2="12" /><line x1="12" y1="4" x2="4" y2="12" />
+                </svg>
+              </button>
+            )}
+          </span>
         )}
       </div>
       <div class="rc-comment-body">{comment.body}</div>
@@ -116,8 +183,9 @@ function InlineComment({ comment, dimmed }) {
 
 // ── DiffLine ──
 
-function DiffLine({ line, file, taskId, comments, oldComments, showOld, onCommentSaved }) {
+function DiffLine({ line, file, taskId, comments, oldComments, showOld, onCommentSaved, onCommentEdit, onCommentDelete }) {
   const [formOpen, setFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   // Use the new line number for additions/context, old for deletions
   const lineNum = line.newNumber || line.oldNumber;
   const type = line.type; // "insert", "delete", "context"
@@ -149,15 +217,28 @@ function DiffLine({ line, file, taskId, comments, oldComments, showOld, onCommen
         </td>
       </tr>
       {/* Existing comments on this line (current attempt) */}
-      {comments && comments.map((c, i) => (
+      {comments && comments.map((c) => (
         <tr key={"c-" + c.id} class="rc-comment-row">
           <td colSpan="4" class="rc-comment-cell">
-            <InlineComment comment={c} />
+            {editingId === c.id ? (
+              <InlineEditForm
+                comment={c}
+                taskId={taskId}
+                onSaved={(updated) => { setEditingId(null); onCommentEdit && onCommentEdit(updated); }}
+                onCancel={() => setEditingId(null)}
+              />
+            ) : (
+              <InlineComment
+                comment={c}
+                onEdit={onCommentEdit ? () => setEditingId(c.id) : undefined}
+                onDelete={onCommentDelete ? () => onCommentDelete(c) : undefined}
+              />
+            )}
           </td>
         </tr>
       ))}
       {/* Old attempt comments (dimmed) */}
-      {showOld && oldComments && oldComments.map((c, i) => (
+      {showOld && oldComments && oldComments.map((c) => (
         <tr key={"oc-" + c.id} class="rc-comment-row">
           <td colSpan="4" class="rc-comment-cell">
             <InlineComment comment={c} dimmed />
@@ -182,9 +263,34 @@ function DiffLine({ line, file, taskId, comments, oldComments, showOld, onCommen
   );
 }
 
+// ── EditableComment — wraps InlineComment with edit state ──
+
+function EditableComment({ comment, taskId, onEdit, onDelete }) {
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <InlineEditForm
+        comment={comment}
+        taskId={taskId}
+        onSaved={(updated) => { setEditing(false); onEdit && onEdit(updated); }}
+        onCancel={() => setEditing(false)}
+      />
+    );
+  }
+
+  return (
+    <InlineComment
+      comment={comment}
+      onEdit={onEdit ? () => setEditing(true) : undefined}
+      onDelete={onDelete ? () => onDelete(comment) : undefined}
+    />
+  );
+}
+
 // ── DiffBlock (hunk) ──
 
-function DiffBlock({ block, file, taskId, commentIndex, oldCommentIndex, showOld, onCommentSaved }) {
+function DiffBlock({ block, file, taskId, commentIndex, oldCommentIndex, showOld, onCommentSaved, onCommentEdit, onCommentDelete }) {
   const header = block.header || "";
 
   return (
@@ -207,6 +313,8 @@ function DiffBlock({ block, file, taskId, commentIndex, oldCommentIndex, showOld
             oldComments={oldCommentIndex[key]}
             showOld={showOld}
             onCommentSaved={onCommentSaved}
+            onCommentEdit={onCommentEdit}
+            onCommentDelete={onCommentDelete}
           />
         );
       })}
@@ -216,7 +324,7 @@ function DiffBlock({ block, file, taskId, commentIndex, oldCommentIndex, showOld
 
 // ── DiffFile ──
 
-function DiffFile({ diffFile, taskId, commentIndex, oldCommentIndex, showOld, onCommentSaved, defaultCollapsed }) {
+function DiffFile({ diffFile, taskId, commentIndex, oldCommentIndex, showOld, onCommentSaved, onCommentEdit, onCommentDelete, defaultCollapsed }) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const name = fileName(diffFile);
   const fileCommentKey = commentKey(name, null);
@@ -251,7 +359,7 @@ function DiffFile({ diffFile, taskId, commentIndex, oldCommentIndex, showOld, on
           {/* File-level comments */}
           {fileComments.map((c) => (
             <div key={"fc-" + c.id} class="rc-file-level-comment">
-              <InlineComment comment={c} />
+              <EditableComment comment={c} taskId={taskId} onEdit={onCommentEdit} onDelete={onCommentDelete} />
             </div>
           ))}
           {showOld && oldFileComments.map((c) => (
@@ -277,6 +385,8 @@ function DiffFile({ diffFile, taskId, commentIndex, oldCommentIndex, showOld, on
                   oldCommentIndex={oldCommentIndex}
                   showOld={showOld}
                   onCommentSaved={onCommentSaved}
+                  onCommentEdit={onCommentEdit}
+                  onCommentDelete={onCommentDelete}
                 />
               ))}
             </tbody>
@@ -318,6 +428,23 @@ export function ReviewableDiff({
     setLocalComments((prev) => [...prev, comment]);
   }, []);
 
+  const handleCommentEdit = useCallback((updated) => {
+    // Update in local comments if it exists there
+    setLocalComments((prev) =>
+      prev.map(c => c.id === updated.id ? { ...c, body: updated.body } : c)
+    );
+  }, []);
+
+  const handleCommentDelete = useCallback(async (comment) => {
+    try {
+      await api.deleteReviewComment(currentTeam.value, taskId, comment.id);
+      // Remove from local comments
+      setLocalComments((prev) => prev.filter(c => c.id !== comment.id));
+    } catch (e) {
+      showToast("Failed to delete comment", "error");
+    }
+  }, [taskId]);
+
   if (!files.length) {
     return <div class="diff-empty">No changes</div>;
   }
@@ -354,6 +481,8 @@ export function ReviewableDiff({
           oldCommentIndex={oldCommentIndex}
           showOld={showOld}
           onCommentSaved={isReviewable ? handleCommentSaved : undefined}
+          onCommentEdit={isReviewable ? handleCommentEdit : undefined}
+          onCommentDelete={isReviewable ? handleCommentDelete : undefined}
           defaultCollapsed={false}
         />
       ))}

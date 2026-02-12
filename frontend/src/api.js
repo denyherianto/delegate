@@ -107,6 +107,30 @@ export async function postReviewComment(team, taskId, { file, line, body }) {
   return r.json();
 }
 
+export async function updateReviewComment(team, taskId, commentId, body) {
+  const r = await fetch(`/teams/${team}/tasks/${taskId}/reviews/comments/${commentId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+export async function deleteReviewComment(team, taskId, commentId) {
+  const r = await fetch(`/teams/${team}/tasks/${taskId}/reviews/comments/${commentId}`, {
+    method: "DELETE",
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
 // --- Retry Merge ---
 
 export async function retryMerge(team, taskId) {

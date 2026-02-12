@@ -201,3 +201,50 @@ def get_comments(
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+def update_comment(
+    hc_home: Path,
+    team: str,
+    comment_id: int,
+    body: str,
+) -> dict | None:
+    """Update the body of an existing review comment.
+
+    Returns the updated comment as a dict, or None if not found.
+    """
+    conn = get_connection(hc_home, team)
+    try:
+        conn.execute(
+            "UPDATE review_comments SET body = ? WHERE id = ?",
+            (body, comment_id),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM review_comments WHERE id = ?",
+            (comment_id,),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def delete_comment(
+    hc_home: Path,
+    team: str,
+    comment_id: int,
+) -> bool:
+    """Delete a review comment by id.
+
+    Returns True if a row was deleted, False if not found.
+    """
+    conn = get_connection(hc_home, team)
+    try:
+        cursor = conn.execute(
+            "DELETE FROM review_comments WHERE id = ?",
+            (comment_id,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
