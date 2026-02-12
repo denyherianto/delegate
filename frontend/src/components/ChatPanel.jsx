@@ -505,8 +505,7 @@ export function ChatPanel() {
           onKeyDown={handleKeydown}
           onInput={(e) => {
             e.target.style.height = "auto";
-            // Always show one extra empty line below content
-            e.target.style.height = (e.target.scrollHeight + 21) + "px";
+            e.target.style.height = e.target.scrollHeight + "px";
             setSendBtnActive(!!e.target.value.trim());
           }}
         />
