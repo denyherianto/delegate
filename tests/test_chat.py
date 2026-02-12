@@ -6,7 +6,6 @@ import time
 
 from tests.conftest import SAMPLE_TEAM_NAME as TEAM
 from delegate.chat import (
-    log_message,
     log_event,
     get_messages,
     start_session,
@@ -16,6 +15,7 @@ from delegate.chat import (
     get_task_stats,
     get_project_stats,
 )
+from delegate.mailbox import send
 from delegate.paths import db_path as _db_path
 
 
@@ -25,7 +25,8 @@ class TestSchema:
         cursor = conn.execute("PRAGMA table_info(messages)")
         columns = {row[1] for row in cursor.fetchall()}
         conn.close()
-        assert columns == {"id", "timestamp", "sender", "recipient", "content", "type", "task_id"}
+        # V9 added delivered_at, seen_at, processed_at to messages table
+        assert columns == {"id", "timestamp", "sender", "recipient", "content", "type", "task_id", "delivered_at", "seen_at", "processed_at"}
 
     def test_sessions_table_exists(self, tmp_team):
         conn = sqlite3.connect(str(_db_path(tmp_team, TEAM)))
@@ -38,19 +39,19 @@ class TestSchema:
         assert "tokens_out" in columns
 
 
-class TestLogMessage:
+class TestSendMessage:
     def test_returns_id(self, tmp_team):
-        msg_id = log_message(tmp_team, TEAM, "alice", "bob", "Hello")
+        msg_id = send(tmp_team, TEAM, "alice", "bob", "Hello")
         assert isinstance(msg_id, int)
         assert msg_id >= 1
 
     def test_increments_id(self, tmp_team):
-        id1 = log_message(tmp_team, TEAM, "alice", "bob", "First")
-        id2 = log_message(tmp_team, TEAM, "alice", "bob", "Second")
+        id1 = send(tmp_team, TEAM, "alice", "bob", "First")
+        id2 = send(tmp_team, TEAM, "alice", "bob", "Second")
         assert id2 == id1 + 1
 
     def test_persists_fields(self, tmp_team):
-        log_message(tmp_team, TEAM, "alice", "bob", "Hello Bob!")
+        send(tmp_team, TEAM, "alice", "bob", "Hello Bob!")
         messages = get_messages(tmp_team, TEAM)
         assert len(messages) == 1
         m = messages[0]
@@ -59,6 +60,7 @@ class TestLogMessage:
         assert m["content"] == "Hello Bob!"
         assert m["type"] == "chat"
         assert m["timestamp"]  # not empty
+        assert m["delivered_at"]  # messages are delivered immediately
 
 
 class TestLogEvent:
@@ -74,8 +76,8 @@ class TestLogEvent:
 
 class TestGetMessages:
     def test_all_chronological(self, tmp_team):
-        log_message(tmp_team, TEAM, "alice", "bob", "First")
-        log_message(tmp_team, TEAM, "bob", "alice", "Second")
+        send(tmp_team, TEAM, "alice", "bob", "First")
+        send(tmp_team, TEAM, "bob", "alice", "Second")
         log_event(tmp_team, TEAM, "Something happened")
         messages = get_messages(tmp_team, TEAM)
         assert len(messages) == 3
@@ -84,20 +86,20 @@ class TestGetMessages:
         assert messages[2]["content"] == "Something happened"
 
     def test_filter_since(self, tmp_team):
-        log_message(tmp_team, TEAM, "alice", "bob", "Old message")
+        send(tmp_team, TEAM, "alice", "bob", "Old message")
         # Get the timestamp of the first message
         all_msgs = get_messages(tmp_team, TEAM)
         cutoff = all_msgs[0]["timestamp"]
         time.sleep(0.01)  # ensure distinct timestamp
-        log_message(tmp_team, TEAM, "alice", "bob", "New message")
+        send(tmp_team, TEAM, "alice", "bob", "New message")
         recent = get_messages(tmp_team, TEAM, since=cutoff)
         assert len(recent) == 1
         assert recent[0]["content"] == "New message"
 
     def test_filter_between(self, tmp_team):
-        log_message(tmp_team, TEAM, "alice", "bob", "A to B")
-        log_message(tmp_team, TEAM, "bob", "alice", "B to A")
-        log_message(tmp_team, TEAM, "alice", "manager", "A to M")
+        send(tmp_team, TEAM, "alice", "bob", "A to B")
+        send(tmp_team, TEAM, "bob", "alice", "B to A")
+        send(tmp_team, TEAM, "alice", "manager", "A to M")
 
         ab_msgs = get_messages(tmp_team, TEAM, between=("alice", "bob"))
         assert len(ab_msgs) == 2
@@ -106,7 +108,7 @@ class TestGetMessages:
         )
 
     def test_filter_type(self, tmp_team):
-        log_message(tmp_team, TEAM, "alice", "bob", "Chat msg")
+        send(tmp_team, TEAM, "alice", "bob", "Chat msg")
         log_event(tmp_team, TEAM, "Event msg")
 
         chats = get_messages(tmp_team, TEAM, msg_type="chat")
@@ -119,13 +121,13 @@ class TestGetMessages:
 
     def test_limit(self, tmp_team):
         for i in range(10):
-            log_message(tmp_team, TEAM, "alice", "bob", f"Message {i}")
+            send(tmp_team, TEAM, "alice", "bob", f"Message {i}")
         messages = get_messages(tmp_team, TEAM, limit=3)
         assert len(messages) == 3
 
     def test_special_characters(self, tmp_team):
         content = 'He said "hello, world!" — über cool 🌍\nNew line here'
-        log_message(tmp_team, TEAM, "alice", "bob", content)
+        send(tmp_team, TEAM, "alice", "bob", content)
         messages = get_messages(tmp_team, TEAM)
         assert messages[0]["content"] == content
 
@@ -136,7 +138,7 @@ class TestGetMessages:
         def writer(sender, count):
             try:
                 for i in range(count):
-                    log_message(tmp_team, TEAM, sender, "bob", f"{sender}-{i}")
+                    send(tmp_team, TEAM, sender, "bob", f"{sender}-{i}")
             except Exception as e:
                 errors.append(e)
 

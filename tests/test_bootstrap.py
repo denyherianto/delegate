@@ -124,7 +124,8 @@ def test_db_schema_created(tmp_team):
 
     cursor = conn.execute("PRAGMA table_info(messages)")
     msg_columns = {row[1] for row in cursor.fetchall()}
-    assert msg_columns == {"id", "timestamp", "sender", "recipient", "content", "type", "task_id"}
+    # V9 added delivered_at, seen_at, processed_at for unified mailbox/messages table
+    assert msg_columns == {"id", "timestamp", "sender", "recipient", "content", "type", "task_id", "delivered_at", "seen_at", "processed_at"}
 
     cursor = conn.execute("PRAGMA table_info(sessions)")
     sess_columns = {row[1] for row in cursor.fetchall()}

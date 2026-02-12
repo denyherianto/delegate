@@ -44,15 +44,15 @@ class TestSchemaInitialization:
         tables = {row[0] for row in cursor.fetchall()}
         conn.close()
 
-        # Expected tables from all migrations
+        # Expected tables from all migrations (mailbox dropped in V9)
         expected = {
             "schema_meta",
             "messages",
             "sessions",
             "tasks",
-            "mailbox",
             "reviews",
             "review_comments",
+            "task_comments",
         }
         assert expected.issubset(tables)
 
