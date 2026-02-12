@@ -11,26 +11,22 @@ function truncate(str, maxLen) {
 }
 
 export function ManagerActivityBar() {
-  const [timeoutCleared, setTimeoutCleared] = useState(false);
   const turnCtx = managerTurnContext.value;
   const lastActivity = agentLastActivity.value;
 
-  // Safety timeout: if no activity update for 5 seconds and no turn_ended, clear context
+  // Safety timeout: if no activity update for 10 seconds and no turn_ended, clear context
+  // Increased from 5s to 10s to avoid clearing too aggressively
   useEffect(() => {
-    if (!turnCtx) {
-      setTimeoutCleared(false);
-      return;
-    }
+    if (!turnCtx) return;
 
     const timer = setTimeout(() => {
       if (managerTurnContext.value && managerTurnContext.value.agent === turnCtx.agent) {
         managerTurnContext.value = null;
-        setTimeoutCleared(true);
       }
-    }, 5000);
+    }, 10000);
 
     return () => clearTimeout(timer);
-  }, [turnCtx, lastActivity]);
+  }, [turnCtx?.agent, turnCtx?.timestamp]); // Only re-trigger on agent or timestamp change, not on lastActivity
 
   if (!turnCtx) return null;
 
@@ -41,19 +37,19 @@ export function ManagerActivityBar() {
     return null;
   }
 
-  // Build context string
+  // Build context string (task_id takes priority over sender)
   let contextString = "";
   if (turnCtx.task_id !== null && turnCtx.task_id !== undefined) {
     const taskIdStr = String(turnCtx.task_id).padStart(4, "0");
-    contextString = `is working on T${taskIdStr}`;
+    contextString = `T${taskIdStr}`;
   } else if (turnCtx.sender) {
-    contextString = `is thinking about ${capitalize(turnCtx.sender)}'s message`;
+    contextString = capitalize(turnCtx.sender);
   } else {
-    contextString = "is thinking";
+    contextString = "";
   }
 
-  // Build tool string from agentLastActivity
-  let toolString = "";
+  // Build message string from agentLastActivity
+  let messageString = "";
   const activity = lastActivity[turnCtx.agent];
   if (activity && activity.tool) {
     const now = Date.now();
@@ -61,18 +57,33 @@ export function ManagerActivityBar() {
     const ageMs = now - activityTime;
     // Only show tool info if it's recent (within last 10 seconds)
     if (ageMs < 10000) {
-      const toolName = activity.tool.toLowerCase();
+      const toolName = activity.tool;
       const detail = activity.detail ? " " + truncate(activity.detail, 40) : "";
-      toolString = `: ${toolName}${detail}`;
+      messageString = (
+        <>
+          <span class="tool-name">{toolName}</span>
+          <span class="tool-command">{detail}</span>
+        </>
+      );
     }
   }
 
-  const fullText = `${capitalize(turnCtx.agent)} ${contextString}${toolString}`;
+  // Default to "thinking..." if no tool activity
+  if (!messageString) {
+    messageString = <span class="thinking">thinking...</span>;
+  }
+
+  const agentName = capitalize(turnCtx.agent);
 
   return (
     <div class="manager-activity-bar">
       <div class="manager-activity-dot"></div>
-      <div class="manager-activity-text">{fullText}</div>
+      <div class="manager-activity-text">
+        {agentName}
+        <span class="arrow"> -&gt; </span>
+        {contextString && <>{contextString}: </>}
+        {messageString}
+      </div>
     </div>
   );
 }

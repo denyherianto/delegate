@@ -811,6 +811,20 @@ body {
   text-overflow: ellipsis;
   line-height: 1.4;
 }
+.manager-activity-text .arrow {
+  color: var(--text-secondary);
+}
+.manager-activity-text .tool-name {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-weight: 600;
+}
+.manager-activity-text .tool-command {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+}
+.manager-activity-text .thinking {
+  font-style: italic;
+  color: var(--text-secondary);
+}
 
 /* ================================================================
    Chat input — Cursor-style
