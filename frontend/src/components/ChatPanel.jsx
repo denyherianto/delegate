@@ -71,22 +71,22 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
     console.log('[LinkedDiv useEffect] Attaching click handler to:', el);
     el.addEventListener("click", handler);
     return () => {
-      console.log('[LinkedDiv useEffect cleanup] Removing click handler from:', el);
-      if (el) el.removeEventListener("click", handler);
+      console.log('[LinkedDiv useEffect cleanup] Removing click handler');
+      internalRef.current && internalRef.current.removeEventListener("click", handler);
     };
   }, [html]);
 
-  // Support both external ref (from parent) and internal ref
-  const handleRefCallback = useCallback((node) => {
+  // Merge refs - set internal first, then external if provided
+  const setRefs = useCallback((node) => {
     console.log('[LinkedDiv refCallback] node:', node, 'externalRef:', externalRef);
+    internalRef.current = node;
     if (externalRef) {
       if (typeof externalRef === 'function') externalRef(node);
       else externalRef.current = node;
     }
-    internalRef.current = node;
   }, [externalRef]);
 
-  return <div ref={handleRefCallback} class={cls} style={style} dangerouslySetInnerHTML={{ __html: html }} />;
+  return <div ref={setRefs} class={cls} style={style} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 // ── Collapsible long message ──
