@@ -235,7 +235,10 @@ function App() {
           if (entry.type === "connected") return;
 
           if (entry.type === "turn_started") {
-            managerTurnContext.value = entry;
+            const managerAgent = agents.value?.find(a => a.role === "manager");
+            if (managerAgent && managerAgent.name === entry.agent) {
+              managerTurnContext.value = entry;
+            }
             return;
           }
 

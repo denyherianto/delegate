@@ -780,33 +780,36 @@ body {
 .manager-activity-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
-  font-size: 12px;
-  color: var(--text-secondary);
+  gap: 10px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
   opacity: 1;
   transition: opacity 200ms ease;
-  min-height: 24px;
+  min-height: 28px;
 }
 .manager-activity-bar.hidden {
   opacity: 0;
   pointer-events: none;
 }
 .manager-activity-dot {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--accent);
+  background: #22c55e;
   animation: pulse-dot 1.5s ease-in-out infinite;
+  flex-shrink: 0;
 }
 @keyframes pulse-dot {
-  0%, 100% { opacity: 0.4; }
+  0%, 100% { opacity: 0.5; }
   50% { opacity: 1; }
 }
 .manager-activity-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.4;
 }
 
 /* ================================================================
