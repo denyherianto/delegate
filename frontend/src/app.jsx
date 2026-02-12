@@ -66,6 +66,27 @@ function App() {
         return;
       }
 
+      // c: go to chat
+      if (e.key === "c" && !isOverlayOpen()) {
+        activeTab.value = "chat";
+        window.history.pushState({}, "", "/chat");
+        return;
+      }
+
+      // t: go to tasks
+      if (e.key === "t" && !isOverlayOpen()) {
+        activeTab.value = "tasks";
+        window.history.pushState({}, "", "/tasks");
+        return;
+      }
+
+      // a: go to agents
+      if (e.key === "a" && !isOverlayOpen()) {
+        activeTab.value = "agents";
+        window.history.pushState({}, "", "/agents");
+        return;
+      }
+
       // ?: toggle help overlay
       if (e.key === "?" && !isInputFocused()) {
         helpOverlayOpen.value = !helpOverlayOpen.value;
