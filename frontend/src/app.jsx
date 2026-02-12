@@ -5,7 +5,7 @@ import {
   currentTeam, teams, bossName, tasks, agents, agentStatsMap, messages,
   activeTab, knownAgentNames,
   taskPanelId, diffPanelMode, diffPanelTarget,
-  agentLastActivity, agentActivityLog,
+  agentLastActivity, agentActivityLog, managerTurnContext,
   helpOverlayOpen, sidebarCollapsed,
 } from "./state.js";
 import * as api from "./api.js";
@@ -233,6 +233,18 @@ function App() {
         try {
           const entry = JSON.parse(evt.data);
           if (entry.type === "connected") return;
+
+          if (entry.type === "turn_started") {
+            managerTurnContext.value = entry;
+            return;
+          }
+
+          if (entry.type === "turn_ended") {
+            if (managerTurnContext.value && managerTurnContext.value.agent === entry.agent) {
+              managerTurnContext.value = null;
+            }
+            return;
+          }
 
           if (entry.type === "task_update") {
             const tid = entry.task_id;

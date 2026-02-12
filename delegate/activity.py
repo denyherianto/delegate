@@ -148,3 +148,25 @@ def broadcast_task_update(task_id: int, changes: dict[str, Any]) -> None:
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     _push_to_subscribers(payload)
+
+
+def broadcast_turn_event(event_type: str, agent: str, *, task_id: int | None = None, sender: str = '') -> None:
+    """Broadcast a turn lifecycle event (turn_started or turn_ended) to all SSE clients.
+
+    These are ephemeral signals (not stored in the ring buffer) that indicate when
+    an agent begins or ends processing a batch of messages.
+
+    Args:
+        event_type: 'turn_started' or 'turn_ended'
+        agent: The agent name
+        task_id: Optional task ID the turn is associated with
+        sender: Optional sender name (relevant when task_id is None)
+    """
+    payload = {
+        'type': event_type,
+        'agent': agent,
+        'task_id': task_id,
+        'sender': sender,
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+    }
+    _push_to_subscribers(payload)

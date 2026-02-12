@@ -41,6 +41,10 @@ export const agentLastActivity = signal({});
 // Full activity stream for the activity tab in agent side panel
 export const agentActivityLog = signal([]); // [{agent, tool, detail, timestamp}]
 
+// ── Manager turn context (ephemeral turn lifecycle state) ──
+// {agent, task_id, sender, timestamp} or null — indicates an active turn
+export const managerTurnContext = signal(null);
+
 // ── Computed helpers ──
 export const actionItems = computed(() => {
   const boss = bossName.value.toLowerCase();

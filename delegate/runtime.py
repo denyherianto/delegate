@@ -50,7 +50,7 @@ from delegate.mailbox import (
     Message,
 )
 from delegate.task import format_task_id
-from delegate.activity import broadcast as broadcast_activity
+from delegate.activity import broadcast as broadcast_activity, broadcast_turn_event
 
 logger = logging.getLogger(__name__)
 
@@ -129,14 +129,21 @@ def _select_batch(inbox: list[Message], max_size: int = MAX_BATCH_SIZE) -> list[
 
     The inbox is assumed to be sorted by id (oldest first).
     Both ``task_id = None`` and ``task_id = N`` are valid grouping keys.
+
+    When task_id is None, messages are also grouped by sender to avoid
+    mixing messages from different senders in the same batch.
     """
     if not inbox:
         return []
 
     target_task_id = inbox[0].task_id
+    target_sender = inbox[0].sender if target_task_id is None else None
     batch: list[Message] = []
     for msg in inbox:
         if msg.task_id != target_task_id:
+            break
+        # When task_id is None, also break if sender differs
+        if target_task_id is None and msg.sender != target_sender:
             break
         batch.append(msg)
         if len(batch) >= max_size:
@@ -341,6 +348,10 @@ async def run_turn(
     for inbox_msg in batch:
         alog.message_received(inbox_msg.sender, len(inbox_msg.body))
 
+    # --- Broadcast turn_started event ---
+    primary_sender = batch[0].sender
+    broadcast_turn_event('turn_started', agent, task_id=current_task_id, sender=primary_sender)
+
     # --- Start session ---
     session_id = start_session(hc_home, team, agent, task_id=current_task_id)
     result.session_id = session_id
@@ -434,6 +445,9 @@ async def run_turn(
 
     # Early return if there was an error
     if error_occurred:
+        _write_worklog(ad, worklog_lines)
+        # Broadcast turn_ended even on error
+        broadcast_turn_event('turn_ended', agent, task_id=current_task_id, sender=primary_sender)
         log_caller.reset(_prev_caller)
         return result
 
@@ -567,6 +581,9 @@ async def run_turn(
             f"Turns: {turn_num}\n"
             f"Tokens: {total_tokens}\n"
         )
+
+        # --- Broadcast turn_ended event ---
+        broadcast_turn_event('turn_ended', agent, task_id=current_task_id, sender=primary_sender)
 
         # Restore logging caller context
         log_caller.reset(_prev_caller)

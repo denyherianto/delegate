@@ -775,6 +775,41 @@ body {
 .chat-jump-btn:hover { color: var(--text-primary); }
 
 /* ================================================================
+   Manager activity bar
+   ================================================================ */
+.manager-activity-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  opacity: 1;
+  transition: opacity 200ms ease;
+  min-height: 24px;
+}
+.manager-activity-bar.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+.manager-activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.manager-activity-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ================================================================
    Chat input — Cursor-style
    ================================================================ */
 .chat-input-box {
