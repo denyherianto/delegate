@@ -416,14 +416,22 @@ def _cleanup_after_merge(
 
     for rn in repos:
         rd = repo_dirs[rn]
-        _run_git(["branch", "-d", branch], cwd=rd)
-        _run_git(["worktree", "prune"], cwd=rd)
+        # 1. Remove the worktree directory first
         try:
             remove_task_worktree(hc_home, team, rn, task_id)
         except Exception as exc:
             logger.warning(
                 "Could not remove agent worktree for %s (%s): %s",
                 format_task_id(task_id), rn, exc,
+            )
+        # 2. Prune so git knows the branch is no longer checked out
+        _run_git(["worktree", "prune"], cwd=rd)
+        # 3. Now delete the branch (should succeed)
+        result = _run_git(["branch", "-d", branch], cwd=rd)
+        if result.returncode != 0:
+            logger.warning(
+                "Failed to delete branch %s in %s: %s",
+                branch, rn, result.stderr,
             )
 
 
