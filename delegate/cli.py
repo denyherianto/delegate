@@ -163,10 +163,16 @@ def start(
 @click.pass_context
 def stop(ctx: click.Context) -> None:
     """Stop the running delegate daemon."""
-    from delegate.daemon import stop_daemon
-    from delegate.fmt import success, warn
+    from delegate.daemon import stop_daemon, is_running
+    from delegate.fmt import success, warn, info
 
     hc_home = _get_home(ctx)
+    alive, _ = is_running(hc_home)
+    if not alive:
+        warn("No running daemon found")
+        return
+
+    info("Stopping daemon...")
     stopped = stop_daemon(hc_home)
     if stopped:
         success("Daemon stopped")
