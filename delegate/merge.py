@@ -579,8 +579,8 @@ def merge_task(
 
     # Step 5: Record per-repo merge_base and merge_tip, then mark as done.
     update_task(hc_home, team, task_id, merge_base=merge_base_dict, merge_tip=merge_tip_dict)
-    change_status(hc_home, team, task_id, "done")
     log_event(hc_home, team, f"{format_task_id(task_id)} merged to main \u2713", task_id=task_id)
+    change_status(hc_home, team, task_id, "done")
 
     # Step 6: Clean up temp worktrees/branches + feature branch + agent worktree.
     _cleanup_after_merge(hc_home, team, task_id, branch, repos, repo_dirs, temp_worktrees)
