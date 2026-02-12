@@ -20,11 +20,16 @@ Usage::
 import json
 import logging
 import sqlite3
+import threading
 from pathlib import Path
 
 from delegate.paths import db_path
 
 logger = logging.getLogger(__name__)
+
+# Per-process cache to avoid redundant schema checks
+_schema_verified: dict[tuple[str, str], int] = {}
+_schema_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # Migration registry
@@ -241,7 +246,14 @@ def ensure_schema(hc_home: Path, team: str) -> None:
     SQLite supports transactional DDL — if any statement fails the entire
     migration is rolled back and no version is recorded.
     """
+    # Early return if already verified at current version
     path = db_path(hc_home, team)
+    key = (str(hc_home), team)
+    current_version = len(MIGRATIONS)
+    with _schema_lock:
+        # Only trust cache if DB file still exists
+        if _schema_verified.get(key) == current_version and path.exists():
+            return
     path.parent.mkdir(parents=True, exist_ok=True)
 
     # Use isolation_level=None (autocommit) so Python's sqlite3 module
@@ -282,6 +294,10 @@ def ensure_schema(hc_home: Path, team: str) -> None:
             conn.execute("ROLLBACK")
             raise
         logger.info("Migration V%d applied", i)
+
+    # Update cache to avoid redundant checks on subsequent calls
+    with _schema_lock:
+        _schema_verified[key] = current_version
 
     conn.close()
 
