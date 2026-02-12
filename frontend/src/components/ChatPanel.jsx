@@ -16,11 +16,12 @@ import { CopyBtn } from "./CopyBtn.jsx";
 import { CustomSelect } from "./CustomSelect.jsx";
 
 // ── Linked content with event delegation ──
-function LinkedDiv({ html, class: cls, style }) {
-  const ref = useRef();
+function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
+  const internalRef = useRef();
 
   useEffect(() => {
-    if (!ref.current) return;
+    const el = externalRef?.current || internalRef.current;
+    if (!el) return;
     const handler = (e) => {
       // Copy button click
       const copyBtn = e.target.closest(".copy-btn");
@@ -32,11 +33,20 @@ function LinkedDiv({ html, class: cls, style }) {
       const fileLink = e.target.closest("[data-file-path]");
       if (fileLink) { e.stopPropagation(); diffPanelMode.value = "file"; diffPanelTarget.value = fileLink.dataset.filePath; return; }
     };
-    ref.current.addEventListener("click", handler);
-    return () => ref.current && ref.current.removeEventListener("click", handler);
-  }, [html]);
+    el.addEventListener("click", handler);
+    return () => el.removeEventListener("click", handler);
+  }, [html, externalRef]);
 
-  return <div ref={ref} class={cls} style={style} dangerouslySetInnerHTML={{ __html: html }} />;
+  // Support both external ref (from parent) and internal ref
+  const handleRefCallback = useCallback((node) => {
+    if (externalRef) {
+      if (typeof externalRef === 'function') externalRef(node);
+      else externalRef.current = node;
+    }
+    internalRef.current = node;
+  }, [externalRef]);
+
+  return <div ref={handleRefCallback} class={cls} style={style} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 // ── Collapsible long message ──
