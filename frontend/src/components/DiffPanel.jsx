@@ -302,6 +302,8 @@ function FileView({ filePath }) {
   const modified = fileData?.modified || "";
   const imageExts = ["png", "jpg", "jpeg", "gif", "svg", "webp"];
   const isImage = imageExts.includes(ext);
+  const htmlExts = ["html", "htm"];
+  const isHtml = htmlExts.includes(ext);
 
   return (
     <>
@@ -320,6 +322,15 @@ function FileView({ filePath }) {
             ? <div class="diff-empty">Binary file ({fileData.size} bytes)</div>
           : (ext === "md" || ext === "markdown")
             ? <div class="file-viewer-content md-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(fileData.content) }} />
+          : isHtml && fileData.content
+            ? <div class="file-viewer-content file-viewer-html">
+                <iframe
+                  srcDoc={fileData.content}
+                  sandbox="allow-same-origin"
+                  class="file-viewer-iframe"
+                  title={filePath}
+                />
+              </div>
             : <div class="file-viewer-content"><pre class="file-viewer-code"><code>{fileData.content}</code></pre></div>
         }
       </div>
