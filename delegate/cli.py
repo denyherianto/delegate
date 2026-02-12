@@ -176,8 +176,6 @@ def stop(ctx: click.Context) -> None:
     stopped = stop_daemon(hc_home)
     if stopped:
         success("Daemon stopped")
-    else:
-        warn("No running daemon found")
 
 
 @main.command()
