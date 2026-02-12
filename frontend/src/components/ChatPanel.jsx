@@ -18,64 +18,45 @@ import { ManagerActivityBar } from "./ManagerActivityBar.jsx";
 
 // ── Linked content with event delegation ──
 function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
-  const internalRef = useRef();
-
-  useEffect(() => {
-    if (!internalRef.current) {
+  const handler = useCallback((e) => {
+    // Copy button click
+    const copyBtn = e.target.closest(".copy-btn");
+    if (copyBtn) {
+      e.stopPropagation(); e.preventDefault(); handleCopyClick(copyBtn); return;
+    }
+    const taskLink = e.target.closest("[data-task-id]");
+    if (taskLink) {
+      e.stopPropagation();
+      taskPanelId.value = parseInt(taskLink.dataset.taskId, 10);
       return;
     }
-    const el = internalRef.current;
-    const handler = (e) => {
-      // Copy button click
-      const copyBtn = e.target.closest(".copy-btn");
-      if (copyBtn) {
-        e.stopPropagation(); e.preventDefault(); handleCopyClick(copyBtn); return;
+    const agentLink = e.target.closest("[data-agent-name]");
+    if (agentLink) { e.stopPropagation(); diffPanelMode.value = "agent"; diffPanelTarget.value = agentLink.dataset.agentName; return; }
+    const fileLink = e.target.closest("[data-file-path]");
+    if (fileLink) {
+      e.stopPropagation();
+      const fpath = fileLink.dataset.filePath;
+      const fname = fpath.split("/").pop();
+      const isHtmlFile = /\.html?$/i.test(fname);
+      if (isHtmlFile) {
+        // Extract relative path (same logic as TaskSidePanel)
+        let apiPath = fpath;
+        const sharedMarker = "/shared/";
+        const agentsMarker = "/agents/";
+        const sharedIdx = apiPath.indexOf(sharedMarker);
+        const agentsIdx = apiPath.indexOf(agentsMarker);
+        if (sharedIdx !== -1) apiPath = apiPath.substring(sharedIdx + sharedMarker.length);
+        else if (agentsIdx !== -1) apiPath = apiPath.substring(agentsIdx + 1); // +1 to skip leading /
+        else if (apiPath.startsWith("shared/")) apiPath = apiPath.substring(7);
+        window.open(`/teams/${currentTeam.value}/files/raw?path=${encodeURIComponent(apiPath)}`, "_blank");
+      } else {
+        diffPanelMode.value = "file"; diffPanelTarget.value = fpath;
       }
-      const taskLink = e.target.closest("[data-task-id]");
-      if (taskLink) {
-        e.stopPropagation();
-        taskPanelId.value = parseInt(taskLink.dataset.taskId, 10);
-        return;
-      }
-      const agentLink = e.target.closest("[data-agent-name]");
-      if (agentLink) { e.stopPropagation(); diffPanelMode.value = "agent"; diffPanelTarget.value = agentLink.dataset.agentName; return; }
-      const fileLink = e.target.closest("[data-file-path]");
-      if (fileLink) {
-        e.stopPropagation();
-        const fpath = fileLink.dataset.filePath;
-        const fname = fpath.split("/").pop();
-        const isHtmlFile = /\.html?$/i.test(fname);
-        if (isHtmlFile) {
-          // Extract relative path (same logic as TaskSidePanel)
-          let apiPath = fpath;
-          const sharedMarker = "/shared/";
-          const agentsMarker = "/agents/";
-          const sharedIdx = apiPath.indexOf(sharedMarker);
-          const agentsIdx = apiPath.indexOf(agentsMarker);
-          if (sharedIdx !== -1) apiPath = apiPath.substring(sharedIdx + sharedMarker.length);
-          else if (agentsIdx !== -1) apiPath = apiPath.substring(agentsIdx + 1); // +1 to skip leading /
-          else if (apiPath.startsWith("shared/")) apiPath = apiPath.substring(7);
-          window.open(`/teams/${currentTeam.value}/files/raw?path=${encodeURIComponent(apiPath)}`, "_blank");
-        } else {
-          diffPanelMode.value = "file"; diffPanelTarget.value = fpath;
-        }
-        return;
-      }
-    };
-    el.addEventListener("click", handler);
-    return () => el.removeEventListener("click", handler);
-  }, [html]);
-
-  // Merge refs - set internal first, then external if provided
-  const setRefs = useCallback((node) => {
-    internalRef.current = node;
-    if (externalRef) {
-      if (typeof externalRef === 'function') externalRef(node);
-      else externalRef.current = node;
+      return;
     }
-  }, [externalRef]);
+  }, []);
 
-  return <div ref={setRefs} class={cls} style={style} dangerouslySetInnerHTML={{ __html: html }} />;
+  return <div ref={externalRef} class={cls} style={style} onClick={handler} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 // ── Collapsible long message ──
