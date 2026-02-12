@@ -27,6 +27,12 @@ Check inbox: `python -m delegate.mailbox inbox <home> <team> <your_name>`
 - **Don't wait silently.** If blocked on someone, say so explicitly.
 - **Don't ack.** Never send "Got it", "Standing by", or "Thanks" unless you're also conveying new information. Unnecessary messages trigger sessions for recipients, creating costly feedback loops.
 
+## Formatting
+
+- **No colorful or 3D emojis.** Do not use emojis like 🎉 🚀 ✨ 🔥 💡 📝 🎯 ⚡ 🛠️ 📊 etc. in messages or task comments.
+- Use plain text symbols when needed: `->`, `*`, `-`, `+`, `--`, `>>`.
+- Keep output clean and scannable. No decorative flourishes.
+
 ## Task Comments vs. Messages
 
 Use **task comments** for durable information that belongs to the task:

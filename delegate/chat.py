@@ -133,20 +133,22 @@ def get_task_timeline(
 ) -> list[dict]:
     """Return interleaved activity events and task comments for a task.
 
-    Merges rows from ``messages`` (events + chat) and ``task_comments``
-    into a single chronological list, ordered oldest first.
+    Merges system events from ``messages`` and ``task_comments`` into a
+    single chronological list, ordered oldest first.  Chat messages
+    between agents are excluded — only status/assignee changes (events)
+    and task comments are returned.
 
     Comment rows are returned with ``type: "comment"`` and use the
-    ``author`` as ``sender``.  This makes the shape uniform with event/chat
+    ``author`` as ``sender``.  This makes the shape uniform with event
     rows so the UI can render them in a single timeline.
     """
     conn = get_connection(hc_home, team)
 
-    # --- Messages (events + chat) ---
+    # --- Events only (exclude chat messages) ---
     msg_query = """
         SELECT id, timestamp, sender, recipient, content, type, task_id
         FROM messages
-        WHERE task_id = ?
+        WHERE task_id = ? AND type = 'event'
         ORDER BY id ASC
     """
     msg_rows = conn.execute(msg_query, (task_id,)).fetchall()

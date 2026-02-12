@@ -9,10 +9,73 @@ import DOMPurify from "dompurify";
 // Configure marked for GFM
 marked.setOptions({ gfm: true, breaks: true });
 
+// ── Emoji post-processing: replace colorful/3D emojis with flat text ──
+const _emojiMap = {
+  "\uD83D\uDE80": "->",   // 🚀
+  "\u2728": "*",           // ✨
+  "\uD83D\uDD25": "*",    // 🔥
+  "\uD83C\uDF89": "--",   // 🎉
+  "\uD83C\uDF8A": "--",   // 🎊
+  "\uD83D\uDCA1": "*",    // 💡
+  "\uD83D\uDCDD": "-",    // 📝
+  "\uD83C\uDFAF": "->",   // 🎯
+  "\u26A1": "*",           // ⚡
+  "\uD83D\uDEE0\uFE0F": "-", // 🛠️
+  "\uD83D\uDEE0": "-",    // 🛠
+  "\uD83D\uDCCA": "-",    // 📊
+  "\uD83D\uDC4D": "+",    // 👍
+  "\uD83D\uDC4E": "-",    // 👎
+  "\u2705": "+",           // ✅
+  "\u274C": "x",           // ❌
+  "\u26A0\uFE0F": "!",    // ⚠️
+  "\u26A0": "!",           // ⚠
+  "\uD83D\uDCA5": "!",    // 💥
+  "\uD83D\uDCAC": "-",    // 💬
+  "\uD83D\uDCE6": "-",    // 📦
+  "\uD83D\uDD0D": "-",    // 🔍
+  "\uD83D\uDD12": "-",    // 🔒
+  "\uD83D\uDD13": "-",    // 🔓
+  "\uD83C\uDF1F": "*",    // 🌟
+  "\uD83D\uDCAA": "-",    // 💪
+  "\uD83E\uDD14": "?",    // 🤔
+  "\uD83D\uDC40": "-",    // 👀
+  "\u270F\uFE0F": "-",    // ✏️
+  "\uD83D\uDCCB": "-",    // 📋
+  "\uD83D\uDCC1": "-",    // 📁
+  "\uD83D\uDCC2": "-",    // 📂
+  "\uD83D\uDCCE": "-",    // 📎
+  "\uD83D\uDCC4": "-",    // 📄
+  "\uD83D\uDD27": "-",    // 🔧
+  "\uD83E\uDDE9": "-",    // 🧩
+  "\uD83D\uDEA8": "!",    // 🚨
+  "\uD83D\uDED1": "x",    // 🛑
+  "\uD83D\uDFE2": "+",    // 🟢
+  "\uD83D\uDFE1": "!",    // 🟡
+  "\uD83D\uDD34": "x",    // 🔴
+  "\uD83D\uDFE0": "!",    // 🟠
+  "\uD83D\uDE4F": "-",    // 🙏
+  "\u2B50": "*",           // ⭐
+  "\uD83C\uDF10": "-",    // 🌐
+  "\uD83D\uDCBB": "-",    // 💻
+  "\uD83D\uDD17": "-",    // 🔗
+};
+let _emojiRegex = null;
+function _getEmojiRegex() {
+  if (!_emojiRegex) {
+    const keys = Object.keys(_emojiMap).map(k => k.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&"));
+    _emojiRegex = new RegExp(keys.join("|"), "g");
+  }
+  return _emojiRegex;
+}
+export function stripEmojis(text) {
+  if (!text) return text;
+  return text.replace(_getEmojiRegex(), (match) => _emojiMap[match] || "");
+}
+
 // ── Markdown ──
 export function renderMarkdown(text) {
   if (!text) return "";
-  return DOMPurify.sanitize(marked.parse(text));
+  return DOMPurify.sanitize(marked.parse(stripEmojis(text)));
 }
 
 // ── Formatting ──

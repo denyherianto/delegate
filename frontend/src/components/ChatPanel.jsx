@@ -403,11 +403,12 @@ export function ChatPanel() {
         <textarea
           ref={inputRef}
           placeholder="Send a message..."
-          rows="1"
+          rows="2"
           onKeyDown={handleKeydown}
           onInput={(e) => {
             e.target.style.height = "auto";
-            e.target.style.height = e.target.scrollHeight + "px";
+            // Always show one extra empty line below content
+            e.target.style.height = (e.target.scrollHeight + 21) + "px";
             setSendBtnActive(!!e.target.value.trim());
           }}
         />

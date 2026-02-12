@@ -7,7 +7,7 @@ import * as api from "../api.js";
 import {
   cap, esc, fmtStatus, fmtTimestamp, fmtElapsed, fmtTokens, fmtCost,
   fmtRelativeTime, taskIdStr, renderMarkdown, linkifyTaskRefs, linkifyFilePaths,
-  flattenDiffDict, flattenCommitsDict, diff2HtmlRender, diff2HtmlParse,
+  flattenDiffDict, flattenCommitsDict, diff2HtmlRender, diff2HtmlParse, stripEmojis,
 } from "../utils.js";
 import { ReviewableDiff } from "./ReviewableDiff.jsx";
 import { showToast } from "../toast.js";
@@ -255,17 +255,20 @@ function ActivitySection({ taskId, task }) {
   const loadTimeline = useCallback(async () => {
     try {
       const activity = await api.fetchTaskActivity(team, taskId);
-      const items = activity.map((m) => {
-        if (m.type === "comment") {
-          return {
-            type: "comment",
-            time: m.timestamp,
-            author: m.sender || "unknown",
-            body: m.content || "",
-            icon: "\u270E",
-          };
-        }
-        if (m.type === "event") {
+      // Only show events (status/assignee changes) and task comments — skip chat messages
+      const items = activity
+        .filter((m) => m.type === "comment" || m.type === "event" || m.type === "task_comment")
+        .map((m) => {
+          if (m.type === "comment" || m.type === "task_comment") {
+            return {
+              type: "comment",
+              time: m.timestamp,
+              author: m.sender || "unknown",
+              body: m.content || "",
+              icon: "\u270E",
+            };
+          }
+          // event
           const text = m.content || "Event";
           let icon = "\u21BB";
           if (/created/i.test(text)) icon = "+";
@@ -275,11 +278,7 @@ function ActivitySection({ taskId, task }) {
           else if (/review/i.test(text)) icon = "\u2299";
           else if (/commented/i.test(text)) icon = "\u270E";
           return { type: "event", time: m.timestamp, text, icon };
-        }
-        const sender = cap(m.sender || "unknown");
-        const recipient = cap(m.recipient || "unknown");
-        return { type: "chat", time: m.timestamp, text: `${sender} \u2192 ${recipient}`, icon: "\u25B7" };
-      });
+        });
       setTimeline(items);
     } catch (e) {
       setTimeline([]);
@@ -328,13 +327,13 @@ function ActivitySection({ taskId, task }) {
                     <span class="task-comment-author">{cap(e.author)}</span>
                     <span class="task-activity-time">{fmtRelativeTime(e.time)}</span>
                   </div>
-                  <div class="task-comment-text">{e.body}</div>
+                  <div class="task-comment-text">{stripEmojis(e.body)}</div>
                 </div>
               </div>
             ) : (
               <div key={i} class="task-activity-event">
                 <span class="task-activity-icon">{e.icon}</span>
-                <span class="task-activity-text">{e.text}</span>
+                <span class="task-activity-text">{stripEmojis(e.text)}</span>
                 <span class="task-activity-time">{fmtRelativeTime(e.time)}</span>
               </div>
             )

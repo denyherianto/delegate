@@ -261,7 +261,7 @@ export function Sidebar() {
             key={key}
             class={"sb-nav-btn" + (tab === key ? " active" : "")}
             onClick={() => switchTab(key)}
-            title={collapsed ? label : undefined}
+            title={label}
           >
             <Icon />
             {!collapsed && <span class="sb-nav-label">{label}</span>}
