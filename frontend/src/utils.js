@@ -215,7 +215,7 @@ export function linkifyTaskRefs(html) {
   return html.replace(/(^[^<]+|>[^<]*)/g, match =>
     match.replace(/(?<!\/)T(\d{4})\b/g, (full, digits) => {
       const id = parseInt(digits, 10);
-      return '<span class="task-link" data-task-id="' + id + '">' + full + "</span>";
+      return '<span class="task-link copyable" data-task-id="' + id + '">' + full + copyBtnHtml(full) + "</span>";
     })
   );
 }
@@ -223,7 +223,7 @@ export function linkifyTaskRefs(html) {
 export function linkifyFilePaths(html) {
   return html.replace(/(^[^<]+|>[^<]*)/g, match =>
     match.replace(/\bshared\/[\w\-\.\/]+\.[\w]+/g, path =>
-      '<span class="file-link" data-file-path="' + esc(path) + '">' + esc(path) + "</span>"
+      '<span class="file-link copyable" data-file-path="' + esc(path) + '">' + esc(path) + copyBtnHtml(path) + "</span>"
     )
   );
 }
@@ -236,7 +236,7 @@ export function agentifyRefs(html, agentNames) {
   );
   return html.replace(/(^[^<]+|>[^<]*)/g, match =>
     match.replace(pattern, full =>
-      '<span class="agent-link" data-agent-name="' + full.toLowerCase() + '">' + full + "</span>"
+      '<span class="agent-link copyable" data-agent-name="' + full.toLowerCase() + '">' + full + copyBtnHtml(full) + "</span>"
     )
   );
 }
@@ -288,6 +288,33 @@ export function getAgentDotTooltip(dotClass, agent, tasksList) {
   if (dotClass === "dot-stuck") return "Likely stuck" + (timeStr ? " \u2014 last activity " + timeStr : "");
   return "";
 }
+
+// ── Copy-to-clipboard utility ──
+const _copySvg = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 0 1 2 9.5v-7A1.5 1.5 0 0 1 3.5 1h7A1.5 1.5 0 0 1 12 2.5V5"/></svg>';
+const _checkSvg = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8 7 12 13 4"/></svg>';
+
+/** Inline copy icon HTML to append inside linkified spans. */
+export function copyBtnHtml(text) {
+  return '<span class="copy-btn" data-copy="' + esc(text) + '" title="Copy">' + _copySvg + '</span>';
+}
+
+/** Handle a click on a .copy-btn element — copies text & shows checkmark. */
+export function handleCopyClick(el) {
+  const text = el.dataset.copy;
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    el.innerHTML = _checkSvg;
+    el.classList.add("copied");
+    setTimeout(() => {
+      el.innerHTML = _copySvg;
+      el.classList.remove("copied");
+    }, 1500);
+  }).catch(() => {});
+}
+
+/** Inline copy icon SVG strings for use in Preact components. */
+export const COPY_SVG = _copySvg;
+export const CHECK_SVG = _checkSvg;
 
 // ── Message status icon (HTML string) ──
 // Single check = seen, double check = processed, all grayscale

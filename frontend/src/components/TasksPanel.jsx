@@ -3,6 +3,7 @@ import { currentTeam, tasks, activeTab, taskPanelId } from "../state.js";
 import { cap, fmtStatus, taskIdStr } from "../utils.js";
 import { playTaskSound } from "../audio.js";
 import { FilterBar, applyFilters } from "./FilterBar.jsx";
+import { CopyBtn } from "./CopyBtn.jsx";
 
 // ── Static field configs (enum options that don't change) ──
 const STATUS_OPTIONS = [
@@ -168,7 +169,7 @@ export function TasksPanel() {
                 onClick={() => { taskPanelId.value = t.id; }}
               >
                 <div class="task-summary">
-                  <span class="task-id">{taskIdStr(t.id)}</span>
+                  <span class="task-id copyable">{taskIdStr(t.id)}<CopyBtn text={taskIdStr(t.id)} /></span>
                   <span class="task-title">{t.title}</span>
                   <span><span class={"badge badge-" + t.status}>{fmtStatus(t.status)}</span></span>
                   <span class="task-assignee">{t.assignee ? cap(t.assignee) : "\u2014"}</span>

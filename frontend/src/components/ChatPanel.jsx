@@ -8,9 +8,11 @@ import * as api from "../api.js";
 import {
   cap, esc, fmtTimestamp, renderMarkdown,
   linkifyTaskRefs, linkifyFilePaths, agentifyRefs, msgStatusIcon, taskIdStr,
+  handleCopyClick,
 } from "../utils.js";
 import { playMsgSound } from "../audio.js";
 import { showToast } from "../toast.js";
+import { CopyBtn } from "./CopyBtn.jsx";
 
 // ── Linked content with event delegation ──
 function LinkedDiv({ html, class: cls, style }) {
@@ -19,6 +21,9 @@ function LinkedDiv({ html, class: cls, style }) {
   useEffect(() => {
     if (!ref.current) return;
     const handler = (e) => {
+      // Copy button click
+      const copyBtn = e.target.closest(".copy-btn");
+      if (copyBtn) { e.stopPropagation(); e.preventDefault(); handleCopyClick(copyBtn); return; }
       const taskLink = e.target.closest("[data-task-id]");
       if (taskLink) { e.stopPropagation(); taskPanelId.value = parseInt(taskLink.dataset.taskId, 10); return; }
       const agentLink = e.target.closest("[data-agent-name]");
@@ -365,21 +370,21 @@ export function ChatPanel() {
               <div class="msg-body">
                 <div class="msg-header">
                   <span
-                    class="msg-sender"
+                    class="msg-sender copyable"
                     onClick={() => { diffPanelMode.value = "agent"; diffPanelTarget.value = m.sender; }}
                   >
-                    {cap(m.sender)}
+                    {cap(m.sender)}<CopyBtn text={m.sender} />
                   </span>
                   <span class="msg-recipient"> → {cap(m.recipient)}</span>
                   {m.task_id != null && (
                     <>
                       <span class="msg-task-sep">|</span>
                       <span
-                        class="msg-task-badge"
+                        class="msg-task-badge copyable"
                         title={`Task ${taskIdStr(m.task_id)}`}
                         onClick={(e) => { e.stopPropagation(); taskPanelId.value = m.task_id; }}
                       >
-                        {taskIdStr(m.task_id)}
+                        {taskIdStr(m.task_id)}<CopyBtn text={taskIdStr(m.task_id)} />
                       </span>
                     </>
                   )}

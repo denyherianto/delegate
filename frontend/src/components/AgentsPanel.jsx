@@ -4,6 +4,7 @@ import {
   cap, esc, fmtTokensShort, fmtCost, fmtDuration, fmtRelativeTime, taskIdStr,
   roleBadgeMap, getAgentDotClass, getAgentDotTooltip,
 } from "../utils.js";
+import { CopyBtn } from "./CopyBtn.jsx";
 
 export function AgentsPanel() {
   const allAgents = agents.value;
@@ -71,7 +72,7 @@ export function AgentsPanel() {
           >
             <div class="agent-card-row1">
               <span class={"agent-card-dot " + dotClass} title={dotTooltip}></span>
-              <span class="agent-card-name">{cap(a.name)}</span>
+              <span class="agent-card-name copyable">{cap(a.name)}<CopyBtn text={a.name} /></span>
               <span class={"agent-card-role badge-role-" + (a.role || "worker")}>{roleBadge}</span>
               <span class="agent-card-task-col">{taskLink}</span>
             </div>

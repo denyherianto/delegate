@@ -1295,6 +1295,28 @@ select option:hover {
 .file-link:hover { text-decoration: underline; }
 
 /* ================================================================
+   Copy button — inline icon, visible on hover of .copyable parent
+   ================================================================ */
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  padding: 1px;
+  cursor: pointer;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+  vertical-align: middle;
+  line-height: 1;
+  border-radius: 3px;
+}
+.copyable:hover .copy-btn,
+.copy-btn:focus { opacity: 1; }
+.copy-btn:hover { color: var(--text-secondary); }
+.copy-btn.copied { color: var(--text-secondary); opacity: 1; }
+
+/* ================================================================
    Mic button recording pulse
    ================================================================ */
 @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(241,76,76,0.3); } 50% { box-shadow: 0 0 0 6px rgba(241,76,76,0); } }

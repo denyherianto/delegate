@@ -8,9 +8,11 @@ import {
   cap, esc, fmtStatus, fmtTimestamp, fmtElapsed, fmtTokens, fmtCost,
   fmtRelativeTime, taskIdStr, renderMarkdown, linkifyTaskRefs, linkifyFilePaths,
   flattenDiffDict, flattenCommitsDict, diff2HtmlRender, diff2HtmlParse, stripEmojis,
+  handleCopyClick,
 } from "../utils.js";
 import { ReviewableDiff } from "./ReviewableDiff.jsx";
 import { showToast } from "../toast.js";
+import { CopyBtn } from "./CopyBtn.jsx";
 
 // ── Event delegation for linked content ──
 function LinkedDiv({ html, class: cls, style }) {
@@ -18,6 +20,9 @@ function LinkedDiv({ html, class: cls, style }) {
   useEffect(() => {
     if (!ref.current) return;
     const handler = (e) => {
+      // Copy button click
+      const copyBtn = e.target.closest(".copy-btn");
+      if (copyBtn) { e.stopPropagation(); e.preventDefault(); handleCopyClick(copyBtn); return; }
       const taskLink = e.target.closest("[data-task-id]");
       if (taskLink) { e.stopPropagation(); taskPanelId.value = parseInt(taskLink.dataset.taskId, 10); return; }
       const agentLink = e.target.closest("[data-agent-name]");
@@ -601,14 +606,14 @@ export function TaskSidePanel() {
       <div class={"task-panel" + (isOpen ? " open" : "")}>
         <div class="task-panel-header">
           <div class="task-panel-title-row">
-            <span class="task-panel-id">{taskIdStr(id)}</span>
+            <span class="task-panel-id copyable">{taskIdStr(id)}<CopyBtn text={taskIdStr(id)} /></span>
             <span class="task-panel-title">{t ? t.title : "Loading..."}</span>
           </div>
           <div class="task-panel-meta-row">
             <span class="task-panel-status">
               {t && <span class={"badge badge-" + t.status}>{fmtStatus(t.status)}</span>}
             </span>
-            <span class="task-panel-assignee">{t && t.assignee ? cap(t.assignee) : ""}</span>
+            <span class="task-panel-assignee copyable">{t && t.assignee ? cap(t.assignee) : ""}{t && t.assignee && <CopyBtn text={t.assignee} />}</span>
             <span class="task-panel-priority">{t && t.priority ? cap(t.priority) : ""}</span>
           </div>
           <button class="task-panel-close" onClick={close}>&times;</button>
@@ -748,7 +753,7 @@ function ChangesTab({ task, stats, diffRaw, diffTab, setDiffTab, onApproved, cur
       {/* VCS info */}
       {stats && stats.branch && (
         <div class="task-panel-vcs-row">
-          <span class="task-branch" title={stats.branch}>{stats.branch}</span>
+          <span class="task-branch copyable" title={stats.branch}>{stats.branch}<CopyBtn text={stats.branch} /></span>
         </div>
       )}
       {/* Base SHA */}
