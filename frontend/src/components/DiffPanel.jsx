@@ -343,13 +343,29 @@ function FileView({ filePath }) {
           : (ext === "md" || ext === "markdown")
             ? <div class="file-viewer-content md-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(fileData.content) }} />
           : isHtml && fileData.content
-            ? <div class="file-viewer-content file-viewer-html">
-                <iframe
-                  ref={(el) => { if (el) el.srcdoc = fileData.content; }}
-                  sandbox="allow-same-origin"
-                  class="file-viewer-iframe"
-                  title={filePath}
-                />
+            ? <div class="file-viewer-content" style={{ padding: "40px 20px", textAlign: "center" }}>
+                <div style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "16px" }}>
+                  HTML files are opened in a new browser tab
+                </div>
+                <button
+                  class="diff-panel-close-btn"
+                  style={{ padding: "8px 16px" }}
+                  onClick={() => {
+                    // Extract relative path (same logic as TaskSidePanel)
+                    let apiPath = filePath;
+                    const sharedMarker = "/shared/";
+                    const agentsMarker = "/agents/";
+                    const sharedIdx = apiPath.indexOf(sharedMarker);
+                    const agentsIdx = apiPath.indexOf(agentsMarker);
+                    if (sharedIdx !== -1) apiPath = apiPath.substring(sharedIdx + sharedMarker.length);
+                    else if (agentsIdx !== -1) apiPath = apiPath.substring(agentsIdx + agentsMarker.length);
+                    else if (apiPath.startsWith("shared/")) apiPath = apiPath.substring(7);
+                    else if (apiPath.startsWith("agents/")) apiPath = apiPath.substring(7);
+                    window.open(`/teams/${currentTeam.value}/files/raw?path=${encodeURIComponent(apiPath)}`, "_blank");
+                  }}
+                >
+                  Open in New Tab
+                </button>
               </div>
             : <div class="file-viewer-content"><pre class="file-viewer-code"><code>{fileData.content}</code></pre></div>
         }

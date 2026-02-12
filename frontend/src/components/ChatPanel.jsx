@@ -32,7 +32,28 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
       const agentLink = e.target.closest("[data-agent-name]");
       if (agentLink) { e.stopPropagation(); diffPanelMode.value = "agent"; diffPanelTarget.value = agentLink.dataset.agentName; return; }
       const fileLink = e.target.closest("[data-file-path]");
-      if (fileLink) { e.stopPropagation(); diffPanelMode.value = "file"; diffPanelTarget.value = fileLink.dataset.filePath; return; }
+      if (fileLink) {
+        e.stopPropagation();
+        const fpath = fileLink.dataset.filePath;
+        const fname = fpath.split("/").pop();
+        const isHtmlFile = /\.html?$/i.test(fname);
+        if (isHtmlFile) {
+          // Extract relative path (same logic as TaskSidePanel)
+          let apiPath = fpath;
+          const sharedMarker = "/shared/";
+          const agentsMarker = "/agents/";
+          const sharedIdx = apiPath.indexOf(sharedMarker);
+          const agentsIdx = apiPath.indexOf(agentsMarker);
+          if (sharedIdx !== -1) apiPath = apiPath.substring(sharedIdx + sharedMarker.length);
+          else if (agentsIdx !== -1) apiPath = apiPath.substring(agentsIdx + agentsMarker.length);
+          else if (apiPath.startsWith("shared/")) apiPath = apiPath.substring(7);
+          else if (apiPath.startsWith("agents/")) apiPath = apiPath.substring(7);
+          window.open(`/teams/${currentTeam.value}/files/raw?path=${encodeURIComponent(apiPath)}`, "_blank");
+        } else {
+          diffPanelMode.value = "file"; diffPanelTarget.value = fpath;
+        }
+        return;
+      }
     };
     el.addEventListener("click", handler);
     return () => el.removeEventListener("click", handler);

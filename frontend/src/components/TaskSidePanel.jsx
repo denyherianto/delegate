@@ -742,7 +742,25 @@ function DetailsTab({ task, stats, currentReview }) {
                   <span class="task-attachment-icon">{isImage ? "\uD83D\uDDBC\uFE0F" : "\uD83D\uDCCE"}</span>
                   <span
                     class="task-attachment-name clickable-file"
-                    onClick={(e) => { e.stopPropagation(); diffPanelMode.value = "file"; diffPanelTarget.value = fpath; }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const isHtmlFile = /\.html?$/i.test(fname);
+                      if (isHtmlFile) {
+                        // Extract relative path (same logic as DiffPanel FileView)
+                        let apiPath = fpath;
+                        const sharedMarker = "/shared/";
+                        const agentsMarker = "/agents/";
+                        const sharedIdx = apiPath.indexOf(sharedMarker);
+                        const agentsIdx = apiPath.indexOf(agentsMarker);
+                        if (sharedIdx !== -1) apiPath = apiPath.substring(sharedIdx + sharedMarker.length);
+                        else if (agentsIdx !== -1) apiPath = apiPath.substring(agentsIdx + agentsMarker.length);
+                        else if (apiPath.startsWith("shared/")) apiPath = apiPath.substring(7);
+                        else if (apiPath.startsWith("agents/")) apiPath = apiPath.substring(7);
+                        window.open(`/teams/${currentTeam.value}/files/raw?path=${encodeURIComponent(apiPath)}`, "_blank");
+                      } else {
+                        diffPanelMode.value = "file"; diffPanelTarget.value = fpath;
+                      }
+                    }}
                   >
                     {fname}
                   </span>

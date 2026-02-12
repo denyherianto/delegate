@@ -33,6 +33,7 @@ import base64
 import contextlib
 import json
 import logging
+import mimetypes
 import os
 import shutil
 import subprocess
@@ -42,7 +43,7 @@ from pathlib import Path
 
 import yaml
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -51,6 +52,7 @@ from delegate.paths import (
     agents_dir as _agents_dir,
     agent_dir as _agent_dir,
     shared_dir as _shared_dir,
+    team_dir as _team_dir,
     teams_dir as _teams_dir,
 )
 from delegate.config import get_boss
@@ -1313,6 +1315,48 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                     stat.st_mtime, tz=timezone.utc
                 ).isoformat(),
             }
+
+    @app.get("/teams/{team}/files/raw")
+    def serve_raw_file(team: str, path: str):
+        """Serve a raw file from the team's shared/ or agents/ directory.
+
+        Returns the file with its native content type so browsers can render it directly.
+        Used for opening HTML attachments in new tabs.
+        """
+        # Determine base directory: agents/ or shared/
+        if path.startswith("agents/"):
+            base = _team_dir(hc_home, team)
+        else:
+            base = _shared_dir(hc_home, team)
+
+        target = (base / path).resolve()
+
+        # Path traversal check
+        try:
+            target.relative_to(base.resolve())
+        except ValueError:
+            raise HTTPException(
+                status_code=403, detail="Path traversal not allowed"
+            )
+
+        if not target.is_file():
+            raise HTTPException(
+                status_code=404, detail=f"File not found: {path}"
+            )
+
+        # Read file content
+        file_bytes = target.read_bytes()
+
+        # Determine content type
+        ext = target.suffix.lower()
+        if ext in (".html", ".htm"):
+            media_type = "text/html"
+        else:
+            # Use mimetypes module as fallback
+            guessed_type, _ = mimetypes.guess_type(target.name)
+            media_type = guessed_type or "application/octet-stream"
+
+        return Response(content=file_bytes, media_type=media_type)
 
     # --- Static files ---
     _static_dir = Path(__file__).parent / "static"
