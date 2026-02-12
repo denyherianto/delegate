@@ -310,11 +310,6 @@ export function ChatPanel() {
     }));
   }, [allAgents, msgs]);
 
-  const recipientOptions = useMemo(() => {
-    const mgrs = allAgents.filter(a => a.role === "manager").sort((a, b) => a.name.localeCompare(b.name));
-    const others = allAgents.filter(a => a.role !== "manager").sort((a, b) => a.name.localeCompare(b.name));
-    return [...mgrs, ...others];
-  }, [allAgents]);
 
   const handleSend = useCallback(async () => {
     if (mic.active) mic.toggle();
@@ -482,13 +477,6 @@ export function ChatPanel() {
           }}
         />
         <div class="chat-input-toolbar">
-          <CustomSelect
-            className="chat-input-recipient"
-            value={recipient}
-            options={recipientOptions.map(a => ({ value: a.name, label: cap(a.name) }))}
-            onChange={setRecipient}
-            renderLabel={(o) => o.label}
-          />
           <div class="chat-input-toolbar-spacer" />
           {mic.supported && (
             <button
