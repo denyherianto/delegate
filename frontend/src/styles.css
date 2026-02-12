@@ -489,8 +489,8 @@ body {
   font-size: 12px;
 }
 .task-title { color: var(--text-primary); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task-assignee { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; color: var(--text-secondary); font-size: 12px; min-width: 70px; text-align: right; }
-.task-priority { color: var(--text-muted); font-size: 12px; min-width: 50px; text-align: right; }
+.task-assignee { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; color: var(--text-secondary); font-size: 12px; min-width: 70px; text-align: left; }
+.task-priority { color: var(--text-muted); font-size: 12px; min-width: 50px; text-align: left; }
 
 /* ================================================================
    Badges — pill with semantic colored dot
@@ -664,6 +664,8 @@ body {
 /* Boss messages: slightly lifted */
 .msg-boss {
   background: var(--bg-elevated);
+  border-left: 2px solid var(--text-faint);
+  padding-left: 10px;
 }
 .msg-boss:hover { background: var(--bg-active); }
 
@@ -680,6 +682,7 @@ body {
 .msg-sender:hover { text-decoration: underline; }
 .msg-recipient { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; color: var(--text-muted); font-size: 11px; }
 .msg-time { color: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; margin-left: auto; flex-shrink: 0; }
+.msg-checkmark { flex-shrink: 0; margin-left: 4px; }
 .msg-content { color: var(--text-primary); font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 
 /* Event messages */
@@ -688,8 +691,8 @@ body {
 .msg-event-text { flex: 1; color: var(--text-muted); font-size: 12px; line-height: 1.4; }
 .msg-event-time { color: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; margin-left: auto; }
 
-/* Delivery status checks */
-.msg-checkmark { flex-shrink: 0; }
+/* Task separator and badge (left side, next to sender) */
+.msg-task-sep { color: var(--text-faint); font-size: 11px; flex-shrink: 0; }
 .msg-task-badge {
   flex-shrink: 0;
   font-size: 10px;
@@ -704,10 +707,9 @@ body {
 }
 .msg-task-badge:hover { color: var(--text-primary); text-decoration: underline; }
 .msg-status { font-size: 10px; font-weight: 400; letter-spacing: -0.5px; }
-.msg-pending { color: var(--text-faint); font-size: 9px; letter-spacing: 0; }
 .msg-delivered { color: var(--text-faint); }
-.msg-seen { color: var(--text-secondary); }
-.msg-processed { color: var(--semantic-green); }
+.msg-seen { color: var(--text-muted); }
+.msg-processed { color: var(--text-secondary); }
 
 /* Jump to bottom */
 .chat-jump-btn {
@@ -1194,6 +1196,8 @@ select option:hover {
 .agent-activity-log { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-size: 11px; line-height: 1.6; padding: 8px 12px; overflow-y: auto; max-height: calc(100vh - 200px); }
 .agent-activity-entry { display: flex; gap: 8px; align-items: baseline; padding: 1px 0; border-bottom: 1px solid var(--border-subtle); }
 .agent-activity-ts { color: var(--text-muted); flex-shrink: 0; font-size: 10px; min-width: 65px; font-variant-numeric: tabular-nums; }
+.agent-activity-task { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-size: 10px; color: var(--text-muted); flex-shrink: 0; cursor: pointer; }
+.agent-activity-task:hover { text-decoration: underline; color: var(--text-secondary); }
 .agent-activity-tool { color: var(--text-secondary); font-weight: 600; flex-shrink: 0; min-width: 50px; text-transform: lowercase; }
 .agent-activity-tool-bash { color: #8a8a8a; }
 .agent-activity-tool-edit, .agent-activity-tool-write, .agent-activity-tool-multiedit { color: #8a8a8a; }

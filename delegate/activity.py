@@ -33,10 +33,13 @@ class ActivityEntry:
     agent: str
     tool: str
     detail: str
+    task_id: int | None = None
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-    def to_dict(self) -> dict[str, str]:
-        return asdict(self)
+    def to_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        d["type"] = "agent_activity"
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +118,7 @@ def _push_to_subscribers(payload: dict) -> None:
         _subscribers.discard(q)
 
 
-def broadcast(agent: str, tool: str, detail: str) -> None:
+def broadcast(agent: str, tool: str, detail: str, *, task_id: int | None = None) -> None:
     """Push an activity entry to the ring buffer and notify all SSE clients.
 
     This is called from the turn execution loop in ``runtime.py`` for
@@ -124,7 +127,7 @@ def broadcast(agent: str, tool: str, detail: str) -> None:
     Safe to call from any coroutine — the queue puts are non-blocking
     (entries are silently dropped for slow subscribers).
     """
-    entry = ActivityEntry(agent=agent, tool=tool, detail=detail)
+    entry = ActivityEntry(agent=agent, tool=tool, detail=detail, task_id=task_id)
     _get_ring(agent).append(entry)
     _push_to_subscribers(entry.to_dict())
 

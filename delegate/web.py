@@ -210,27 +210,49 @@ async def _daemon_loop(
                 in_flight.discard((team, agent))
 
     # --- One-time startup: greeting from managers ---
+    # Guard against duplicates when uvicorn reloads the process.
     try:
+        from delegate.chat import get_messages as _get_recent_msgs
+        from datetime import datetime, timedelta, timezone
+
         teams = _list_teams(hc_home)
         boss_name = get_boss(hc_home) or "boss"
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime(
+            "%Y-%m-%dT%H:%M:%S"
+        )
 
         for team in teams:
             manager_name = get_member_by_role(hc_home, team, "manager")
-            if manager_name:
-                send_message(
-                    hc_home, team,
-                    sender=manager_name,
-                    recipient=boss_name,
-                    message=(
-                        f"Delegate is online. I'm {manager_name}, your team manager. "
-                        "Standing by for instructions — send me tasks, questions, "
-                        "or anything you need the team to work on."
-                    ),
-                )
+            if not manager_name:
+                continue
+            # Check if a greeting was already sent in the last 5 minutes
+            recent = _get_recent_msgs(
+                hc_home, team, since=cutoff,
+                between=(manager_name, boss_name), limit=5,
+            )
+            already_greeted = any(
+                "Delegate is online" in (r.get("content") or "")
+                for r in recent
+            )
+            if already_greeted:
                 logger.info(
-                    "Manager %s sent startup greeting to %s | team=%s",
-                    manager_name, boss_name, team,
+                    "Skipping duplicate startup greeting | team=%s", team,
                 )
+                continue
+            send_message(
+                hc_home, team,
+                sender=manager_name,
+                recipient=boss_name,
+                message=(
+                    f"Delegate is online. I'm {manager_name}, your team manager. "
+                    "Standing by for instructions — send me tasks, questions, "
+                    "or anything you need the team to work on."
+                ),
+            )
+            logger.info(
+                "Manager %s sent startup greeting to %s | team=%s",
+                manager_name, boss_name, team,
+            )
     except Exception:
         logger.exception("Error during startup greeting")
 

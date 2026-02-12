@@ -7,7 +7,7 @@ import * as api from "../api.js";
 import {
   cap, esc, fmtTimestamp, fmtElapsed, fmtTokens, fmtCost,
   flattenDiffDict, flattenCommitsDict, diff2HtmlRender, diff2HtmlParse,
-  renderMarkdown, msgStatusIcon,
+  renderMarkdown, msgStatusIcon, taskIdStr,
 } from "../utils.js";
 
 // ── Diff viewer (task diff) ──
@@ -207,6 +207,15 @@ function AgentView({ agentName }) {
           return (
             <div key={i} class="agent-activity-entry">
               <span class="agent-activity-ts">{ts}</span>
+              {e.task_id != null && (
+                <span
+                  class="agent-activity-task"
+                  onClick={(ev) => { ev.stopPropagation(); taskPanelId.value = e.task_id; }}
+                  title={`Task ${taskIdStr(e.task_id)}`}
+                >
+                  {taskIdStr(e.task_id)}
+                </span>
+              )}
               <span class={"agent-activity-tool agent-activity-tool-" + toolLower}>{toolLower}</span>
               <span class="agent-activity-detail" title={e.detail || ""}>{e.detail || ""}</span>
             </div>

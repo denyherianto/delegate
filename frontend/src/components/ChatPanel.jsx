@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks"
 import {
   currentTeam, messages, agents, activeTab,
   chatFilterDirection, diffPanelMode, diffPanelTarget, taskPanelId,
-  knownAgentNames, isMuted,
+  knownAgentNames, isMuted, bossName,
 } from "../state.js";
 import * as api from "../api.js";
 import {
@@ -356,8 +356,9 @@ export function ChatPanel() {
           }
           const contentHtml = linkifyFilePaths(linkifyTaskRefs(renderMarkdown(m.content)));
           const senderLower = m.sender.toLowerCase();
-          const isBoss = senderLower === "nikhil" || senderLower === "boss";
-          const isToBoss = (m.recipient || "").toLowerCase() === "nikhil" || (m.recipient || "").toLowerCase() === "boss";
+          const boss = (bossName.value || "boss").toLowerCase();
+          const isBoss = senderLower === boss;
+          const isToBoss = (m.recipient || "").toLowerCase() === boss;
           const msgClass = (isBoss || isToBoss) ? "msg msg-boss" : "msg";
           return (
             <div key={m.id || i} class={msgClass}>
@@ -370,17 +371,20 @@ export function ChatPanel() {
                     {cap(m.sender)}
                   </span>
                   <span class="msg-recipient"> → {cap(m.recipient)}</span>
+                  {m.task_id != null && (
+                    <>
+                      <span class="msg-task-sep">|</span>
+                      <span
+                        class="msg-task-badge"
+                        title={`Task ${taskIdStr(m.task_id)}`}
+                        onClick={(e) => { e.stopPropagation(); taskPanelId.value = m.task_id; }}
+                      >
+                        {taskIdStr(m.task_id)}
+                      </span>
+                    </>
+                  )}
                   <span class="msg-time" dangerouslySetInnerHTML={{ __html: fmtTimestamp(m.timestamp) }} />
                   <span class="msg-checkmark" dangerouslySetInnerHTML={{ __html: msgStatusIcon(m) }} />
-                  {m.task_id != null && (
-                    <span
-                      class="msg-task-badge"
-                      title={`Task ${taskIdStr(m.task_id)}`}
-                      onClick={(e) => { e.stopPropagation(); taskPanelId.value = m.task_id; }}
-                    >
-                      {taskIdStr(m.task_id)}
-                    </span>
-                  )}
                 </div>
                 <LinkedDiv class="msg-content md-content" html={contentHtml} />
               </div>

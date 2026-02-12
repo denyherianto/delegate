@@ -407,7 +407,7 @@ async def run_turn(
                 for block in msg.content:
                     tool_name, detail = _extract_tool_summary(block)
                     if tool_name:
-                        broadcast_activity(agent, tool_name, detail)
+                        broadcast_activity(agent, tool_name, detail, task_id=current_task_id)
 
     except Exception as exc:
         alog.session_error(exc)

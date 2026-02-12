@@ -290,9 +290,10 @@ export function getAgentDotTooltip(dotClass, agent, tasksList) {
 }
 
 // ── Message status icon (HTML string) ──
+// Single check = seen, double check = processed, all grayscale
 export function msgStatusIcon(m) {
   if (m.processed_at) return '<span class="msg-status msg-processed" title="Processed">\u2713\u2713</span>';
-  if (m.seen_at) return '<span class="msg-status msg-seen" title="Seen">\u2713\u2713</span>';
-  if (m.delivered_at) return '<span class="msg-status msg-delivered" title="Delivered">\u2713</span>';
-  return '<span class="msg-status msg-pending" title="Sending\u2026">\u23F3</span>';
+  if (m.seen_at) return '<span class="msg-status msg-seen" title="Seen">\u2713</span>';
+  if (m.delivered_at) return '<span class="msg-status msg-delivered" title="Delivered"></span>';
+  return '';
 }
