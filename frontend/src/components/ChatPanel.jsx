@@ -22,13 +22,27 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
 
   useEffect(() => {
     const el = externalRef?.current || internalRef.current;
-    if (!el) return;
+    console.log('[LinkedDiv useEffect] el:', el, 'externalRef:', externalRef?.current, 'internalRef:', internalRef.current);
+    if (!el) {
+      console.log('[LinkedDiv useEffect] No element, returning early');
+      return;
+    }
     const handler = (e) => {
+      console.log('[LinkedDiv] Click event:', e.target, 'classList:', e.target.classList);
       // Copy button click
       const copyBtn = e.target.closest(".copy-btn");
-      if (copyBtn) { e.stopPropagation(); e.preventDefault(); handleCopyClick(copyBtn); return; }
+      if (copyBtn) {
+        console.log('[LinkedDiv] Copy button clicked');
+        e.stopPropagation(); e.preventDefault(); handleCopyClick(copyBtn); return;
+      }
       const taskLink = e.target.closest("[data-task-id]");
-      if (taskLink) { e.stopPropagation(); taskPanelId.value = parseInt(taskLink.dataset.taskId, 10); return; }
+      if (taskLink) {
+        console.log('[LinkedDiv] Task link clicked, id:', taskLink.dataset.taskId);
+        e.stopPropagation();
+        taskPanelId.value = parseInt(taskLink.dataset.taskId, 10);
+        console.log('[LinkedDiv] Set taskPanelId to:', taskPanelId.value);
+        return;
+      }
       const agentLink = e.target.closest("[data-agent-name]");
       if (agentLink) { e.stopPropagation(); diffPanelMode.value = "agent"; diffPanelTarget.value = agentLink.dataset.agentName; return; }
       const fileLink = e.target.closest("[data-file-path]");
@@ -54,12 +68,17 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
         return;
       }
     };
+    console.log('[LinkedDiv useEffect] Attaching click handler to:', el);
     el.addEventListener("click", handler);
-    return () => el.removeEventListener("click", handler);
+    return () => {
+      console.log('[LinkedDiv useEffect cleanup] Removing click handler from:', el);
+      el.removeEventListener("click", handler);
+    };
   }, [html, externalRef]);
 
   // Support both external ref (from parent) and internal ref
   const handleRefCallback = useCallback((node) => {
+    console.log('[LinkedDiv refCallback] node:', node, 'externalRef:', externalRef);
     if (externalRef) {
       if (typeof externalRef === 'function') externalRef(node);
       else externalRef.current = node;
