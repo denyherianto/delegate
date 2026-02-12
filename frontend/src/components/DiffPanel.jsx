@@ -264,7 +264,20 @@ function FileView({ filePath }) {
     if (!filePath || !team) return;
     setFileData(null); setError(null);
     let apiPath = filePath;
-    if (apiPath.startsWith("shared/")) apiPath = apiPath.substring(7);
+    // Handle absolute paths containing shared/ or agents/
+    const sharedMarker = '/shared/';
+    const agentsMarker = '/agents/';
+    const sharedIdx = apiPath.indexOf(sharedMarker);
+    const agentsIdx = apiPath.indexOf(agentsMarker);
+    if (sharedIdx !== -1) {
+      apiPath = apiPath.substring(sharedIdx + sharedMarker.length);
+    } else if (agentsIdx !== -1) {
+      apiPath = apiPath.substring(agentsIdx + agentsMarker.length);
+    } else if (apiPath.startsWith("shared/")) {
+      apiPath = apiPath.substring(7);
+    } else if (apiPath.startsWith("agents/")) {
+      apiPath = apiPath.substring(7);
+    }
     api.fetchFileContent(team, apiPath).then(data => {
       setFileData(data);
     }).catch(e => setError(e.message));
