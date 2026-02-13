@@ -140,7 +140,7 @@ def get_task_timeline(
     query = """
         SELECT id, timestamp, sender, recipient, content, type, task_id
         FROM messages
-        WHERE task_id = ? AND type = 'event'
+        WHERE task_id = ? AND type = 'event' AND team = ?
 
         UNION ALL
 
@@ -148,11 +148,11 @@ def get_task_timeline(
                '' AS recipient, body AS content, 'comment' AS type,
                task_id
         FROM task_comments
-        WHERE task_id = ?
+        WHERE task_id = ? AND team = ?
 
         ORDER BY timestamp ASC, id ASC
     """
-    params = [task_id, task_id]
+    params = [task_id, team, task_id, team]
     if limit:
         query += " LIMIT ?"
         params.append(limit)
