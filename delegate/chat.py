@@ -136,37 +136,31 @@ def get_task_timeline(
     """
     conn = get_connection(hc_home, team)
 
-    # --- Events only (exclude chat messages) ---
-    msg_query = """
+    # --- UNION ALL query combines events and comments with ordering at DB level ---
+    query = """
         SELECT id, timestamp, sender, recipient, content, type, task_id
         FROM messages
         WHERE task_id = ? AND type = 'event'
-        ORDER BY id ASC
-    """
-    msg_rows = conn.execute(msg_query, (task_id,)).fetchall()
-    items: list[dict] = [dict(row) for row in msg_rows]
 
-    # --- Task comments ---
-    comment_query = """
+        UNION ALL
+
         SELECT id, created_at AS timestamp, author AS sender,
                '' AS recipient, body AS content, 'comment' AS type,
                task_id
         FROM task_comments
         WHERE task_id = ?
-        ORDER BY id ASC
-    """
-    comment_rows = conn.execute(comment_query, (task_id,)).fetchall()
-    items.extend(dict(row) for row in comment_rows)
 
+        ORDER BY timestamp ASC, id ASC
+    """
+    params = [task_id, task_id]
+    if limit:
+        query += " LIMIT ?"
+        params.append(limit)
+
+    rows = conn.execute(query, params).fetchall()
     conn.close()
 
-    # Sort by timestamp, then by id for stable ordering within the same ts
-    items.sort(key=lambda r: (r.get("timestamp", ""), r.get("id", 0)))
-
-    if limit:
-        items = items[:limit]
-
-    return items
+    return [dict(row) for row in rows]
 
 
 # --- Session tracking ---

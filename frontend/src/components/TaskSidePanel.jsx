@@ -15,7 +15,7 @@ import { showToast } from "../toast.js";
 import { CopyBtn } from "./CopyBtn.jsx";
 
 // ── Per-task stale-while-revalidate cache ──
-// Keyed by "team:taskId" → { stats, diffRaw, mergePreviewRaw, currentReview, oldComments }
+// Keyed by "team:taskId" → { stats, diffRaw, mergePreviewRaw, currentReview, oldComments, activityRaw }
 // Data is served from cache instantly on panel open, then revalidated in the background.
 const _cache = new Map();
 function _cacheKey(team, id) { return `${team}:${id}`; }
@@ -529,49 +529,67 @@ function MergePreviewTab({ task, mergePreviewRaw, stats }) {
 }
 
 // ── Activity tab ──
-function ActivityTab({ taskId, task }) {
+function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
   const [timeline, setTimeline] = useState(null);
   const [commentText, setCommentText] = useState("");
   const [posting, setPosting] = useState(false);
+  const [showingAll, setShowingAll] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const team = currentTeam.value;
   const boss = bossName.value || "boss";
 
-  const loadTimeline = useCallback(async () => {
-    try {
-      const activity = await api.fetchTaskActivity(team, taskId);
-      const items = activity
-        .filter((m) => m.type === "comment" || m.type === "event" || m.type === "task_comment")
-        .map((m) => {
-          if (m.type === "comment" || m.type === "task_comment") {
-            return {
-              type: "comment",
-              time: m.timestamp,
-              author: m.sender || "unknown",
-              body: m.content || "",
-              icon: "\u270E",
-            };
-          }
-          const text = m.content || "Event";
-          let icon = "\u21BB";
-          if (/created/i.test(text)) icon = "+";
-          else if (/assign/i.test(text)) icon = "\u2192";
-          else if (/approved|merged/i.test(text)) icon = "\u2713";
-          else if (/rejected/i.test(text)) icon = "\u2717";
-          else if (/review/i.test(text)) icon = "\u2299";
-          else if (/commented/i.test(text)) icon = "\u270E";
-          return { type: "event", time: m.timestamp, text, icon };
-        });
-      setTimeline(items);
-    } catch (e) {
-      setTimeline([]);
-    }
-  }, [team, taskId]);
+  // Transform raw activity data into timeline format
+  const transformActivity = useCallback((activity) => {
+    return activity
+      .filter((m) => m.type === "comment" || m.type === "event" || m.type === "task_comment")
+      .map((m) => {
+        if (m.type === "comment" || m.type === "task_comment") {
+          return {
+            type: "comment",
+            time: m.timestamp,
+            author: m.sender || "unknown",
+            body: m.content || "",
+            icon: "\u270E",
+          };
+        }
+        const text = m.content || "Event";
+        let icon = "\u21BB";
+        if (/created/i.test(text)) icon = "+";
+        else if (/assign/i.test(text)) icon = "\u2192";
+        else if (/approved|merged/i.test(text)) icon = "\u2713";
+        else if (/rejected/i.test(text)) icon = "\u2717";
+        else if (/review/i.test(text)) icon = "\u2299";
+        else if (/commented/i.test(text)) icon = "\u270E";
+        return { type: "event", time: m.timestamp, text, icon };
+      });
+  }, []);
 
+  // Update timeline when activityRaw prop changes (from cache or fresh fetch)
+  // Note: We limit to 50 items by default (see loadActivity in parent component)
+  // to avoid rendering hundreds of DOM nodes for tasks with extensive activity.
+  // Users can click "Load earlier activity" to see the full timeline.
   useEffect(() => {
-    let cancelled = false;
-    loadTimeline().then(() => { if (cancelled) return; });
-    return () => { cancelled = true; };
-  }, [taskId, team, loadTimeline]);
+    if (activityRaw) {
+      setTimeline(transformActivity(activityRaw));
+      // If we got exactly 50 items (the default limit), there might be more
+      setShowingAll(activityRaw.length < 50);
+    }
+  }, [activityRaw, transformActivity]);
+
+  const handleLoadMore = async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      // Fetch without limit to get all activity
+      const allActivity = await api.fetchTaskActivity(team, taskId, null);
+      setTimeline(transformActivity(allActivity));
+      setShowingAll(true);
+    } catch (e) {
+      showToast("Failed to load more activity: " + e.message, "error");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const handlePostComment = async () => {
     const body = commentText.trim();
@@ -580,7 +598,8 @@ function ActivityTab({ taskId, task }) {
     try {
       await api.postTaskComment(team, taskId, boss, body);
       setCommentText("");
-      await loadTimeline();
+      // Trigger refresh from parent
+      if (onLoadActivity) onLoadActivity();
     } catch (e) {
       showToast("Failed to post comment: " + e.message, "error");
     } finally {
@@ -595,28 +614,42 @@ function ActivityTab({ taskId, task }) {
         ) : timeline.length === 0 ? (
           <div class="diff-empty">No activity yet</div>
         ) : (
-        <div class="task-activity-timeline">
-          {timeline.map((e, i) =>
-            e.type === "comment" ? (
-              <div key={i} class="task-activity-event task-comment-entry">
-                <span class="task-activity-icon">{e.icon}</span>
-                <div class="task-comment-body">
-                  <div class="task-comment-meta">
-                    <span class="task-comment-author">{cap(e.author)}</span>
-                    <span class="task-activity-time">{fmtRelativeTime(e.time)}</span>
+        <>
+          <div class="task-activity-timeline">
+            {timeline.map((e, i) =>
+              e.type === "comment" ? (
+                <div key={i} class="task-activity-event task-comment-entry">
+                  <span class="task-activity-icon">{e.icon}</span>
+                  <div class="task-comment-body">
+                    <div class="task-comment-meta">
+                      <span class="task-comment-author">{cap(e.author)}</span>
+                      <span class="task-activity-time">{fmtRelativeTime(e.time)}</span>
+                    </div>
+                    <div class="task-comment-text">{stripEmojis(e.body)}</div>
                   </div>
-                  <div class="task-comment-text">{stripEmojis(e.body)}</div>
                 </div>
-              </div>
-            ) : (
-              <div key={i} class="task-activity-event">
-                <span class="task-activity-icon">{e.icon}</span>
-                <span class="task-activity-text">{stripEmojis(e.text)}</span>
-                <span class="task-activity-time">{fmtRelativeTime(e.time)}</span>
-              </div>
-          )
-        )}
-        </div>
+              ) : (
+                <div key={i} class="task-activity-event">
+                  <span class="task-activity-icon">{e.icon}</span>
+                  <span class="task-activity-text">{stripEmojis(e.text)}</span>
+                  <span class="task-activity-time">{fmtRelativeTime(e.time)}</span>
+                </div>
+            )
+          )}
+          </div>
+          {!showingAll && (
+            <div style={{ textAlign: "center", padding: "12px" }}>
+              <button
+                class="btn-approve"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                style={{ fontSize: "12px", padding: "6px 12px" }}
+              >
+                {loadingMore ? "Loading..." : "Load earlier activity"}
+              </button>
+            </div>
+          )}
+        </>
       )}
       {/* Comment input */}
         <div class="task-comment-input-row">
@@ -660,6 +693,8 @@ export function TaskSidePanel() {
   const [mergePreviewLoaded, setMergePreviewLoaded] = useState(false);
   const [currentReview, setCurrentReview] = useState(null);
   const [oldComments, setOldComments] = useState([]);
+  const [activityRaw, setActivityRaw] = useState(null);
+  const [activityLoaded, setActivityLoaded] = useState(false);
 
   // Mark tab as visited when selected
   const switchTab = useCallback((tab) => {
@@ -683,12 +718,15 @@ export function TaskSidePanel() {
     setMergePreviewLoaded(!!c.mergePreviewRaw);
     setCurrentReview(c.currentReview ?? null);
     setOldComments(c.oldComments ?? []);
+    setActivityRaw(c.activityRaw ?? null);
+    setActivityLoaded(!!c.activityRaw);
 
-    // If we have cached diff/merge data, mark those tabs as "already visited"
+    // If we have cached diff/merge/activity data, mark those tabs as "already visited"
     // so the lazy-mount keeps them rendered; otherwise start fresh.
     const restored = { overview: true };
     if (c.diffRaw) restored.changes = true;
     if (c.mergePreviewRaw) restored.merge = true;
+    if (c.activityRaw) restored.activity = true;
     setVisitedTabs(restored);
 
     const cached = allTasks.find(t => t.id === id);
@@ -781,6 +819,28 @@ export function TaskSidePanel() {
     }).catch(() => {});
   }, [visitedTabs.merge, mergePreviewLoaded, id, team]);
 
+  // Lazy load activity when Activity tab first visited — stale-while-revalidate
+  const loadActivity = useCallback(() => {
+    if (id === null || !team) return;
+    api.fetchTaskActivity(team, id, 50).then(raw => {
+      setActivityRaw(raw);
+      _setCache(team, id, { activityRaw: raw });
+    }).catch(() => {
+      setActivityRaw([]);
+    });
+  }, [id, team]);
+
+  useEffect(() => {
+    if (!visitedTabs.activity || id === null || !team) return;
+    if (activityLoaded && _getCache(team, id).activityRaw) {
+      // Already showing stale data — revalidate in background
+      loadActivity();
+      return;
+    }
+    setActivityLoaded(true);
+    loadActivity();
+  }, [visitedTabs.activity, activityLoaded, id, team, loadActivity]);
+
   const close = useCallback(() => { closeAllPanels(); }, []);
 
   const handleAction = useCallback(() => {
@@ -859,7 +919,7 @@ export function TaskSidePanel() {
               )}
               {visitedTabs.activity && (
                 <div style={{ display: activeTab === "activity" ? "" : "none" }}>
-                  <ActivityTab taskId={t.id} task={t} />
+                  <ActivityTab taskId={t.id} task={t} activityRaw={activityRaw} onLoadActivity={loadActivity} />
       </div>
       )}
     </>

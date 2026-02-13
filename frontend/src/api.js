@@ -82,8 +82,9 @@ export async function fetchTaskStats(team, taskId) {
   return r.ok ? r.json() : null;
 }
 
-export async function fetchTaskActivity(team, taskId) {
-  const r = await fetch(`/teams/${team}/tasks/${taskId}/activity`);
+export async function fetchTaskActivity(team, taskId, limit = 50) {
+  const url = `/teams/${team}/tasks/${taskId}/activity${limit ? `?limit=${limit}` : ''}`;
+  const r = await fetch(url);
   return r.ok ? r.json() : [];
 }
 
