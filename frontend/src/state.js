@@ -21,6 +21,49 @@ export const activeTab = signal("chat");
 export const isMuted = signal(localStorage.getItem("delegate-muted") === "true");
 export const sidebarCollapsed = signal(localStorage.getItem("delegate-sidebar-collapsed") === "true");
 
+// ── URL-based navigation ──
+// URL format: /{team}/{tab}  e.g. /self/chat, /myteam/tasks
+const VALID_TABS = ["chat", "tasks", "agents"];
+
+/** Parse the current URL and update currentTeam + activeTab signals. */
+export function syncFromUrl() {
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  if (parts.length >= 2 && VALID_TABS.includes(parts[1])) {
+    currentTeam.value = parts[0];
+    activeTab.value = parts[1];
+  } else if (parts.length === 1) {
+    // Bare /{team} or legacy /{tab}
+    if (VALID_TABS.includes(parts[0])) {
+      // Legacy URL like /chat — keep team, fix URL if possible
+      activeTab.value = parts[0];
+      if (currentTeam.value) {
+        window.history.replaceState(null, "", `/${currentTeam.value}/${parts[0]}`);
+      }
+    } else {
+      // Bare team like /self — set team, default tab
+      currentTeam.value = parts[0];
+      activeTab.value = "chat";
+      window.history.replaceState(null, "", `/${parts[0]}/chat`);
+    }
+  }
+}
+
+/** Navigate to a team + tab (pushState + update signals). */
+export function navigate(team, tab) {
+  const t = tab || activeTab.value || "chat";
+  window.history.pushState({}, "", `/${team}/${t}`);
+  currentTeam.value = team;
+  activeTab.value = t;
+}
+
+/** Switch tab within the current team. */
+export function navigateTab(tab) {
+  const team = currentTeam.value;
+  if (!team) return;
+  window.history.pushState({}, "", `/${team}/${tab}`);
+  activeTab.value = tab;
+}
+
 // ── Panel stack ──
 // Each entry: { type: "task"|"agent"|"file"|"diff", target: any }
 export const panelStack = signal([]);

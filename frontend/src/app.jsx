@@ -7,6 +7,7 @@ import {
   panelStack, popPanel, closeAllPanels,
   agentLastActivity, agentActivityLog, managerTurnContext,
   helpOverlayOpen, sidebarCollapsed,
+  syncFromUrl, navigate, navigateTab,
 } from "./state.js";
 import * as api from "./api.js";
 import { Sidebar } from "./components/Sidebar.jsx";
@@ -93,33 +94,25 @@ function App() {
         localStorage.setItem("delegate-sidebar-collapsed", sidebarCollapsed.value ? "true" : "false");
         return;
       }
-      if (e.key === "c" && !isOverlayOpen()) { activeTab.value = "chat"; window.history.pushState({}, "", "/chat"); return; }
-      if (e.key === "t" && !isOverlayOpen()) { activeTab.value = "tasks"; window.history.pushState({}, "", "/tasks"); return; }
-      if (e.key === "a" && !isOverlayOpen()) { activeTab.value = "agents"; window.history.pushState({}, "", "/agents"); return; }
+      if (e.key === "c" && !isOverlayOpen()) { navigateTab("chat"); return; }
+      if (e.key === "t" && !isOverlayOpen()) { navigateTab("tasks"); return; }
+      if (e.key === "a" && !isOverlayOpen()) { navigateTab("agents"); return; }
       if (e.key === "?" && !isInputFocused()) { helpOverlayOpen.value = !helpOverlayOpen.value; return; }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
-  // ── Path routing ──
+  // ── URL routing: /{team}/{tab} ──
   useEffect(() => {
-    const onPath = () => {
-      const path = window.location.pathname.replace(/^\//, "");
-      const valid = ["chat", "tasks", "agents"];
-      if (valid.includes(path)) {
-        activeTab.value = path;
-      } else {
-        activeTab.value = "chat";
-        if (path !== "") window.history.replaceState(null, "", "/chat");
-      }
-    };
-    window.addEventListener("popstate", onPath);
-    onPath();
-    return () => window.removeEventListener("popstate", onPath);
+    const onPopState = () => syncFromUrl();
+    window.addEventListener("popstate", onPopState);
+    // Parse initial URL
+    syncFromUrl();
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  // ── Bootstrap: fetch config + teams ──
+  // ── Bootstrap: fetch config + teams, then fix URL if needed ──
   useEffect(() => {
     (async () => {
       try {
@@ -130,8 +123,12 @@ function App() {
       try {
         const teamList = await api.fetchTeams();
         teams.value = teamList;
+        // If URL didn't set a valid team, navigate to the first team
         if (teamList.length > 0 && !currentTeam.value) {
-          currentTeam.value = teamList[0];
+          navigate(teamList[0], "chat");
+        } else if (teamList.length > 0 && !teamList.includes(currentTeam.value)) {
+          // URL had an invalid team — fix it
+          navigate(teamList[0], activeTab.value || "chat");
         }
       } catch (e) { }
     })();
@@ -143,16 +140,7 @@ function App() {
     const poll = async () => {
       if (!active) return;
       const t = currentTeam.value;
-      if (!t) {
-        try {
-          const tl = await api.fetchTeams();
-          if (tl.length) {
-            teams.value = tl;
-            if (!currentTeam.value) currentTeam.value = tl[0];
-          }
-        } catch (e) { }
-        return;
-      }
+      if (!t) return; // No team yet — bootstrap will set one
 
       try {
         const [taskData, agentData] = await Promise.all([
@@ -175,17 +163,14 @@ function App() {
           try { msgData = await api.fetchMessages(t, {}); } catch (e) { }
         }
 
-        if (active) {
-          // Guard: only apply if the team hasn't changed mid-flight
-          if (t === currentTeam.value) {
-            batch(() => {
-              tasks.value = taskData;
-              agents.value = agentData;
-              agentStatsMap.value = statsMap;
-              knownAgentNames.value = agentData.map(a => a.name);
-              if (activeTab.value === "chat") messages.value = msgData;
-            });
-          }
+        if (active && t === currentTeam.value) {
+          batch(() => {
+            tasks.value = taskData;
+            agents.value = agentData;
+            agentStatsMap.value = statsMap;
+            knownAgentNames.value = agentData.map(a => a.name);
+            if (activeTab.value === "chat") messages.value = msgData;
+          });
         }
       } catch (e) {
         showToast("Failed to refresh data", "error");

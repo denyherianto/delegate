@@ -3,6 +3,7 @@ import {
   currentTeam, teams, tasks, agents, agentStatsMap,
   activeTab, openPanel,
   agentLastActivity, sidebarCollapsed,
+  navigate, navigateTab,
 } from "../state.js";
 import {
   cap, fmtStatus, fmtRelativeTimeShort,
@@ -98,7 +99,7 @@ function TeamSelector() {
   const pick = useCallback((t, e) => {
     e.stopPropagation();
     setOpen(false);
-    if (t !== currentTeam.value) currentTeam.value = t;
+    if (t !== currentTeam.value) navigate(t);
   }, []);
 
   return (
@@ -256,8 +257,7 @@ export function Sidebar() {
   }, []);
 
   const switchTab = useCallback((key) => {
-    activeTab.value = key;
-    window.history.pushState({}, "", "/" + key);
+    navigateTab(key);
   }, []);
 
   return (
