@@ -41,16 +41,19 @@ export function showActionToast({ title, body, taskId, type = "info" }) {
 export function showReturnToast(summary) {
   const id = Date.now();
 
-  // Build summary message
+  // Build summary message from awaySummary shape
   const parts = [];
-  if (summary.actionCount > 0) parts.push(`${summary.actionCount} task${summary.actionCount > 1 ? 's' : ''} need attention`);
-  if (summary.completedCount > 0) parts.push(`${summary.completedCount} completed`);
+  const actionCount = summary.actionItems ? summary.actionItems.length : (summary.actionCount || 0);
+  const completedCount = summary.completed ? summary.completed.length : (summary.completedCount || 0);
+  if (actionCount > 0) parts.push(`${actionCount} task${actionCount > 1 ? 's' : ''} need attention`);
+  if (completedCount > 0) parts.push(`${completedCount} completed`);
+  if (summary.unreadCount > 0) parts.push(`${summary.unreadCount} unread message${summary.unreadCount > 1 ? 's' : ''}`);
   const body = parts.join(", ") || "No new activity";
 
   // Add return-from-away toast with special action to open bell popover
   const newToasts = [...toasts.value, {
     id,
-    title: "While you were away",
+    title: `While you were away (${summary.awayDuration})`,
     body,
     openBell: true,  // special flag to open bell popover instead of task panel
     type: "info"

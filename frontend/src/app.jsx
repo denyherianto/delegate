@@ -8,6 +8,7 @@ import {
   agentLastActivity, agentActivityLog, agentTurnState, managerTurnContext,
   helpOverlayOpen, sidebarCollapsed, bellPopoverOpen, isMuted,
   syncFromUrl, navigate, navigateTab, taskTeamFilter,
+  actionItemCount, awaySummary, getLastSeen, updateLastSeen,
 } from "./state.js";
 import * as api from "./api.js";
 import { Sidebar } from "./components/Sidebar.jsx";
@@ -21,7 +22,7 @@ import { HelpOverlay } from "./components/HelpOverlay.jsx";
 import { NotificationBell } from "./components/NotificationBell.jsx";
 import { NotificationPopover } from "./components/NotificationPopover.jsx";
 import { TeamSwitcher } from "./components/TeamSwitcher.jsx";
-import { showToast, showActionToast } from "./toast.js";
+import { showToast, showActionToast, showReturnToast } from "./toast.js";
 
 // ── Per-team backing stores (plain objects, not signals) ──
 // SSE events for ALL teams are buffered here.  Only the current-team
@@ -260,6 +261,103 @@ function App() {
         }
       } catch (e) { }
     })();
+  });
+
+  // ── Tab badge: update document.title with action item count ──
+  useSignalEffect(() => {
+    const count = actionItemCount.value;
+    document.title = count > 0 ? `(${count}) delegate` : "delegate";
+  });
+
+  // ── Last-seen tracking: heartbeat + initial update ──
+  useEffect(() => {
+    // Update last-seen on page load
+    updateLastSeen();
+
+    // Heartbeat: update every 60s while page is visible
+    const heartbeat = setInterval(() => {
+      if (!document.hidden) {
+        updateLastSeen();
+      }
+    }, 60000);
+
+    return () => clearInterval(heartbeat);
+  }, []);
+
+  // ── Visibility/away detection: return-from-away flow ──
+  useEffect(() => {
+    let lastVisibleTime = Date.now();
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Tab going hidden -- record time
+        lastVisibleTime = Date.now();
+      } else {
+        // Tab becoming visible -- check if away long enough
+        const awayMs = Date.now() - lastVisibleTime;
+        const AWAY_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+
+        if (awayMs >= AWAY_THRESHOLD) {
+          // Compute away summary
+          const lastSeen = getLastSeen();
+          const awayMinutes = Math.floor(awayMs / 60000);
+          const hours = Math.floor(awayMinutes / 60);
+          const minutes = awayMinutes % 60;
+          const awayDuration = hours > 0
+            ? `${hours}h ${minutes}m`
+            : `${minutes}m`;
+
+          // Get action items (already filtered to in_approval, merge_failed)
+          const currentActionItems = tasks.value.filter(t =>
+            t.assignee && t.assignee.toLowerCase() === bossName.value.toLowerCase() &&
+            ["in_approval", "merge_failed"].includes(t.status)
+          );
+
+          // Get completed tasks since lastSeen
+          const completed = lastSeen
+            ? tasks.value.filter(t =>
+                t.status === "done" &&
+                t.completed_at &&
+                t.completed_at > lastSeen
+              )
+            : [];
+
+          // Get unread message count
+          const unreadCount = lastSeen
+            ? messages.value.filter(m =>
+                m.recipient === bossName.value &&
+                m.created_at > lastSeen
+              ).length
+            : 0;
+
+          // Populate awaySummary signal
+          awaySummary.value = {
+            awayDuration,
+            actionItems: currentActionItems,
+            completed,
+            unreadCount
+          };
+
+          // Show toast if there are items to report
+          if (currentActionItems.length > 0 || completed.length > 0 || unreadCount > 0) {
+            showReturnToast(awaySummary.value);
+          }
+        }
+
+        // Always update last-seen when tab becomes visible
+        updateLastSeen();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  // ── Clear awaySummary when bell popover closes ──
+  useSignalEffect(() => {
+    if (bellPopoverOpen.value === false && awaySummary.value !== null) {
+      awaySummary.value = null;
+    }
   });
 
   // ── SSE: one connection per team ──

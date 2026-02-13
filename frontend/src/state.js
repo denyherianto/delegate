@@ -174,3 +174,14 @@ export const bellPopoverOpen = signal(false);
 // ── Away summary (populated by activity catchup feature) ──
 // Shape: { awayDuration, actionItems: [...], completed: [...], unreadCount } | null
 export const awaySummary = signal(null);
+
+// ── Last-seen tracking (localStorage) ──
+const LS_KEY = "delegate-last-seen";
+
+export function getLastSeen() {
+  return localStorage.getItem(LS_KEY) || null;
+}
+
+export function updateLastSeen() {
+  localStorage.setItem(LS_KEY, new Date().toISOString());
+}
