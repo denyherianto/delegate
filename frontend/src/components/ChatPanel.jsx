@@ -576,7 +576,7 @@ export function ChatPanel() {
                   <span class="msg-time" dangerouslySetInnerHTML={{ __html: fmtTimestamp(m.timestamp) }} />
                   <span class="msg-checkmark" dangerouslySetInnerHTML={{ __html: msgStatusIcon(m) }} />
                 </div>
-                <CollapsibleMessage html={contentHtml} messageId={m.id} isBoss={isBoss} />
+                <CollapsibleMessage html={contentHtml} messageId={m.id} isBoss={isBoss || isToBoss} />
               </div>
             </div>
           );
