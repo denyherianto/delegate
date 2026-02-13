@@ -404,8 +404,12 @@ body {
   cursor: pointer;
   border-radius: 6px;
   transition: background 100ms;
+  border-left: 2px solid transparent;
 }
 .task-row:hover { background: var(--bg-hover); }
+.task-row.selected {
+  border-left-color: var(--semantic-blue);
+}
 .task-summary {
   display: grid;
   grid-template-columns: 56px 1fr auto auto auto;

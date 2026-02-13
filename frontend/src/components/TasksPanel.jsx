@@ -22,6 +22,7 @@ export function TasksPanel() {
 
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(-1);
   const searchTimerRef = useRef(null);
   const prevStatusRef = useRef({});
 
@@ -134,6 +135,46 @@ export function TasksPanel() {
     searchTimerRef.current = setTimeout(() => setSearchQuery(val), 300);
   }, []);
 
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Only handle when tasks panel is active and no input is focused
+      if (activeTab.value !== "tasks") return;
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+
+      const len = filtered.length;
+      if (len === 0) return;
+
+      if (e.key === "j" || e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIndex(prev => {
+          if (prev === -1) return 0;
+          return (prev + 1) % len;
+        });
+      } else if (e.key === "k" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIndex(prev => {
+          if (prev === -1) return len - 1;
+          return (prev - 1 + len) % len;
+        });
+      } else if (e.key === "Enter" && selectedIndex >= 0 && selectedIndex < len) {
+        e.preventDefault();
+        openPanel("task", filtered[selectedIndex].id);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        setSelectedIndex(-1);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [filtered, selectedIndex]);
+
+  // Reset selection when filters change
+  useEffect(() => {
+    setSelectedIndex(-1);
+  }, [filters, searchQuery]);
+
   const searchIcon = (
     <svg class="filter-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="6" cy="6" r="4.5" /><line x1="9.5" y1="9.5" x2="13" y2="13" />
@@ -166,10 +207,10 @@ export function TasksPanel() {
           <p style={{ color: "var(--text-secondary)" }}>No tasks match filters.</p>
         ) : (
           <div class="task-list">
-            {filtered.map(t => (
+            {filtered.map((t, idx) => (
               <div
                 key={t.id}
-                class="task-row"
+                class={`task-row${idx === selectedIndex ? " selected" : ""}`}
                 onClick={() => { openPanel("task", t.id); }}
               >
                 <div class="task-summary">
