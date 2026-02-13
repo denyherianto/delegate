@@ -36,7 +36,13 @@ export function CustomSelect({ value, options, onChange, className, renderLabel 
   // Close on Escape
   useEffect(() => {
     if (!open) return;
-    const handler = (e) => { if (e.key === "Escape") setOpen(false); };
+    const handler = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [open]);

@@ -28,28 +28,32 @@ export function CommandAutocomplete({ input, onSelect, onDismiss }) {
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault();
+          e.stopPropagation();
           setSelectedIndex(i => (i + 1) % commands.length);
           break;
         case 'ArrowUp':
           e.preventDefault();
+          e.stopPropagation();
           setSelectedIndex(i => (i - 1 + commands.length) % commands.length);
           break;
         case 'Tab':
         case 'Enter':
           if (commands[selectedIndex]) {
             e.preventDefault();
+            e.stopPropagation();
             onSelect(commands[selectedIndex]);
           }
           break;
         case 'Escape':
           e.preventDefault();
+          e.stopPropagation();
           onDismiss();
           break;
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
   }, [commands, selectedIndex, onSelect, onDismiss]);
 
   if (!commands.length) return null;

@@ -82,7 +82,8 @@ function App() {
         const tag = el.tagName.toLowerCase();
         return tag === "input" || tag === "textarea" || tag === "select" || el.contentEditable === "true";
       };
-      const isOverlayOpen = () => panelStack.value.length > 0 || helpOverlayOpen.value;
+      // Help overlay blocks all shortcuts (user is reading help)
+      const isHelpOpen = () => helpOverlayOpen.value;
 
       if (e.key === "Escape") {
         if (bellPopoverOpen.value) { bellPopoverOpen.value = false; return; }
@@ -92,25 +93,27 @@ function App() {
         return;
       }
       if (isInputFocused()) return;
-      if (e.key === "/" && !isOverlayOpen()) {
+      // / should only work when no overlays (to avoid conflicts with typing)
+      if (e.key === "/" && !isHelpOpen() && panelStack.value.length === 0) {
         e.preventDefault();
         const chatInput = document.querySelector(".chat-input-box textarea");
         if (chatInput) chatInput.focus();
         return;
       }
-      if (e.key === "s" && !isOverlayOpen()) {
+      // Tab navigation and sidebar toggle work even with side panels open
+      if (e.key === "s" && !isHelpOpen()) {
         sidebarCollapsed.value = !sidebarCollapsed.value;
         localStorage.setItem("delegate-sidebar-collapsed", sidebarCollapsed.value ? "true" : "false");
         return;
       }
-      if (e.key === "n" && !isOverlayOpen()) {
+      if (e.key === "n" && !isHelpOpen()) {
         bellPopoverOpen.value = !bellPopoverOpen.value;
         return;
       }
-      if (e.key === "c" && !isOverlayOpen()) { navigateTab("chat"); return; }
-      if (e.key === "t" && !isOverlayOpen()) { navigateTab("tasks"); return; }
-      if (e.key === "a" && !isOverlayOpen()) { navigateTab("agents"); return; }
-      if (e.key === "m" && !isOverlayOpen()) {
+      if (e.key === "c" && !isHelpOpen()) { navigateTab("chat"); return; }
+      if (e.key === "t" && !isHelpOpen()) { navigateTab("tasks"); return; }
+      if (e.key === "a" && !isHelpOpen()) { navigateTab("agents"); return; }
+      if (e.key === "m" && !isHelpOpen()) {
         e.preventDefault();
         isMuted.value = !isMuted.value;
         localStorage.setItem("delegate-muted", isMuted.value ? "true" : "false");

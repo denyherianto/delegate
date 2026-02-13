@@ -69,12 +69,14 @@ export function NotificationPopover() {
     const handler = (e) => {
       if (e.key === "Escape") {
         e.preventDefault();
+        e.stopPropagation();
         handleClose();
         return;
       }
 
       if (e.key === "j" || e.key === "ArrowDown") {
         e.preventDefault();
+        e.stopPropagation();
         setHighlightIndex(prev => {
           const next = prev + 1;
           return next >= clickableItems.length ? 0 : next;
@@ -84,6 +86,7 @@ export function NotificationPopover() {
 
       if (e.key === "k" || e.key === "ArrowUp") {
         e.preventDefault();
+        e.stopPropagation();
         setHighlightIndex(prev => {
           const next = prev - 1;
           return next < 0 ? clickableItems.length - 1 : next;
@@ -93,6 +96,7 @@ export function NotificationPopover() {
 
       if (e.key === "Enter") {
         e.preventDefault();
+        e.stopPropagation();
         if (highlightIndex >= 0 && highlightIndex < clickableItems.length) {
           handleItemAction(clickableItems[highlightIndex]);
         }

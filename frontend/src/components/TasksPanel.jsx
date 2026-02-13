@@ -205,27 +205,31 @@ export function TasksPanel() {
 
       if (e.key === "j" || e.key === "ArrowDown") {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex(prev => {
           if (prev === -1) return 0;
           return (prev + 1) % len;
         });
       } else if (e.key === "k" || e.key === "ArrowUp") {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex(prev => {
           if (prev === -1) return len - 1;
           return (prev - 1 + len) % len;
         });
       } else if (e.key === "Enter" && selectedIndex >= 0 && selectedIndex < len) {
         e.preventDefault();
+        e.stopPropagation();
         openPanel("task", flatTaskList[selectedIndex].id);
       } else if (e.key === "Escape") {
         e.preventDefault();
+        e.stopPropagation();
         setSelectedIndex(-1);
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [flatTaskList, selectedIndex]);
 
   return (

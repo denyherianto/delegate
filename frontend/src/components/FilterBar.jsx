@@ -49,10 +49,27 @@ function Dropdown({ items, onSelect, onClose, multiSelect, selected, anchorRef }
   // Keyboard nav
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === "Escape") { onClose(); return; }
-      if (e.key === "ArrowDown") { e.preventDefault(); setFocusIdx(i => Math.min(i + 1, filtered.length - 1)); }
-      if (e.key === "ArrowUp") { e.preventDefault(); setFocusIdx(i => Math.max(i - 1, 0)); }
-      if (e.key === "Enter" && filtered.length > 0) { e.preventDefault(); onSelect(filtered[focusIdx]); }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        e.stopPropagation();
+        setFocusIdx(i => Math.min(i + 1, filtered.length - 1));
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation();
+        setFocusIdx(i => Math.max(i - 1, 0));
+      }
+      if (e.key === "Enter" && filtered.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        onSelect(filtered[focusIdx]);
+      }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
