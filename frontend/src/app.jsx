@@ -21,7 +21,6 @@ import { ToastContainer } from "./components/Toast.jsx";
 import { HelpOverlay } from "./components/HelpOverlay.jsx";
 import { NotificationBell } from "./components/NotificationBell.jsx";
 import { NotificationPopover } from "./components/NotificationPopover.jsx";
-import { TeamSwitcher } from "./components/TeamSwitcher.jsx";
 import { showToast, showActionToast, showReturnToast } from "./toast.js";
 
 // ── Per-team backing stores (plain objects, not signals) ──
@@ -74,8 +73,6 @@ function _syncSignalsNow(team) {
 
 // ── Main App ──
 function App() {
-  const [teamSwitcherOpen, setTeamSwitcherOpen] = useState(false);
-
   // ── Keyboard shortcuts ──
   useEffect(() => {
     const handler = (e) => {
@@ -85,17 +82,9 @@ function App() {
         const tag = el.tagName.toLowerCase();
         return tag === "input" || tag === "textarea" || tag === "select" || el.contentEditable === "true";
       };
-      const isOverlayOpen = () => panelStack.value.length > 0 || helpOverlayOpen.value || teamSwitcherOpen;
-
-      // Cmd+K or Ctrl+K to open team switcher
-      if ((e.metaKey || e.ctrlKey) && e.key === "k" && !isOverlayOpen()) {
-        e.preventDefault();
-        setTeamSwitcherOpen(true);
-        return;
-      }
+      const isOverlayOpen = () => panelStack.value.length > 0 || helpOverlayOpen.value;
 
       if (e.key === "Escape") {
-        if (teamSwitcherOpen) { setTeamSwitcherOpen(false); return; }
         if (bellPopoverOpen.value) { bellPopoverOpen.value = false; return; }
         if (helpOverlayOpen.value) { helpOverlayOpen.value = false; return; }
         if (panelStack.value.length > 0) { popPanel(); return; }
@@ -131,7 +120,7 @@ function App() {
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [teamSwitcherOpen]);
+  }, []);
 
   // ── URL routing: /{team}/{tab} ──
   useEffect(() => {
@@ -530,7 +519,6 @@ function App() {
       <DiffPanel />
       <HelpOverlay />
       <NotificationPopover />
-      <TeamSwitcher open={teamSwitcherOpen} onClose={() => setTeamSwitcherOpen(false)} />
       <ToastContainer />
     </>
   );

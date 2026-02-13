@@ -3,7 +3,7 @@ import {
   currentTeam, messages, agents, activeTab,
   chatFilterDirection, openPanel,
   knownAgentNames, isMuted, bossName, expandedMessages,
-  commandMode, commandCwd,
+  commandMode, commandCwd, teams, navigate,
 } from "../state.js";
 import * as api from "../api.js";
 import {
@@ -190,6 +190,7 @@ export function ChatPanel() {
   const team = currentTeam.value;
   const allAgents = agents.value;
   const agNames = knownAgentNames.value;
+  const teamList = teams.value;
 
   const [msgs, setMsgs] = useState([]);
   const [filterFrom, setFilterFrom] = useState("");
@@ -608,18 +609,27 @@ export function ChatPanel() {
     searchTimerRef.current = setTimeout(() => setFilterSearch(val), 300);
   }, []);
 
+  // Team selector options
+  const teamOptions = useMemo(() => {
+    return teamList.map(t => ({ value: t, label: cap(t) }));
+  }, [teamList]);
+
+  const handleTeamChange = useCallback((newTeam) => {
+    if (newTeam !== team) {
+      navigate(newTeam, activeTab.value);
+    }
+  }, [team]);
+
   return (
     <div class="panel active" style={{ display: activeTab.value === "chat" ? "" : "none" }}>
-      {/* Team channel indicator */}
-      <div class="chat-team-header">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 3h10a1 1 0 011 1v8a1 1 0 01-1 1H6l-3 3V4a1 1 0 011-1z" />
-        </svg>
-        <span class="chat-team-name">{cap(team)}</span>
-      </div>
-
-      {/* Minimal filter bar */}
+      {/* Consolidated filter bar with team selector */}
       <div class="chat-filters">
+        <CustomSelect
+          className="chat-team-select"
+          value={team}
+          options={teamOptions}
+          onChange={handleTeamChange}
+        />
         <div class="filter-search-wrap">
           <svg class="filter-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="6" cy="6" r="4.5" /><line x1="9.5" y1="9.5" x2="13" y2="13" />
