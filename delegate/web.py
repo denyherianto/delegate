@@ -285,58 +285,35 @@ async def _daemon_loop(
             finally:
                 in_flight.discard((team, agent))
 
-    # --- One-time startup: greeting from managers ---
-    # Only send if no message from manager→boss in the last 30 minutes.
-    # Content-agnostic: the greeting text can change freely without
-    # breaking dedup.  Handles frequent uvicorn reloads gracefully.
+    # --- One-time startup: greeting from the first team's manager ---
+    # Always sends on daemon startup. Other teams get greeted when
+    # the boss switches to them in the frontend for the first time.
     try:
-        from delegate.db import get_connection
         from delegate.task import list_tasks
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timezone
 
         teams = _list_teams(hc_home)
         boss_name = get_boss(hc_home) or "boss"
         now_utc = datetime.now(timezone.utc)
-        cutoff = (now_utc - timedelta(minutes=30)).strftime(
-            "%Y-%m-%dT%H:%M:%fZ"
-        )
 
-        for team in teams:
+        # Only greet the first team at startup
+        if teams:
+            team = teams[0]
             manager_name = get_member_by_role(hc_home, team, "manager")
-            if not manager_name:
-                continue
-
-            # Check if manager sent *any* message to boss recently
-            conn = get_connection(hc_home, team)
-            row = conn.execute(
-                """SELECT COUNT(*) FROM messages
-                   WHERE type = 'chat' AND sender = ? AND recipient = ?
-                     AND timestamp > ?""",
-                (manager_name, boss_name, cutoff),
-            ).fetchone()
-            recent_count = row[0] if row else 0
-            conn.close()
-
-            if recent_count > 0:
-                logger.info(
-                    "Skipping startup greeting (recent activity) | team=%s",
-                    team,
+            if manager_name:
+                greeting = _build_greeting(
+                    hc_home, team, manager_name, boss_name, now_utc,
                 )
-                continue
-
-            greeting = _build_greeting(
-                hc_home, team, manager_name, boss_name, now_utc,
-            )
-            send_message(
-                hc_home, team,
-                sender=manager_name,
-                recipient=boss_name,
-                message=greeting,
-            )
-            logger.info(
-                "Manager %s sent startup greeting to %s | team=%s",
-                manager_name, boss_name, team,
-            )
+                send_message(
+                    hc_home, team,
+                    sender=manager_name,
+                    recipient=boss_name,
+                    message=greeting,
+                )
+                logger.info(
+                    "Manager %s sent startup greeting to %s | team=%s",
+                    manager_name, boss_name, team,
+                )
     except Exception:
         logger.exception("Error during startup greeting")
 
@@ -913,6 +890,35 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             )
         _send(hc_home, team, boss_name, msg.recipient, msg.content)
         return {"status": "queued"}
+
+    @app.post("/teams/{team}/greet")
+    def greet_team(team: str):
+        """Send a welcome greeting from the team's manager to the boss.
+        Called by the frontend when the boss switches to a team for the first time."""
+        from datetime import datetime, timezone
+
+        boss_name = get_boss(hc_home) or "boss"
+        manager_name = get_member_by_role(hc_home, team, "manager")
+
+        if not manager_name:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No manager found for team '{team}'",
+            )
+
+        now_utc = datetime.now(timezone.utc)
+        greeting = _build_greeting(hc_home, team, manager_name, boss_name, now_utc)
+        send_message(
+            hc_home, team,
+            sender=manager_name,
+            recipient=boss_name,
+            message=greeting,
+        )
+        logger.info(
+            "Manager %s sent team-switch greeting to %s | team=%s",
+            manager_name, boss_name, team,
+        )
+        return {"status": "sent"}
 
     # --- Legacy global endpoints (aggregate across all teams) ---
     # Prefixed with /api/ to avoid colliding with SPA routes (/tasks, /agents).

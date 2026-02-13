@@ -42,6 +42,17 @@ export async function sendMessage(team, recipient, content) {
   return r.json();
 }
 
+export async function greetTeam(team) {
+  const r = await fetch(`/teams/${team}/greet`, {
+    method: "POST",
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
 export async function fetchTaskDiff(team, taskId) {
   const r = await fetch(`/teams/${team}/tasks/${taskId}/diff`);
   return r.ok ? r.json() : { diff: {}, branch: "", commits: {} };

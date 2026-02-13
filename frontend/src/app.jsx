@@ -32,12 +32,14 @@ const _pt = {
 };
 const MAX_LOG_ENTRIES = 500;
 
+// Track which teams have been greeted in this browser session
+const _greetedTeams = new Set();
+
 /** Sync the reactive signals from the backing store for *team*.
  *  Throttled to at most one sync per animation frame to prevent
  *  SSE event floods from overwhelming the render loop.           */
 let _syncRaf = 0;
 let _syncTeam = null;
-
 function _syncSignals(team) {
   _syncTeam = team;
   if (_syncRaf) return;               // already scheduled
@@ -217,6 +219,12 @@ function App() {
         });
         const mgr = agentData.find(a => a.role === "manager");
         _pt.managerName[t] = mgr?.name ?? null;
+
+        // Send welcome greeting if this is the first time viewing this team
+        if (!_greetedTeams.has(t)) {
+          _greetedTeams.add(t);
+          api.greetTeam(t).catch(() => {});
+        }
       } catch (e) { }
     })();
   });
