@@ -7,8 +7,8 @@ import * as api from "../api.js";
 import {
   cap, esc, fmtStatus, fmtTimestamp, fmtElapsed, fmtTokens, fmtCost,
   fmtRelativeTime, taskIdStr, renderMarkdown, linkifyTaskRefs, linkifyFilePaths,
-  flattenDiffDict, flattenCommitsDict, diff2HtmlRender, diff2HtmlParse, stripEmojis,
-  handleCopyClick, toApiPath,
+  agentifyRefs, flattenDiffDict, flattenCommitsDict, diff2HtmlRender, diff2HtmlParse,
+  stripEmojis, handleCopyClick, toApiPath,
 } from "../utils.js";
 import { ReviewableDiff } from "./ReviewableDiff.jsx";
 import { showToast } from "../toast.js";
@@ -537,6 +537,7 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const team = currentTeam.value;
   const boss = bossName.value || "boss";
+  const agentNames = knownAgentNames.value || [];
 
   // Transform raw activity data into timeline format
   const transformActivity = useCallback((activity) => {
@@ -616,26 +617,38 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
         ) : (
         <>
           <div class="task-activity-timeline">
-            {timeline.map((e, i) =>
-              e.type === "comment" ? (
-                <div key={i} class="task-activity-event task-comment-entry">
-                  <span class="task-activity-icon">{e.icon}</span>
-                  <div class="task-comment-body">
-                    <div class="task-comment-meta">
-                      <span class="task-comment-author">{cap(e.author)}</span>
-                      <span class="task-activity-time">{fmtRelativeTime(e.time)}</span>
+            {timeline.map((e, i) => {
+              if (e.type === "comment") {
+                const commentHtml = agentifyRefs(
+                  linkifyFilePaths(
+                    linkifyTaskRefs(
+                      renderMarkdown(e.body)
+                    )
+                  ),
+                  agentNames
+                );
+                return (
+                  <div key={i} class="task-activity-event task-comment-entry">
+                    <span class="task-activity-icon">{e.icon}</span>
+                    <div class="task-comment-body">
+                      <div class="task-comment-meta">
+                        <span class="task-comment-author">{cap(e.author)}</span>
+                        <span class="task-activity-time">{fmtRelativeTime(e.time)}</span>
+                      </div>
+                      <LinkedDiv class="task-comment-text md-content" html={commentHtml} />
                     </div>
-                    <div class="task-comment-text">{stripEmojis(e.body)}</div>
                   </div>
-                </div>
-              ) : (
-                <div key={i} class="task-activity-event">
-                  <span class="task-activity-icon">{e.icon}</span>
-                  <span class="task-activity-text">{stripEmojis(e.text)}</span>
-                  <span class="task-activity-time">{fmtRelativeTime(e.time)}</span>
-                </div>
-            )
-          )}
+                );
+              } else {
+                return (
+                  <div key={i} class="task-activity-event">
+                    <span class="task-activity-icon">{e.icon}</span>
+                    <span class="task-activity-text">{stripEmojis(e.text)}</span>
+                    <span class="task-activity-time">{fmtRelativeTime(e.time)}</span>
+                  </div>
+                );
+              }
+            })}
           </div>
           {!showingAll && (
             <div style={{ textAlign: "center", padding: "12px" }}>
