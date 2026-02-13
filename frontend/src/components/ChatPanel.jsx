@@ -225,20 +225,49 @@ export function ChatPanel() {
   const renderInlineMarkdown = useCallback((text) => {
     if (!text) return '';
 
-    let html = esc(text);
+    // Helper to process inline code within a text segment
+    const processInlineCode = (segment) => {
+      return segment.replace(/`([^`\n]+)`/g, (_, code) => {
+        return `<code>${esc(code)}</code>`;
+      });
+    };
 
-    // Code blocks (``` fenced)
-    html = html.replace(/```([a-z]*)\n([\s\S]*?)```/g, (_, lang, code) => {
-      return `<pre><code class="language-${esc(lang || 'text')}">${esc(code.trim())}</code></pre>`;
+    // Helper to escape and process inline code for text that's not a code block
+    const escapeAndProcessInline = (segment) => {
+      // Split by inline code backticks to preserve them
+      const parts = [];
+      let lastIndex = 0;
+      const regex = /`([^`\n]+)`/g;
+      let match;
+
+      while ((match = regex.exec(segment)) !== null) {
+        // Add escaped plain text before the code
+        if (match.index > lastIndex) {
+          parts.push(esc(segment.substring(lastIndex, match.index)));
+        }
+        // Add the code element
+        parts.push(`<code>${esc(match[1])}</code>`);
+        lastIndex = regex.lastIndex;
+      }
+
+      // Add any remaining text
+      if (lastIndex < segment.length) {
+        parts.push(esc(segment.substring(lastIndex)));
+      }
+
+      return parts.join('');
+    };
+
+    // Step 1: Extract and process code blocks first
+    const codeBlockParts = [];
+    const withoutCodeBlocks = text.replace(/```([a-zA-Z]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+      const placeholder = `\x00CODEBLOCK_${codeBlockParts.length}\x00`;
+      codeBlockParts.push(`<pre><code class="language-${esc(lang || 'text')}">${esc(code.trim())}</code></pre>`);
+      return placeholder;
     });
 
-    // Inline code (`code`)
-    html = html.replace(/`([^`\n]+)`/g, (_, code) => {
-      return `<code>${esc(code)}</code>`;
-    });
-
-    // Split by lines to handle list items
-    const lines = html.split('\n');
+    // Step 2: Process lists line by line
+    const lines = withoutCodeBlocks.split('\n');
     const formatted = [];
     let inList = false;
     let listType = null;
@@ -246,16 +275,27 @@ export function ChatPanel() {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
+      // Check for code block placeholder - pass through as-is
+      if (line.includes('\x00CODEBLOCK_')) {
+        if (inList) {
+          formatted.push(listType === 'ul' ? '</ul>' : '</ol>');
+          inList = false;
+          listType = null;
+        }
+        formatted.push(line);
+        continue;
+      }
+
       // Bullet list (-, *, +)
       const bulletMatch = line.match(/^(\s*)([-*+])\s+(.*)$/);
       if (bulletMatch) {
         if (!inList || listType !== 'ul') {
-          if (inList) formatted.push('</ol>');
+          if (inList) formatted.push('</ol>'); // Close previous ol if switching
           formatted.push('<ul>');
           inList = true;
           listType = 'ul';
         }
-        formatted.push(`<li>${bulletMatch[3]}</li>`);
+        formatted.push(`<li>${escapeAndProcessInline(bulletMatch[3])}</li>`);
         continue;
       }
 
@@ -263,12 +303,12 @@ export function ChatPanel() {
       const numberedMatch = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
       if (numberedMatch) {
         if (!inList || listType !== 'ol') {
-          if (inList) formatted.push('</ul>');
+          if (inList) formatted.push('</ul>'); // Close previous ul if switching
           formatted.push('<ol>');
           inList = true;
           listType = 'ol';
         }
-        formatted.push(`<li>${numberedMatch[3]}</li>`);
+        formatted.push(`<li>${escapeAndProcessInline(numberedMatch[3])}</li>`);
         continue;
       }
 
@@ -278,7 +318,8 @@ export function ChatPanel() {
         inList = false;
         listType = null;
       }
-      formatted.push(line);
+
+      formatted.push(escapeAndProcessInline(line));
     }
 
     // Close any open list
@@ -286,7 +327,13 @@ export function ChatPanel() {
       formatted.push(listType === 'ul' ? '</ul>' : '</ol>');
     }
 
-    return formatted.join('\n');
+    // Step 3: Restore code blocks
+    let html = formatted.join('\n');
+    codeBlockParts.forEach((block, i) => {
+      html = html.replace(`\x00CODEBLOCK_${i}\x00`, block);
+    });
+
+    return html;
   }, []);
 
   // Save and restore drafts when team changes
