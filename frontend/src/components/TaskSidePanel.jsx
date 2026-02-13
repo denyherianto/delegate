@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks";
 import {
-  currentTeam, tasks, taskPanelId, knownAgentNames, bossName,
+  currentTeam, tasks, taskPanelId, knownAgentNames, humanName,
   panelStack, pushPanel, closeAllPanels, popPanel, taskTeamFilter,
 } from "../state.js";
 import * as api from "../api.js";
@@ -536,7 +536,7 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
   const [showingAll, setShowingAll] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const team = currentTeam.value;
-  const boss = bossName.value || "boss";
+  const boss = humanName.value || "boss";
   const agentNames = knownAgentNames.value || [];
 
   // Transform raw activity data into timeline format

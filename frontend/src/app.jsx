@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { batch, useSignalEffect } from "@preact/signals";
 import {
-  currentTeam, teams, bossName, hcHome, tasks, agents, agentStatsMap, messages,
+  currentTeam, teams, humanName, hcHome, tasks, agents, agentStatsMap, messages,
   activeTab, knownAgentNames,
   panelStack, popPanel, closeAllPanels,
   agentLastActivity, agentActivityLog, agentTurnState, managerTurnContext,
@@ -140,7 +140,8 @@ function App() {
     (async () => {
       try {
         const cfg = await api.fetchConfig();
-        if (cfg.boss_name) bossName.value = cfg.boss_name;
+        if (cfg.human_name) humanName.value = cfg.human_name;
+        else if (cfg.boss_name) humanName.value = cfg.boss_name;
         if (cfg.hc_home) hcHome.value = cfg.hc_home;
       } catch (e) { }
       try {
@@ -305,7 +306,7 @@ function App() {
 
           // Get action items (already filtered to in_approval, merge_failed)
           const currentActionItems = tasks.value.filter(t =>
-            t.assignee && t.assignee.toLowerCase() === bossName.value.toLowerCase() &&
+            t.assignee && t.assignee.toLowerCase() === humanName.value.toLowerCase() &&
             ["in_approval", "merge_failed"].includes(t.status)
           );
 
@@ -321,7 +322,7 @@ function App() {
           // Get unread message count
           const unreadCount = lastSeen
             ? messages.value.filter(m =>
-                m.recipient === bossName.value &&
+                m.recipient === humanName.value &&
                 m.created_at > lastSeen
               ).length
             : 0;
@@ -449,7 +450,7 @@ function App() {
                 tasks.value = next;
 
                 // Fire toasts for task status changes
-                const boss = bossName.value;
+                const boss = humanName.value;
 
                 // Task assigned to boss (in_approval or merge_failed)
                 if (entry.assignee && entry.assignee.toLowerCase() === boss.toLowerCase() &&

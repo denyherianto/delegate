@@ -7,7 +7,9 @@ import { signal, computed } from "@preact/signals";
 // ── Core data ──
 export const currentTeam = signal("");
 export const teams = signal([]);
-export const bossName = signal("boss");
+export const humanName = signal("boss");
+/** @deprecated Use humanName instead */
+export const bossName = humanName;
 export const hcHome = signal("");   // absolute path to delegate home (e.g. /Users/x/.delegate)
 
 // ── Task team filter ──
@@ -189,11 +191,11 @@ export const managerTurnContext = signal(null);
 const _terminalStatuses = new Set(["done", "cancelled"]);
 
 export const actionItems = computed(() => {
-  const boss = bossName.value.toLowerCase();
+  const human = humanName.value.toLowerCase();
   return tasks.value
     .filter(t =>
       t.assignee &&
-      t.assignee.toLowerCase() === boss &&
+      t.assignee.toLowerCase() === human &&
       !_terminalStatuses.has(t.status)
     )
     .sort((a, b) => (a.updated_at || "").localeCompare(b.updated_at || ""));

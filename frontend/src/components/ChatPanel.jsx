@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks"
 import {
   currentTeam, messages, agents, activeTab,
   chatFilterDirection, openPanel,
-  knownAgentNames, isMuted, bossName, expandedMessages,
+  knownAgentNames, isMuted, humanName, expandedMessages,
   commandMode, commandCwd, teams, navigate,
 } from "../state.js";
 import * as api from "../api.js";
@@ -464,8 +464,8 @@ export function ChatPanel() {
       id: placeholderId,
       type: 'command',
       content: cmd.raw,
-      sender: bossName.value || 'boss',
-      recipient: bossName.value || 'boss',
+      sender: humanName.value || 'boss',
+      recipient: humanName.value || 'boss',
       timestamp: now,
       result: null, // null = running
     };
@@ -560,7 +560,7 @@ export function ChatPanel() {
       const now = new Date().toISOString();
       const optimistic = {
         id: `optimistic-${Date.now()}`,
-        sender: bossName.value || "boss",
+        sender: humanName.value || "boss",
         recipient: recipient,
         content: val,
         created_at: now,
@@ -742,7 +742,7 @@ export function ChatPanel() {
           }
           const contentHtml = linkifyFilePaths(linkifyTaskRefs(renderMarkdown(m.content)));
           const senderLower = m.sender.toLowerCase();
-          const boss = (bossName.value || "boss").toLowerCase();
+          const boss = (humanName.value || "boss").toLowerCase();
           const isBoss = senderLower === boss;
           const isToBoss = (m.recipient || "").toLowerCase() === boss;
           return (
