@@ -7,7 +7,7 @@ import { signal, computed } from "@preact/signals";
 // ── Core data ──
 export const currentTeam = signal("");
 export const teams = signal([]);
-export const humanName = signal("boss");
+export const humanName = signal("human");
 /** @deprecated Use humanName instead */
 export const bossName = humanName;
 export const hcHome = signal("");   // absolute path to delegate home (e.g. /Users/x/.delegate)

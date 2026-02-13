@@ -450,10 +450,10 @@ function App() {
                 tasks.value = next;
 
                 // Fire toasts for task status changes
-                const boss = humanName.value;
+                const human = humanName.value;
 
-                // Task assigned to boss (in_approval or merge_failed)
-                if (entry.assignee && entry.assignee.toLowerCase() === boss.toLowerCase() &&
+                // Task assigned to human (in_approval or merge_failed)
+                if (entry.assignee && entry.assignee.toLowerCase() === human.toLowerCase() &&
                     (entry.status === "in_approval" || entry.status === "merge_failed")) {
                   const title = `T${String(tid).padStart(4, "0")} "${task.title}"`;
                   const body = entry.status === "in_approval"

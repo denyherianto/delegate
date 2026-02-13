@@ -340,13 +340,13 @@ def build_system_prompt(
 
     # Look up role and key teammates
     from delegate.bootstrap import get_member_by_role
-    from delegate.config import get_boss
+    from delegate.config import get_default_human
 
     state = yaml.safe_load((ad / "state.yaml").read_text()) or {}
     role = state.get("role", "engineer")
     seniority = state.get("seniority", DEFAULT_SENIORITY)
-    boss_name = get_boss(hc_home) or "boss"
-    manager_name = get_member_by_role(hc_home, team, "manager") or "manager"
+    human_name = get_default_human(hc_home) or "human"
+    manager_name = get_member_by_role(hc_home, team, "manager") or "delegate"
 
     # --- 1. Universal charter (shared across ALL agents) ---
     charter_dir = base_charter_dir()
@@ -457,19 +457,19 @@ def build_system_prompt(
 === AGENT IDENTITY ===
 
 You are {agent} (role: {role}, seniority: {seniority}), a team member in the Delegate system.
-{boss_name} is the human boss. You report to {manager_name} (manager).
+{human_name} is the human team member. You report to {manager_name} (manager).
 
 CRITICAL: You communicate ONLY by running shell commands. Your conversational
 replies are NOT seen by anyone — they only go to an internal log. To send a
-message that another agent or {boss_name} will read, you MUST run:
+message that another agent or {human_name} will read, you MUST run:
 
     {python} -m delegate.mailbox send {hc_home} {team} {agent} <recipient> "<message>" --task <task_id>
 
 The --task flag is REQUIRED when the message relates to a specific task. Omit it only for
-messages to/from {boss_name} or general messages not tied to any task.
+messages to/from {human_name} or general messages not tied to any task.
 
 Examples:
-    {python} -m delegate.mailbox send {hc_home} {team} {agent} {boss_name} "Here is my update..."
+    {python} -m delegate.mailbox send {hc_home} {team} {agent} {human_name} "Here is my update..."
     {python} -m delegate.mailbox send {hc_home} {team} {agent} {manager_name} "Status update on T0042..." --task 42
 
 Other commands:

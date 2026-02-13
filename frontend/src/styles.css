@@ -4,7 +4,7 @@
 /* ================================================================
    Variables — Grayscale palette inspired by VS Code / Cursor
    Colors used sparingly with semantic meaning:
-     Red    = boss attention needed
+     Red    = human attention needed
      Orange = off track / warning
      Yellow = in progress
      Green  = done / healthy
@@ -76,7 +76,7 @@ html, body { height: 100%; }
   --backdrop-bg: rgba(0,0,0,0.55);
 
   /* ── Status dots — semantic color mapping ──
-     Red:    boss attention needed (in_approval, merge_failed)
+     Red:    human attention needed (in_approval, merge_failed)
      Orange: off track (rejected)
      Yellow: in progress (in_progress, in_review, merging)
      Green:  done/healthy
@@ -658,7 +658,7 @@ body {
 .msg:last-child { border-bottom: none; }
 .msg:hover { background: rgba(255, 255, 255, 0.02); }
 
-/* Non-boss messages: dimmed content for visual hierarchy */
+/* Non-human messages: dimmed content for visual hierarchy */
 .msg-content-dim {
   opacity: 0.6;
 }

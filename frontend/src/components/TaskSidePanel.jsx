@@ -536,7 +536,7 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
   const [showingAll, setShowingAll] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const team = currentTeam.value;
-  const boss = humanName.value || "boss";
+  const human = humanName.value || "human";
   const agentNames = knownAgentNames.value || [];
 
   // Transform raw activity data into timeline format
@@ -597,7 +597,7 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
     if (!body || posting) return;
     setPosting(true);
     try {
-      await api.postTaskComment(team, taskId, boss, body);
+      await api.postTaskComment(team, taskId, human, body);
       setCommentText("");
       // Trigger refresh from parent
       if (onLoadActivity) onLoadActivity();

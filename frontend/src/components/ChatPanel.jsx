@@ -59,7 +59,7 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
 // ── Collapsible long message ──
 const COLLAPSE_THRESHOLD = 90; // ~4 lines at 14px * 1.6 line-height = 89.6px
 
-function CollapsibleMessage({ html, messageId, isBoss }) {
+function CollapsibleMessage({ html, messageId, isHuman }) {
   const contentRef = useRef();
   const [isLong, setIsLong] = useState(false);
   const isExpanded = expandedMessages.value.has(messageId);
@@ -94,7 +94,7 @@ function CollapsibleMessage({ html, messageId, isBoss }) {
 
   const wrapperClass = "msg-content-wrapper" + (isLong && !isExpanded ? " collapsed" : "");
 
-  const contentClass = isBoss ? "msg-content md-content" : "msg-content md-content msg-content-dim";
+  const contentClass = isHuman ? "msg-content md-content" : "msg-content md-content msg-content-dim";
 
   return (
     <>
@@ -464,8 +464,8 @@ export function ChatPanel() {
       id: placeholderId,
       type: 'command',
       content: cmd.raw,
-      sender: humanName.value || 'boss',
-      recipient: humanName.value || 'boss',
+      sender: humanName.value || 'human',
+      recipient: humanName.value || 'human',
       timestamp: now,
       result: null, // null = running
     };
@@ -560,7 +560,7 @@ export function ChatPanel() {
       const now = new Date().toISOString();
       const optimistic = {
         id: `optimistic-${Date.now()}`,
-        sender: humanName.value || "boss",
+        sender: humanName.value || "human",
         recipient: recipient,
         content: val,
         created_at: now,
@@ -742,9 +742,9 @@ export function ChatPanel() {
           }
           const contentHtml = linkifyFilePaths(linkifyTaskRefs(renderMarkdown(m.content)));
           const senderLower = m.sender.toLowerCase();
-          const boss = (humanName.value || "boss").toLowerCase();
-          const isBoss = senderLower === boss;
-          const isToBoss = (m.recipient || "").toLowerCase() === boss;
+          const human = (humanName.value || "human").toLowerCase();
+          const isHuman = senderLower === human;
+          const isToHuman = (m.recipient || "").toLowerCase() === human;
           return (
             <div key={m.id || i} class="msg">
               <div class="msg-body">
@@ -771,7 +771,7 @@ export function ChatPanel() {
                   <span class="msg-time" dangerouslySetInnerHTML={{ __html: fmtTimestamp(m.timestamp) }} />
                   <span class="msg-checkmark" dangerouslySetInnerHTML={{ __html: msgStatusIcon(m) }} />
                 </div>
-                <CollapsibleMessage html={contentHtml} messageId={m.id} isBoss={isBoss || isToBoss} />
+                <CollapsibleMessage html={contentHtml} messageId={m.id} isHuman={isHuman || isToHuman} />
               </div>
             </div>
           );
