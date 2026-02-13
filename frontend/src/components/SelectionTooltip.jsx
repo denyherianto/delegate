@@ -109,13 +109,20 @@ export function SelectionTooltip({ containerRef, chatInputRef }) {
     textarea.style.height = "auto";
     textarea.style.height = textarea.scrollHeight + "px";
 
-    // Focus and place cursor at the end
-    textarea.focus();
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    // Trigger input event to update React state in ChatPanel
+    const inputEvent = new Event('input', { bubbles: true });
+    textarea.dispatchEvent(inputEvent);
 
     // Clear selection and hide tooltip
     window.getSelection().removeAllRanges();
     hideTooltip();
+
+    // Focus and place cursor at the end AFTER tooltip unmounts
+    // Using requestAnimationFrame ensures this happens after the DOM updates
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    });
   }, [selectedText, chatInputRef, hideTooltip]);
 
   useEffect(() => {

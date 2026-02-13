@@ -218,9 +218,17 @@ export function ChatPanel() {
   const pollingIntervalRef = useRef(null);
   const draftsByTeam = useRef({}); // Store drafts per team
   const lastTeamRef = useRef(team); // Track last team to detect switches
+  const [showMarkdownPreview, setShowMarkdownPreview] = useState(false);
 
   const mic = useSpeechRecognition(inputRef);
   const muted = isMuted.value;
+
+  // Detect if input contains markdown syntax
+  const hasMarkdownSyntax = useCallback((text) => {
+    if (!text || text.trim().length === 0) return false;
+    // Check for code blocks (```), inline code (`), headers (#), bold (**), italic (*), links, etc.
+    return /```|`[^`]+`|^#{1,6}\s|^\s*[-*+]\s|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\)|^>\s/m.test(text);
+  }, []);
 
   // Save and restore drafts when team changes
   useEffect(() => {
@@ -840,8 +848,20 @@ export function ChatPanel() {
               const match = cmd.args.match(/-d\s+(\S+)/);
               if (match) commandCwd.value = match[1];
             }
+
+            // Show/hide markdown preview
+            setShowMarkdownPreview(!commandMode.value && hasMarkdownSyntax(val));
           }}
         />
+        {showMarkdownPreview && inputVal && (
+          <div class="chat-markdown-preview">
+            <div class="chat-markdown-preview-header">Preview</div>
+            <div
+              class="chat-markdown-preview-content md-content"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(inputVal) }}
+            />
+          </div>
+        )}
         {commandMode.value && parseCommand(inputVal)?.name === 'shell' && (
           <div class="chat-cwd-badge">
             <span class="chat-cwd-label">cwd:</span>

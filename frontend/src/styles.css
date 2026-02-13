@@ -888,6 +888,33 @@ body {
 }
 .chat-input-box textarea::placeholder { color: var(--text-muted); }
 
+/* Markdown preview panel */
+.chat-markdown-preview {
+  border-top: 1px solid var(--border-subtle);
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-surface);
+}
+.chat-markdown-preview-header {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 6px 14px 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.chat-markdown-preview-content {
+  padding: 0 14px 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.chat-markdown-preview-content pre {
+  margin: 4px 0;
+}
+.chat-markdown-preview-content code {
+  font-size: 12px;
+}
+
 /* Toolbar at bottom of input box */
 .chat-input-toolbar {
   display: flex;
