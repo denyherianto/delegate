@@ -35,7 +35,8 @@ jobs:
       - name: Create venv and install
         run: |
           uv venv .venv
-          uv pip install -e ".[dev]" --python .venv/bin/python
+          uv pip install -e . --python .venv/bin/python
+          uv pip install pytest pytest-asyncio httpx --python .venv/bin/python
 
       - name: Run pytest
         run: .venv/bin/python -m pytest tests/ -x -q
