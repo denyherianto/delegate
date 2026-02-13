@@ -175,7 +175,12 @@ function AgentsWidget({ collapsed }) {
     <div class="sb-widget">
       <div class="sb-widget-header">Agents</div>
       {sorted.map(({ agent: a, status, displayTaskId }) => {
-        const dotClass = getAgentDotClass(a, allTasks, statsMap[a.name]);
+        let dotClass = getAgentDotClass(a, allTasks, statsMap[a.name]);
+
+        // Override dot color for idle agents
+        if (status === "idle") {
+          dotClass = "dot-offline";
+        }
 
         // Get last 1 tool invocation for this agent
         const agentActivities = activityLog
