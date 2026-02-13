@@ -46,7 +46,7 @@ def get_messages(
     query = """
         SELECT
             id, timestamp, sender, recipient, content, type, task_id,
-            delivered_at, seen_at, processed_at
+            delivered_at, seen_at, processed_at, result
         FROM messages
         WHERE 1=1
     """

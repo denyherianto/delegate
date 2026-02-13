@@ -26,7 +26,8 @@ class TestSchema:
         columns = {row[1] for row in cursor.fetchall()}
         conn.close()
         # V9 added delivered_at, seen_at, processed_at to messages table
-        assert columns == {"id", "timestamp", "sender", "recipient", "content", "type", "task_id", "delivered_at", "seen_at", "processed_at"}
+        # V10 added result for magic commands support
+        assert columns == {"id", "timestamp", "sender", "recipient", "content", "type", "task_id", "delivered_at", "seen_at", "processed_at", "result"}
 
     def test_sessions_table_exists(self, tmp_team):
         conn = sqlite3.connect(str(_db_path(tmp_team, TEAM)))

@@ -920,6 +920,119 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         )
         return {"status": "sent"}
 
+    # --- Magic commands endpoints ---
+
+    class ShellExecRequest(BaseModel):
+        command: str
+        cwd: str | None = None
+        timeout: int = 30
+
+    @app.post("/teams/{team}/exec/shell")
+    def exec_shell(team: str, req: ShellExecRequest):
+        """Execute a shell command for the boss (magic commands feature).
+
+        Resolves CWD in priority order:
+        1. Explicit req.cwd if provided
+        2. First repo root for the team
+        3. User's home directory
+        """
+        import time
+        from delegate.paths import repos_dir
+
+        # Resolve CWD
+        resolved_cwd: str
+        if req.cwd:
+            resolved_cwd = req.cwd
+        else:
+            # Try to get first repo root
+            repos_path = repos_dir(hc_home, team)
+            if repos_path.exists():
+                repo_links = sorted(repos_path.iterdir())
+                if repo_links:
+                    # Follow the symlink to get the real repo path
+                    first_repo = repo_links[0]
+                    if first_repo.is_symlink():
+                        resolved_cwd = str(first_repo.resolve())
+                    else:
+                        resolved_cwd = str(first_repo)
+                else:
+                    # No repos, use home directory
+                    resolved_cwd = str(Path.home())
+            else:
+                # No repos dir, use home directory
+                resolved_cwd = str(Path.home())
+
+        # Validate CWD exists
+        cwd_path = Path(resolved_cwd)
+        if not cwd_path.exists() or not cwd_path.is_dir():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Directory not found: {resolved_cwd}"
+            )
+
+        # Execute command
+        start_time = time.time()
+        try:
+            result = subprocess.run(
+                req.command,
+                shell=True,
+                cwd=resolved_cwd,
+                capture_output=True,
+                text=True,
+                timeout=req.timeout,
+            )
+            duration_ms = int((time.time() - start_time) * 1000)
+
+            return {
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "exit_code": result.returncode,
+                "cwd": resolved_cwd,
+                "duration_ms": duration_ms,
+            }
+        except subprocess.TimeoutExpired as e:
+            duration_ms = int((time.time() - start_time) * 1000)
+            return {
+                "stdout": e.stdout.decode() if e.stdout else "",
+                "stderr": e.stderr.decode() if e.stderr else "",
+                "exit_code": -1,
+                "cwd": resolved_cwd,
+                "duration_ms": duration_ms,
+                "error": f"Command timed out after {req.timeout}s",
+            }
+        except FileNotFoundError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Command execution failed: {str(e)}"
+            )
+
+    class CommandMessage(BaseModel):
+        command: str
+        result: dict
+
+    @app.post("/teams/{team}/commands")
+    def save_command(team: str, msg: CommandMessage):
+        """Persist a command and its result as a message in the DB.
+
+        Commands are stored with type='command' and both sender and recipient
+        set to the boss name. The result is stored as JSON.
+        """
+        from delegate.db import get_connection
+
+        boss_name = get_boss(hc_home) or "boss"
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+        conn = get_connection(hc_home, team)
+        cursor = conn.execute(
+            "INSERT INTO messages (sender, recipient, content, type, result, delivered_at) VALUES (?, ?, ?, 'command', ?, ?)",
+            (boss_name, boss_name, msg.command, json.dumps(msg.result), now)
+        )
+        conn.commit()
+        msg_id = cursor.lastrowid
+        conn.close()
+
+        return {"id": msg_id}
+
     # --- Legacy global endpoints (aggregate across all teams) ---
     # Prefixed with /api/ to avoid colliding with SPA routes (/tasks, /agents).
 
