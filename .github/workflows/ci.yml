@@ -91,3 +91,99 @@ jobs:
           name: playwright-report-${{ matrix.os }}-py${{ matrix.python }}-${{ matrix.browser }}
           path: playwright-report/
           retention-days: 14
+
+  # ── Publish to PyPI (only on main, only when version bumps) ──
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [pytest, playwright]
+    permissions:
+      id-token: write  # required for trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Get local version
+        id: local
+        run: |
+          version=$(python -c "
+          import tomllib
+          with open('pyproject.toml', 'rb') as f:
+              print(tomllib.load(f)['project']['version'])
+          ")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Get published version
+        id: pypi
+        run: |
+          published=$(pip index versions delegate-ai 2>/dev/null \
+            | head -1 | sed 's/.*(\(.*\))/\1/' || echo "0.0.0")
+          echo "version=$published" >> "$GITHUB_OUTPUT"
+
+      - name: Check if version is new
+        id: check
+        run: |
+          python -c "
+          from packaging.version import Version
+          local = Version('${{ steps.local.outputs.version }}')
+          pypi = Version('${{ steps.pypi.outputs.version }}')
+          if local > pypi:
+              print('Version bump detected: {} -> {}'.format(pypi, local))
+          else:
+              print('No version bump: local={}, pypi={}'.format(local, pypi))
+          import sys; sys.exit(0 if local > pypi else 1)
+          " && echo "new=true" >> "$GITHUB_OUTPUT" \
+            || echo "new=false" >> "$GITHUB_OUTPUT"
+
+      - name: Build package
+        if: steps.check.outputs.new == 'true'
+        run: |
+          uv venv .venv
+          uv pip install hatchling --python .venv/bin/python
+          .venv/bin/python -m build 2>/dev/null || {
+            uv pip install build --python .venv/bin/python
+            .venv/bin/python -m build
+          }
+
+      - name: Publish to PyPI
+        if: steps.check.outputs.new == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # Uses trusted publishing (OIDC) — no API token needed.
+        # Configure at: https://pypi.org/manage/project/delegate-ai/settings/publishing/
+
+  # ── Verify published package installs and works ──
+  install-test:
+    name: install-test · py${{ matrix.python }}
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [publish]
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install from PyPI
+        run: |
+          pip install delegate-ai
+          # Brief pause for PyPI index propagation
+          sleep 5
+          pip install --upgrade delegate-ai
+
+      - name: Verify CLI entry point
+        run: delegate --help
+
+      - name: Verify Python import
+        run: python -c "import delegate; print('OK:', delegate.__file__)"
