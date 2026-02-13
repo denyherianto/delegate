@@ -199,7 +199,20 @@ def bootstrap(
     # is deleted and recreated with the same name.
     tid_path = _team_id_path(hc_home, team_name)
     if not tid_path.exists():
-        tid_path.write_text(uuid.uuid4().hex[:6] + "\n")
+        team_id = uuid.uuid4().hex[:6]
+        tid_path.write_text(team_id + "\n")
+
+        # Register team in global teams table
+        from delegate.db import get_connection
+        conn = get_connection(hc_home, "")
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO teams (name, team_id) VALUES (?, ?)",
+                (team_name, team_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     # Read the team_id and register the team in the global teams table
     team_id = tid_path.read_text().strip()
