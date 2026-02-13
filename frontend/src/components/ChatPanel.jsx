@@ -89,12 +89,14 @@ function CollapsibleMessage({ html, messageId, isBoss }) {
 
   const wrapperClass = "msg-content-wrapper" + (isLong && !isExpanded ? " collapsed" : "");
 
+  const contentClass = isBoss ? "msg-content md-content" : "msg-content md-content msg-content-dim";
+
   return (
     <>
       <div class={wrapperClass}>
-        <LinkedDiv class="msg-content md-content" html={html} ref={contentRef} />
+        <LinkedDiv class={contentClass} html={html} ref={contentRef} />
         {isLong && !isExpanded && (
-          <div class={`msg-fade-overlay ${isBoss ? 'msg-fade-overlay-boss' : ''}`} />
+          <div class="msg-fade-overlay" />
         )}
       </div>
       {isLong && (
@@ -548,9 +550,8 @@ export function ChatPanel() {
           const boss = (bossName.value || "boss").toLowerCase();
           const isBoss = senderLower === boss;
           const isToBoss = (m.recipient || "").toLowerCase() === boss;
-          const msgClass = (isBoss || isToBoss) ? "msg msg-boss" : "msg";
           return (
-            <div key={m.id || i} class={msgClass}>
+            <div key={m.id || i} class="msg">
               <div class="msg-body">
                 <div class="msg-header">
                   <span
