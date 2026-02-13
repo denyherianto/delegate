@@ -407,8 +407,8 @@ def _start_esbuild_watch(frontend_dir: Path) -> subprocess.Popen | None:
     proc = subprocess.Popen(
         [node, build_js, "--watch"],
         cwd=str(frontend_dir),
-        # Put in its own process group so we can kill node + esbuild together
-        start_new_session=True,
+        # Stay in parent's process group so child dies when parent is killed.
+        # (start_new_session=True caused orphaned esbuild on CI.)
     )
     return proc
 
@@ -449,19 +449,19 @@ async def _lifespan(app: FastAPI):
 
     yield
 
-    # Shut down esbuild watcher (kill entire process group: node + esbuild)
+    # Shut down esbuild watcher
     if esbuild_proc is not None:
         logger.info("Stopping esbuild watcher (PID %d)", esbuild_proc.pid)
         try:
-            os.killpg(os.getpgid(esbuild_proc.pid), signal_mod.SIGTERM)
-        except (OSError, ProcessLookupError):
+            esbuild_proc.terminate()
+        except OSError:
             pass
         try:
             esbuild_proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             try:
-                os.killpg(os.getpgid(esbuild_proc.pid), signal_mod.SIGKILL)
-            except (OSError, ProcessLookupError):
+                esbuild_proc.kill()
+            except OSError:
                 pass
 
     if task is not None:

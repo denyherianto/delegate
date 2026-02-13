@@ -16,6 +16,7 @@ jobs:
   pytest:
     name: pytest · ${{ matrix.os }} · py${{ matrix.python }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -45,6 +46,7 @@ jobs:
   playwright:
     name: e2e · ${{ matrix.os }} · py${{ matrix.python }} · ${{ matrix.browser }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
