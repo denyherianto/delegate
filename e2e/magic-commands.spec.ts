@@ -118,7 +118,7 @@ test.describe("Magic command autocomplete", () => {
     await textarea.fill("/");
 
     const dropdown = page.locator(".command-autocomplete");
-    await expect(dropdown).toBeVisible();
+    await expect(dropdown).toBeVisible({ timeout: 2_000 });
 
     // Click on /shell command
     const shellItem = dropdown.locator(".command-autocomplete-item", { has: page.locator(".command-name", { hasText: "/shell" }) });
