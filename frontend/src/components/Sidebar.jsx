@@ -144,17 +144,24 @@ function AgentsWidget({ collapsed }) {
     const inTurn = turn?.inTurn ?? false;
     const lastTaskId = turn?.taskId ?? null;
     const sender = turn?.sender ?? "";
-    const assignedTask = allTasks.find(t => t.assignee === a.name && t.status === "in_progress");
+    // Find assigned task with any non-terminal status
+    const assignedTask = allTasks.find(t =>
+      t.assignee === a.name &&
+      (t.status === "todo" || t.status === "in_progress" || t.status === "in_review" ||
+       t.status === "in_approval" || t.status === "merge_failed")
+    );
 
     let status = "idle";
     let displayTaskId = null;
     let respondingTo = null;
+    let taskStatus = null;
 
     if (inTurn) {
       status = "working";
       // Show task ID only if it's still assigned to this agent
       if (lastTaskId && assignedTask && assignedTask.id === lastTaskId) {
         displayTaskId = lastTaskId;
+        taskStatus = assignedTask.status;
       } else if (!lastTaskId && sender) {
         // In turn with no task but has sender -> responding to sender
         respondingTo = sender;
@@ -162,9 +169,10 @@ function AgentsWidget({ collapsed }) {
     } else if (assignedTask) {
       status = "waiting";
       displayTaskId = assignedTask.id;
+      taskStatus = assignedTask.status;
     }
 
-    return { agent: a, status, displayTaskId, respondingTo };
+    return { agent: a, status, displayTaskId, respondingTo, taskStatus };
   });
 
   // Sort: active (working first, then waiting) at top, idle at bottom, alphabetically within groups
@@ -179,7 +187,7 @@ function AgentsWidget({ collapsed }) {
   return (
     <div class="sb-widget">
       <div class="sb-widget-header">Agents</div>
-      {sorted.map(({ agent: a, status, displayTaskId, respondingTo }) => {
+      {sorted.map(({ agent: a, status, displayTaskId, respondingTo, taskStatus }) => {
         let dotClass = getAgentDotClass(a, allTasks, statsMap[a.name]);
 
         // Override dot color for idle agents
@@ -192,13 +200,18 @@ function AgentsWidget({ collapsed }) {
           .filter(entry => entry.agent === a.name && entry.type === "agent_activity")
           .slice(-1);
 
-        // Build status text with task ID embedded
-        let statusText = status;
-        if (status === "working" && displayTaskId) {
-          statusText = `working on ${taskIdStr(displayTaskId)}`;
-        } else if (status === "waiting" && displayTaskId) {
-          statusText = `waiting on ${taskIdStr(displayTaskId)}`;
-        }
+        // Derive verb from task status
+        const getStatusVerb = (taskSt) => {
+          if (!taskSt) return null;
+          switch (taskSt) {
+            case "in_progress": return "working on";
+            case "in_review": return "review";
+            case "in_approval": return "approval";
+            case "merge_failed": return "fixing";
+            case "todo": return "assigned";
+            default: return null;
+          }
+        };
 
         return (
           <div
@@ -220,9 +233,9 @@ function AgentsWidget({ collapsed }) {
                   </>
                 ) : (
                   <>
-                    {displayTaskId ? (
+                    {displayTaskId && taskStatus ? (
                       <>
-                        {status === "working" ? "working on " : "waiting on "}
+                        {getStatusVerb(taskStatus)}{" "}
                         <span
                           class="sb-agent-task-link"
                           onClick={(e) => { e.stopPropagation(); openPanel("task", displayTaskId); }}
