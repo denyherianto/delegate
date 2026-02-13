@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "preact/hooks";
 import {
   currentTeam, teams, tasks, agents, agentStatsMap,
   activeTab, openPanel,
-  agentLastActivity, agentActivityLog, agentTurnState, sidebarCollapsed,
+  agentActivityLog, agentTurnState, sidebarCollapsed,
   navigate, navigateTab,
 } from "../state.js";
 import {
