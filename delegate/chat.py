@@ -16,8 +16,8 @@ def log_event(hc_home: Path, team: str, description: str, *, task_id: int | None
     """Log a system event. Returns the event ID."""
     conn = get_connection(hc_home, team)
     cursor = conn.execute(
-        "INSERT INTO messages (sender, recipient, content, type, task_id) VALUES ('system', 'system', ?, 'event', ?)",
-        (description, task_id),
+        "INSERT INTO messages (sender, recipient, content, type, task_id, team) VALUES ('system', 'system', ?, 'event', ?, ?)",
+        (description, task_id, team),
     )
     conn.commit()
     msg_id = cursor.lastrowid
@@ -48,9 +48,9 @@ def get_messages(
             id, timestamp, sender, recipient, content, type, task_id,
             delivered_at, seen_at, processed_at, result
         FROM messages
-        WHERE 1=1
+        WHERE team = ?
     """
-    params: list = []
+    params: list = [team]
 
     if since:
         query += " AND timestamp > ?"
@@ -170,8 +170,8 @@ def start_session(hc_home: Path, team: str, agent: str, task_id: int | None = No
     """Start a new agent session. Returns session ID."""
     conn = get_connection(hc_home, team)
     cursor = conn.execute(
-        "INSERT INTO sessions (agent, task_id) VALUES (?, ?)",
-        (agent, task_id),
+        "INSERT INTO sessions (agent, task_id, team) VALUES (?, ?, ?)",
+        (agent, task_id, team),
     )
     conn.commit()
     session_id = cursor.lastrowid

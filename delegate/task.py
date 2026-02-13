@@ -127,13 +127,13 @@ def create_task(
                 project, priority, repo, tags,
                 created_at, updated_at, completed_at,
                 depends_on, branch, base_sha, commits,
-                rejection_reason, approval_status, merge_base, merge_tip
+                rejection_reason, approval_status, merge_base, merge_tip, team
             ) VALUES (
                 ?, ?, 'todo', ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, '',
                 ?, '', '{}', '{}',
-                '', '', '{}', '{}'
+                '', '', '{}', '{}', ?
             )""",
             (
                 title, description, assignee, assignee,
@@ -142,13 +142,14 @@ def create_task(
                 json.dumps([str(t) for t in tags] if tags else []),
                 now, now,
                 json.dumps([int(d) for d in depends_on] if depends_on else []),
+                team,
             ),
         )
         conn.commit()
         task_id = cursor.lastrowid
 
         # Read back the full row to return
-        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute("SELECT * FROM tasks WHERE team = ? AND id = ?", (team, task_id)).fetchone()
         task = task_row_to_dict(row)
     finally:
         conn.close()
@@ -183,12 +184,12 @@ def get_task(hc_home: Path, team: str, task_id: int) -> dict:
     """
     conn = get_connection(hc_home, team)
     try:
-        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute("SELECT * FROM tasks WHERE team = ? AND id = ?", (team, task_id)).fetchone()
     finally:
         conn.close()
 
     if row is None:
-        raise FileNotFoundError(f"Task {task_id} not found")
+        raise FileNotFoundError(f"Task {task_id} not found in team {team}")
 
     return task_row_to_dict(row)
 
@@ -235,11 +236,11 @@ def update_task(hc_home: Path, team: str, task_id: int, **updates) -> dict:
     conn = get_connection(hc_home, team)
     try:
         conn.execute(
-            f"UPDATE tasks SET {', '.join(set_parts)} WHERE id = ?",
-            params,
+            f"UPDATE tasks SET {', '.join(set_parts)} WHERE team = ? AND id = ?",
+            [team] + params,
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute("SELECT * FROM tasks WHERE team = ? AND id = ?", (team, task_id)).fetchone()
         task = task_row_to_dict(row)
     finally:
         conn.close()
@@ -658,8 +659,8 @@ def add_comment(hc_home: Path, team: str, task_id: int, author: str, body: str) 
     conn = get_connection(hc_home, team)
     try:
         cursor = conn.execute(
-            "INSERT INTO task_comments (task_id, author, body) VALUES (?, ?, ?)",
-            (task_id, author, body),
+            "INSERT INTO task_comments (task_id, author, body, team) VALUES (?, ?, ?, ?)",
+            (task_id, author, body, team),
         )
         conn.commit()
         comment_id = cursor.lastrowid
@@ -917,8 +918,8 @@ def list_tasks(
     """
     conn = get_connection(hc_home, team)
     try:
-        query = "SELECT * FROM tasks WHERE 1=1"
-        params: list = []
+        query = "SELECT * FROM tasks WHERE team = ?"
+        params: list = [team]
 
         if status:
             query += " AND status = ?"
