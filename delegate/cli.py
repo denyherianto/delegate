@@ -2,9 +2,9 @@
 
 Commands:
     delegate doctor                                  — verify runtime dependencies
-    delegate start [--port N]                        — start daemon (web UI + agents)
-    delegate stop                                    — stop running daemon
-    delegate status                                  — check if daemon is running
+    delegate start [--port N]                        — start delegate (web UI + agents)
+    delegate stop                                    — stop running delegate
+    delegate status                                  — check if delegate is running
     delegate team add <name> --manager M --agents a:role,b --repo /path  — create a new team
     delegate team list                               — list existing teams
     delegate team remove <name>                      — remove a team and all its data
@@ -77,7 +77,7 @@ def start(
     token_budget: int | None,
     foreground: bool,
 ) -> None:
-    """Start the delegate daemon (web UI + agent orchestration)."""
+    """Start delegate (web UI + agent orchestration)."""
     import webbrowser
     import time
     from delegate.daemon import start_daemon, is_running
@@ -103,7 +103,7 @@ def start(
 
     alive, pid = is_running(hc_home)
     if alive:
-        success(f"Daemon already running (PID {pid})")
+        success(f"Delegate already running (PID {pid})")
         success(f"UI: {url}")
         # Server is up — open browser immediately regardless of --foreground
         try:
@@ -112,7 +112,7 @@ def start(
             pass
         return
 
-    success(f"Starting daemon on port {port}...")
+    success(f"Starting delegate on port {port}...")
 
     if foreground:
         # foreground blocks forever; open browser from a background thread
@@ -146,9 +146,9 @@ def start(
             foreground=False,
         )
         if result_pid:
-            success(f"Daemon started (PID {result_pid})")
+            success(f"Delegate started (PID {result_pid})")
         else:
-            success("Daemon started")
+            success("Delegate started")
 
         success(f"UI: {url}")
 
@@ -162,35 +162,35 @@ def start(
 @main.command()
 @click.pass_context
 def stop(ctx: click.Context) -> None:
-    """Stop the running delegate daemon."""
+    """Stop the running delegate."""
     from delegate.daemon import stop_daemon, is_running
     from delegate.fmt import success, warn, info
 
     hc_home = _get_home(ctx)
     alive, _ = is_running(hc_home)
     if not alive:
-        warn("No running daemon found")
+        warn("Delegate is not running")
         return
 
-    info("Stopping daemon...")
+    info("Stopping delegate...")
     stopped = stop_daemon(hc_home)
     if stopped:
-        success("Daemon stopped")
+        success("Delegate stopped")
 
 
 @main.command()
 @click.pass_context
 def status(ctx: click.Context) -> None:
-    """Check if the daemon is running."""
+    """Check if delegate is running."""
     from delegate.daemon import is_running
     from delegate.fmt import success, info
 
     hc_home = _get_home(ctx)
     alive, pid = is_running(hc_home)
     if alive:
-        success(f"Daemon running (PID {pid})")
+        success(f"Delegate running (PID {pid})")
     else:
-        info("Daemon not running")
+        info("Delegate not running")
 
 
 # ──────────────────────────────────────────────────────────────
