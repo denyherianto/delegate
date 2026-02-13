@@ -218,16 +218,75 @@ export function ChatPanel() {
   const pollingIntervalRef = useRef(null);
   const draftsByTeam = useRef({}); // Store drafts per team
   const lastTeamRef = useRef(team); // Track last team to detect switches
-  const [showMarkdownPreview, setShowMarkdownPreview] = useState(false);
-
   const mic = useSpeechRecognition(inputRef);
   const muted = isMuted.value;
 
-  // Detect if input contains markdown syntax
-  const hasMarkdownSyntax = useCallback((text) => {
-    if (!text || text.trim().length === 0) return false;
-    // Check for code blocks (```), inline code (`), headers (#), bold (**), italic (*), links, etc.
-    return /```|`[^`]+`|^#{1,6}\s|^\s*[-*+]\s|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\)|^>\s/m.test(text);
+  // Render inline markdown subset (code blocks, inline code, lists)
+  const renderInlineMarkdown = useCallback((text) => {
+    if (!text) return '';
+
+    let html = esc(text);
+
+    // Code blocks (``` fenced)
+    html = html.replace(/```([a-z]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+      return `<pre><code class="language-${esc(lang || 'text')}">${esc(code.trim())}</code></pre>`;
+    });
+
+    // Inline code (`code`)
+    html = html.replace(/`([^`\n]+)`/g, (_, code) => {
+      return `<code>${esc(code)}</code>`;
+    });
+
+    // Split by lines to handle list items
+    const lines = html.split('\n');
+    const formatted = [];
+    let inList = false;
+    let listType = null;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Bullet list (-, *, +)
+      const bulletMatch = line.match(/^(\s*)([-*+])\s+(.*)$/);
+      if (bulletMatch) {
+        if (!inList || listType !== 'ul') {
+          if (inList) formatted.push('</ol>');
+          formatted.push('<ul>');
+          inList = true;
+          listType = 'ul';
+        }
+        formatted.push(`<li>${bulletMatch[3]}</li>`);
+        continue;
+      }
+
+      // Numbered list (1., 2., etc.)
+      const numberedMatch = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+      if (numberedMatch) {
+        if (!inList || listType !== 'ol') {
+          if (inList) formatted.push('</ul>');
+          formatted.push('<ol>');
+          inList = true;
+          listType = 'ol';
+        }
+        formatted.push(`<li>${numberedMatch[3]}</li>`);
+        continue;
+      }
+
+      // Not a list item
+      if (inList) {
+        formatted.push(listType === 'ul' ? '</ul>' : '</ol>');
+        inList = false;
+        listType = null;
+      }
+      formatted.push(line);
+    }
+
+    // Close any open list
+    if (inList) {
+      formatted.push(listType === 'ul' ? '</ul>' : '</ol>');
+    }
+
+    return formatted.join('\n');
   }, []);
 
   // Save and restore drafts when team changes
@@ -826,42 +885,39 @@ export function ChatPanel() {
             }}
           />
         )}
-        <textarea
-          ref={inputRef}
-          placeholder="Send a message..."
-          rows="2"
-          onKeyDown={handleKeydown}
-          onInput={(e) => {
-            const val = e.target.value;
-            e.target.style.height = "auto";
-            e.target.style.height = e.target.scrollHeight + "px";
-            setSendBtnActive(!!val.trim());
-            setInputVal(val);
+        <div class="chat-input-wrapper">
+          <textarea
+            ref={inputRef}
+            class={!commandMode.value && inputVal ? "chat-input-has-overlay" : ""}
+            placeholder="Send a message..."
+            rows="2"
+            onKeyDown={handleKeydown}
+            onInput={(e) => {
+              const val = e.target.value;
+              e.target.style.height = "auto";
+              e.target.style.height = e.target.scrollHeight + "px";
+              setSendBtnActive(!!val.trim());
+              setInputVal(val);
 
-            // Detect command mode
-            commandMode.value = val.startsWith('/');
+              // Detect command mode
+              commandMode.value = val.startsWith('/');
 
-            // Update CWD from parsed command if it has -d flag
-            const cmd = parseCommand(val);
-            if (cmd && cmd.name === 'shell' && cmd.args.includes('-d')) {
-              // Simple -d flag parsing (not perfect but works for basic usage)
-              const match = cmd.args.match(/-d\s+(\S+)/);
-              if (match) commandCwd.value = match[1];
-            }
-
-            // Show/hide markdown preview
-            setShowMarkdownPreview(!commandMode.value && hasMarkdownSyntax(val));
-          }}
-        />
-        {showMarkdownPreview && inputVal && (
-          <div class="chat-markdown-preview">
-            <div class="chat-markdown-preview-header">Preview</div>
+              // Update CWD from parsed command if it has -d flag
+              const cmd = parseCommand(val);
+              if (cmd && cmd.name === 'shell' && cmd.args.includes('-d')) {
+                // Simple -d flag parsing (not perfect but works for basic usage)
+                const match = cmd.args.match(/-d\s+(\S+)/);
+                if (match) commandCwd.value = match[1];
+              }
+            }}
+          />
+          {!commandMode.value && inputVal && (
             <div
-              class="chat-markdown-preview-content md-content"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(inputVal) }}
+              class="chat-input-overlay"
+              dangerouslySetInnerHTML={{ __html: renderInlineMarkdown(inputVal) }}
             />
-          </div>
-        )}
+          )}
+        </div>
         {commandMode.value && parseCommand(inputVal)?.name === 'shell' && (
           <div class="chat-cwd-badge">
             <span class="chat-cwd-label">cwd:</span>

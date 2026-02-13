@@ -45,45 +45,61 @@ async function testChatInputUX() {
   results.push({ test: 'Enter sends message', passed: cleared });
   console.log(`  Enter sends message: ${cleared ? 'PASS' : 'FAIL'}`);
 
-  // Test 3: Markdown preview shows for code blocks
-  console.log('\nTest 3: Markdown preview shows for code blocks');
+  // Test 3: Inline rendering shows for code blocks
+  console.log('\nTest 3: Inline rendering for code blocks');
   await textarea.fill('Here is some code:\n```js\nconst x = 1;\n```');
   await page.waitForTimeout(300);
-  let previewVisible = await page.locator('.chat-markdown-preview').isVisible().catch(() => false);
-  results.push({ test: 'Markdown preview for code', passed: previewVisible });
-  console.log(`  Preview shows for code block: ${previewVisible ? 'PASS' : 'FAIL'}`);
+  let overlayVisible = await page.locator('.chat-input-overlay').isVisible().catch(() => false);
+  let hasCodeBlock = false;
+  if (overlayVisible) {
+    hasCodeBlock = await page.locator('.chat-input-overlay pre code').count().then(c => c > 0);
+  }
+  results.push({ test: 'Inline rendering for code block', passed: overlayVisible && hasCodeBlock });
+  console.log(`  Inline overlay shows for code block: ${overlayVisible && hasCodeBlock ? 'PASS' : 'FAIL'}`);
 
-  // Test 4: Markdown preview shows for inline code
-  console.log('\nTest 4: Markdown preview shows for inline code');
+  // Test 4: Inline rendering shows for inline code
+  console.log('\nTest 4: Inline rendering for inline code');
   await textarea.fill('Use `console.log()` to print');
   await page.waitForTimeout(300);
-  previewVisible = await page.locator('.chat-markdown-preview').isVisible().catch(() => false);
-  results.push({ test: 'Markdown preview for inline code', passed: previewVisible });
-  console.log(`  Preview shows for inline code: ${previewVisible ? 'PASS' : 'FAIL'}`);
+  overlayVisible = await page.locator('.chat-input-overlay').isVisible().catch(() => false);
+  let hasInlineCode = false;
+  if (overlayVisible) {
+    hasInlineCode = await page.locator('.chat-input-overlay code').count().then(c => c > 0);
+  }
+  results.push({ test: 'Inline rendering for inline code', passed: overlayVisible && hasInlineCode });
+  console.log(`  Inline overlay shows for inline code: ${overlayVisible && hasInlineCode ? 'PASS' : 'FAIL'}`);
 
-  // Test 5: Markdown preview hides for plain text
-  console.log('\nTest 5: Markdown preview hides for plain text');
+  // Test 5: Inline rendering shows for bullet lists
+  console.log('\nTest 5: Inline rendering for bullet lists');
+  await textarea.fill('- Item 1\n- Item 2\n- Item 3');
+  await page.waitForTimeout(300);
+  overlayVisible = await page.locator('.chat-input-overlay').isVisible().catch(() => false);
+  let hasBulletList = false;
+  if (overlayVisible) {
+    hasBulletList = await page.locator('.chat-input-overlay ul li').count().then(c => c >= 3);
+  }
+  results.push({ test: 'Inline rendering for bullet list', passed: overlayVisible && hasBulletList });
+  console.log(`  Inline overlay shows for bullet list: ${overlayVisible && hasBulletList ? 'PASS' : 'FAIL'}`);
+
+  // Test 6: Inline rendering shows for numbered lists
+  console.log('\nTest 6: Inline rendering for numbered lists');
+  await textarea.fill('1. First\n2. Second\n3. Third');
+  await page.waitForTimeout(300);
+  overlayVisible = await page.locator('.chat-input-overlay').isVisible().catch(() => false);
+  let hasNumberedList = false;
+  if (overlayVisible) {
+    hasNumberedList = await page.locator('.chat-input-overlay ol li').count().then(c => c >= 3);
+  }
+  results.push({ test: 'Inline rendering for numbered list', passed: overlayVisible && hasNumberedList });
+  console.log(`  Inline overlay shows for numbered list: ${overlayVisible && hasNumberedList ? 'PASS' : 'FAIL'}`);
+
+  // Test 7: Inline overlay hidden for plain text
+  console.log('\nTest 7: Inline overlay hidden for plain text');
   await textarea.fill('Just plain text without any markdown');
   await page.waitForTimeout(300);
-  previewVisible = await page.locator('.chat-markdown-preview').isVisible().catch(() => false);
-  results.push({ test: 'Preview hidden for plain text', passed: !previewVisible });
-  console.log(`  Preview hidden for plain text: ${!previewVisible ? 'PASS' : 'FAIL'}`);
-
-  // Test 6: Markdown preview shows for headers
-  console.log('\nTest 6: Markdown preview shows for headers');
-  await textarea.fill('# Heading 1\n## Heading 2');
-  await page.waitForTimeout(300);
-  previewVisible = await page.locator('.chat-markdown-preview').isVisible().catch(() => false);
-  results.push({ test: 'Markdown preview for headers', passed: previewVisible });
-  console.log(`  Preview shows for headers: ${previewVisible ? 'PASS' : 'FAIL'}`);
-
-  // Test 7: Markdown preview shows for bold text
-  console.log('\nTest 7: Markdown preview shows for bold text');
-  await textarea.fill('This is **bold** text');
-  await page.waitForTimeout(300);
-  previewVisible = await page.locator('.chat-markdown-preview').isVisible().catch(() => false);
-  results.push({ test: 'Markdown preview for bold', passed: previewVisible });
-  console.log(`  Preview shows for bold: ${previewVisible ? 'PASS' : 'FAIL'}`);
+  overlayVisible = await page.locator('.chat-input-overlay').isVisible().catch(() => false);
+  results.push({ test: 'Overlay hidden for plain text', passed: !overlayVisible });
+  console.log(`  Overlay hidden for plain text: ${!overlayVisible ? 'PASS' : 'FAIL'}`);
 
   // Test 8: Reply cursor focus
   console.log('\nTest 8: Reply button focuses chatbox');

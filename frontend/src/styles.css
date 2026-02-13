@@ -888,31 +888,86 @@ body {
 }
 .chat-input-box textarea::placeholder { color: var(--text-muted); }
 
-/* Markdown preview panel */
-.chat-markdown-preview {
-  border-top: 1px solid var(--border-subtle);
-  max-height: 200px;
-  overflow-y: auto;
-  background: var(--bg-surface);
+/* Chat input with inline markdown formatting overlay */
+.chat-input-wrapper {
+  position: relative;
+  display: block;
 }
-.chat-markdown-preview-header {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-  padding: 6px 14px 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+
+.chat-input-wrapper textarea {
+  width: 100%;
+  display: block;
+  position: relative;
+  z-index: 2;
+  background: transparent;
 }
-.chat-markdown-preview-content {
-  padding: 0 14px 8px;
-  font-size: 13px;
+
+/* When overlay is present, make textarea text transparent but keep caret */
+.chat-input-wrapper textarea.chat-input-has-overlay {
+  color: transparent;
+  caret-color: var(--text-primary);
+}
+
+.chat-input-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px 14px;
+  font-family: inherit;
+  font-size: 14px;
   line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+  color: var(--text-primary);
 }
-.chat-markdown-preview-content pre {
+
+.chat-input-overlay code {
+  background: var(--code-bg);
+  color: var(--code-color);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.chat-input-overlay pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 8px 10px;
   margin: 4px 0;
+  overflow-x: auto;
 }
-.chat-markdown-preview-content code {
-  font-size: 12px;
+
+.chat-input-overlay pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+.chat-input-overlay ul,
+.chat-input-overlay ol {
+  margin: 4px 0;
+  padding-left: 24px;
+  list-style-position: outside;
+}
+
+.chat-input-overlay ul {
+  list-style-type: disc;
+}
+
+.chat-input-overlay ol {
+  list-style-type: decimal;
+}
+
+.chat-input-overlay li {
+  margin: 2px 0;
+  color: var(--text-primary);
 }
 
 /* Toolbar at bottom of input box */
