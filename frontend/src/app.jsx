@@ -9,6 +9,7 @@ import {
   helpOverlayOpen, sidebarCollapsed, bellPopoverOpen, isMuted,
   syncFromUrl, navigate, navigateTab, taskTeamFilter,
   actionItemCount, awaySummary, getLastSeen, updateLastSeen,
+  fetchWorkflows,
 } from "./state.js";
 import * as api from "./api.js";
 import { Sidebar } from "./components/Sidebar.jsx";
@@ -233,6 +234,9 @@ function App() {
     // Fetch data for new team (messages handled by ChatPanel)
     (async () => {
       try {
+        // Fetch workflows (cached — won't refetch if already loaded)
+        fetchWorkflows(t);
+
         const [taskData, agentData] = await Promise.all([
           api.fetchTasks(t),
           api.fetchAgents(t),

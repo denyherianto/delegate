@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "preact/hooks";
-import { currentTeam, tasks, activeTab, openPanel, taskTeamFilter, teams } from "../state.js";
+import { currentTeam, tasks, activeTab, openPanel, taskTeamFilter, teams, getWorkflowStages } from "../state.js";
 import { cap, fmtStatus, taskIdStr } from "../utils.js";
 import { playTaskSound } from "../audio.js";
 import { FilterBar, applyFilters } from "./FilterBar.jsx";
 import { CopyBtn } from "./CopyBtn.jsx";
 
-// ── Static field configs (enum options that don't change) ──
-const STATUS_OPTIONS = [
+// ── Fallback status options (used when no workflow is loaded) ──
+const FALLBACK_STATUS_OPTIONS = [
   "todo", "in_progress", "in_review", "in_approval", "merging", "done", "rejected", "merge_failed", "cancelled",
 ];
 const PRIORITY_OPTIONS = ["low", "medium", "high", "critical"];
@@ -112,8 +112,14 @@ export function TasksPanel() {
       }
     }
 
+    // Use workflow stages if available, otherwise fall back to hardcoded
+    const wfStages = getWorkflowStages(team, "standard");
+    const statusOpts = wfStages
+      ? wfStages.map(s => s.key)
+      : FALLBACK_STATUS_OPTIONS;
+
     return [
-      { key: "status", label: "Status", options: STATUS_OPTIONS },
+      { key: "status", label: "Status", options: statusOpts },
       { key: "assignee", label: "Assignee", options: [...assigneeSet].sort() },
       { key: "dri", label: "DRI", options: [...driSet].sort() },
       { key: "priority", label: "Priority", options: PRIORITY_OPTIONS },

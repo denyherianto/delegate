@@ -63,6 +63,7 @@ _TASK_FIELDS = frozenset({
     "completed_at", "depends_on", "branch", "base_sha",
     "rejection_reason", "approval_status", "merge_base", "merge_tip",
     "attachments", "review_attempt", "status_detail", "merge_attempts",
+    "workflow", "workflow_version",
 })
 
 
@@ -94,6 +95,8 @@ def create_task(
     depends_on: list[int] | None = None,
     repo: str | list[str] = "",
     tags: list[str] | None = None,
+    workflow_name: str = "standard",
+    workflow_version: int | None = None,
 ) -> dict:
     """Create a new task. Returns the task dict with assigned ID.
 
@@ -104,6 +107,10 @@ def create_task(
 
     *tags* is an optional free-form list of string labels (e.g.
     ``["bugfix", "frontend"]``).
+
+    *workflow_name* specifies which workflow this task follows (default: "standard").
+    *workflow_version* stamps a specific version; if None, uses the latest
+    registered version for the team (or 1 as fallback).
     """
     if not assignee or not assignee.strip():
         raise ValueError("Assignee/DRI is required when creating a task")
@@ -117,6 +124,11 @@ def create_task(
     else:
         repo_list = list(repo)
 
+    # Resolve workflow version
+    if workflow_version is None:
+        from delegate.workflow import get_latest_version
+        workflow_version = get_latest_version(hc_home, team, workflow_name) or 1
+
     now = _now()
     conn = get_connection(hc_home, team)
     try:
@@ -127,13 +139,15 @@ def create_task(
                 project, priority, repo, tags,
                 created_at, updated_at, completed_at,
                 depends_on, branch, base_sha, commits,
-                rejection_reason, approval_status, merge_base, merge_tip, team
+                rejection_reason, approval_status, merge_base, merge_tip, team,
+                workflow, workflow_version
             ) VALUES (
                 ?, ?, 'todo', ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, '',
                 ?, '', '{}', '{}',
-                '', '', '{}', '{}', ?
+                '', '', '{}', '{}', ?,
+                ?, ?
             )""",
             (
                 title, description, assignee, assignee,
@@ -143,6 +157,7 @@ def create_task(
                 now, now,
                 json.dumps([int(d) for d in depends_on] if depends_on else []),
                 team,
+                workflow_name, workflow_version,
             ),
         )
         conn.commit()
@@ -421,9 +436,17 @@ def _validate_review_gate(hc_home: Path, team: str, task: dict) -> None:
 
 
 def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_log: bool = False) -> dict:
-    """Change task status. Sets completed_at when moving to 'done'.
+    """Change task status with workflow-driven validation and hooks.
 
-    Validates status transitions according to VALID_TRANSITIONS.
+    If the task has a ``workflow`` field, loads the workflow definition
+    and uses it for transition validation and hook execution.  Otherwise
+    falls back to the legacy ``VALID_TRANSITIONS`` table.
+
+    Hook execution order:
+    1. ``exit()`` on the **old** stage (cleanup).
+    2. ``enter()`` on the **new** stage (gates, setup).
+       If ``enter()`` raises ``GateError``, the transition is aborted.
+    3. ``assign()`` on the **new** stage (optional reassignment).
 
     Args:
         hc_home: Home directory path
@@ -432,56 +455,104 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_
         status: New status to transition to
         suppress_log: If True, skip logging the status change event (default: False)
     """
-    if status not in VALID_STATUSES:
-        raise ValueError(f"Invalid status '{status}'. Must be one of: {VALID_STATUSES}")
     old_task = get_task(hc_home, team, task_id)
     current = old_task["status"]
 
-    # Validate transition
-    allowed = VALID_TRANSITIONS.get(current, set())
-    if allowed and status not in allowed:
-        raise ValueError(
-            f"Invalid transition: '{current}' \u2192 '{status}'. "
-            f"Allowed transitions from '{current}': {sorted(allowed)}"
-        )
-    if not allowed and current in VALID_TRANSITIONS:
-        # Terminal state — no transitions allowed out
-        raise ValueError(
-            f"Cannot transition from terminal status '{current}'."
-        )
+    wf_name = old_task.get("workflow", "")
+    wf_version = old_task.get("workflow_version", 0)
 
+    # ── Validate transition ──
+    if wf_name and wf_version:
+        # Workflow-driven validation
+        try:
+            from delegate.workflow import load_workflow_cached
+            wf = load_workflow_cached(hc_home, team, wf_name, wf_version)
+            wf.validate_transition(current, status)
+        except (FileNotFoundError, KeyError):
+            # Workflow file missing — fall back to legacy validation
+            _legacy_validate_transition(current, status)
+    else:
+        # Legacy validation
+        _legacy_validate_transition(current, status)
+
+    # ── Run workflow hooks ──
+    wf_def = None
+    if wf_name and wf_version:
+        try:
+            from delegate.workflow import load_workflow_cached
+            wf_def = load_workflow_cached(hc_home, team, wf_name, wf_version)
+        except (FileNotFoundError, KeyError):
+            wf_def = None
+
+    if wf_def:
+        from delegate.lib import Context
+        ctx = Context(hc_home, team, old_task)
+
+        # 1. Exit hook on old stage
+        if current in wf_def.stage_map:
+            try:
+                old_stage = wf_def.stage_map[current]()
+                old_stage.exit(ctx)
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "Exit hook failed for stage '%s' on %s: %s",
+                    current, format_task_id(task_id), exc,
+                )
+
+        # 2. Enter hook on new stage (can raise GateError to block)
+        if status in wf_def.stage_map:
+            new_stage = wf_def.stage_map[status]()
+            new_stage.enter(ctx)  # May raise GateError — intentionally not caught
+
+    # ── Build status updates ──
     old_status = current.replace("_", " ").title()
     updates: dict = {"status": status}
-    if status in ("done", "cancelled"):
-        updates["completed_at"] = _now()
 
-    # Safety net: backfill branch/base_sha when entering in_review or in_approval
-    # if they're still empty.
-    if status in ("in_review", "in_approval"):
-        _backfill_branch_metadata(hc_home, team, old_task, updates)
+    # Legacy fallback: handle completed_at for terminal states
+    if not wf_def:
+        if status in ("done", "cancelled"):
+            updates["completed_at"] = _now()
 
-    # Review gate: verify branch is clean and has commits beyond base_sha
-    if status == "in_review":
-        _validate_review_gate(hc_home, team, old_task)
+        # Safety net: backfill branch/base_sha when entering in_review or in_approval
+        if status in ("in_review", "in_approval"):
+            _backfill_branch_metadata(hc_home, team, old_task, updates)
 
-    # When entering in_approval, increment review_attempt and create a pending review
-    if status == "in_approval":
-        new_attempt = old_task.get("review_attempt", 0) + 1
-        updates["review_attempt"] = new_attempt
-        updates["approval_status"] = ""
+        # Review gate (legacy path — workflow uses enter() hook instead)
+        if status == "in_review":
+            _validate_review_gate(hc_home, team, old_task)
+
+        # When entering in_approval, increment review_attempt and create a pending review
+        if status == "in_approval":
+            new_attempt = old_task.get("review_attempt", 0) + 1
+            updates["review_attempt"] = new_attempt
+            updates["approval_status"] = ""
 
     task = update_task(hc_home, team, task_id, **updates)
 
-    # Create the pending review row after the task is updated
-    if status == "in_approval":
+    # Legacy: create review row after task is updated
+    if not wf_def and status == "in_approval":
         from delegate.review import create_review
         try:
             create_review(hc_home, team, task_id, task["review_attempt"])
         except Exception:
-            import logging
             logging.getLogger(__name__).warning(
                 "Failed to create review row for %s attempt %d",
                 format_task_id(task_id), task["review_attempt"],
+            )
+
+    # ── Workflow assign hook ──
+    if wf_def and status in wf_def.stage_map:
+        try:
+            from delegate.lib import Context
+            ctx = Context(hc_home, team, task)
+            new_stage = wf_def.stage_map[status]()
+            new_assignee = new_stage.assign(ctx)
+            if new_assignee:
+                task = assign_task(hc_home, team, task_id, new_assignee, suppress_log=True)
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "Assign hook failed for stage '%s' on %s: %s",
+                status, format_task_id(task_id), exc,
             )
 
     if not suppress_log:
@@ -491,6 +562,22 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_
         _broadcast_update(task_id, team, {"status": status})
 
     return task
+
+
+def _legacy_validate_transition(current: str, status: str) -> None:
+    """Validate a status transition using the hardcoded VALID_TRANSITIONS table."""
+    if status not in VALID_STATUSES:
+        raise ValueError(f"Invalid status '{status}'. Must be one of: {VALID_STATUSES}")
+    allowed = VALID_TRANSITIONS.get(current, set())
+    if allowed and status not in allowed:
+        raise ValueError(
+            f"Invalid transition: '{current}' \u2192 '{status}'. "
+            f"Allowed transitions from '{current}': {sorted(allowed)}"
+        )
+    if not allowed and current in VALID_TRANSITIONS:
+        raise ValueError(
+            f"Cannot transition from terminal status '{current}'."
+        )
 
 
 def transition_task(hc_home: Path, team: str, task_id: int, new_status: str, new_assignee: str) -> dict:

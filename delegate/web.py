@@ -229,6 +229,88 @@ def _build_greeting(
 
 
 # ---------------------------------------------------------------------------
+# Auto-stage processing (workflow engine)
+# ---------------------------------------------------------------------------
+
+def _process_auto_stages(hc_home: Path, team: str) -> None:
+    """Find tasks in auto stages and run their action() hooks.
+
+    An auto stage (e.g. ``Merging``) has ``auto = True``.  When a task
+    sits in such a stage, the runtime calls ``action(ctx)`` which must
+    return the next Stage class.  The task is then transitioned.
+
+    This replaces the hardcoded ``merge_once()`` for workflow-managed tasks.
+    """
+    from delegate.task import list_tasks, change_status, format_task_id, get_task
+    from delegate.workflow import load_workflow_cached, ActionError
+    from delegate.lib import Context
+    from delegate.chat import log_event
+
+    try:
+        all_tasks = list_tasks(hc_home, team)
+    except Exception:
+        return
+
+    for task in all_tasks:
+        wf_name = task.get("workflow", "")
+        wf_version = task.get("workflow_version", 0)
+        if not wf_name or not wf_version:
+            continue
+
+        try:
+            wf = load_workflow_cached(hc_home, team, wf_name, wf_version)
+        except (FileNotFoundError, KeyError, ValueError):
+            continue
+
+        current = task.get("status", "")
+        if current not in wf.stage_map:
+            continue
+
+        stage_cls = wf.stage_map[current]
+        if not stage_cls.auto:
+            continue
+
+        # This task is in an auto stage — run its action
+        task_id = task["id"]
+        try:
+            # Re-fetch to get latest state
+            fresh_task = get_task(hc_home, team, task_id)
+            ctx = Context(hc_home, team, fresh_task)
+            stage = stage_cls()
+            next_stage_cls = stage.action(ctx)
+
+            if next_stage_cls is not None and hasattr(next_stage_cls, '_key') and next_stage_cls._key:
+                # Transition to the next stage
+                change_status(hc_home, team, task_id, next_stage_cls._key)
+                logger.info(
+                    "Auto-stage %s → %s for %s",
+                    current, next_stage_cls._key, format_task_id(task_id),
+                )
+        except ActionError as exc:
+            # Unrecoverable error → transition to 'error' state
+            logger.error(
+                "Auto-stage action failed for %s in %s: %s",
+                format_task_id(task_id), current, exc,
+            )
+            if "error" in wf.stage_map:
+                try:
+                    change_status(hc_home, team, task_id, "error")
+                except Exception:
+                    logger.exception("Failed to transition %s to error state", format_task_id(task_id))
+            else:
+                log_event(
+                    hc_home, team,
+                    f"{format_task_id(task_id)} auto-action failed: {exc}",
+                    task_id=task_id,
+                )
+        except Exception as exc:
+            logger.exception(
+                "Unexpected error in auto-stage for %s (%s): %s",
+                format_task_id(task_id), current, exc,
+            )
+
+
+# ---------------------------------------------------------------------------
 # Daemon loop — runs as a background asyncio task inside the lifespan
 # ---------------------------------------------------------------------------
 
@@ -352,10 +434,11 @@ async def _daemon_loop(
                         _active_agent_tasks.add(agent_task)
                         agent_task.add_done_callback(_active_agent_tasks.discard)
 
-                # Process merge queue (serialized — one merge at a time)
+                # Process auto stages (merge, etc.) — serialized, one at a time
                 if not _shutdown_flag:
-                    async def _run_merge(t: str) -> None:
+                    async def _run_auto_stages(t: str) -> None:
                         async with merge_sem:
+                            # Legacy merge path (for tasks without workflow)
                             results = await asyncio.to_thread(merge_once, hc_home, t)
                             for mr in results:
                                 if mr.success:
@@ -363,7 +446,10 @@ async def _daemon_loop(
                                 else:
                                     logger.warning("Merge failed %s in %s: %s", mr.task_id, t, mr.message)
 
-                    merge_task = asyncio.create_task(_run_merge(team))
+                            # Workflow auto-stage processing
+                            await asyncio.to_thread(_process_auto_stages, hc_home, t)
+
+                    merge_task = asyncio.create_task(_run_auto_stages(team))
                     _active_merge_tasks.add(merge_task)
                     merge_task.add_done_callback(_active_merge_tasks.discard)
         except asyncio.CancelledError:
@@ -560,6 +646,46 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     @app.get("/teams")
     def get_teams():
         return _list_teams(hc_home)
+
+    # --- Workflow endpoints (team-scoped) ---
+
+    @app.get("/teams/{team}/workflows")
+    def get_team_workflows(team: str):
+        """List all registered workflows for a team."""
+        from delegate.workflow import list_workflows as _list_wf
+        return _list_wf(hc_home, team)
+
+    @app.get("/teams/{team}/workflows/{name}")
+    def get_team_workflow(team: str, name: str, version: int | None = None):
+        """Get a specific workflow definition."""
+        from delegate.workflow import load_workflow, get_latest_version
+
+        if version is None:
+            version = get_latest_version(hc_home, team, name)
+            if version is None:
+                raise HTTPException(404, f"Workflow '{name}' not found for team '{team}'")
+
+        try:
+            wf = load_workflow(hc_home, team, name, version)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(404, str(exc))
+
+        return {
+            "name": wf.name,
+            "version": wf.version,
+            "stages": [
+                {
+                    "key": cls._key,
+                    "label": cls.label,
+                    "terminal": cls.terminal,
+                    "auto": cls.auto,
+                }
+                for cls in wf.stages
+            ],
+            "transitions": {k: sorted(v) for k, v in wf.transitions.items()},
+            "initial": wf.initial_stage,
+            "terminals": sorted(wf.terminal_stages),
+        }
 
     # --- Task endpoints (team-scoped) ---
 

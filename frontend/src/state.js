@@ -113,6 +113,54 @@ export const diffPanelTarget = computed(() => {
 // ── Known agent names (for linkify / agentify references) ──
 export const knownAgentNames = signal([]);
 
+// ── Workflow definitions (per team) ──
+// { teamName: { name, version, stages: [{key, label, terminal, auto}], transitions, initial, terminals } }
+export const teamWorkflows = signal({});
+
+/** Fetch workflow definitions for a team (cached). */
+export async function fetchWorkflows(team) {
+  if (!team) return;
+  // Check cache
+  if (teamWorkflows.value[team]) return;
+  try {
+    const res = await fetch(`/teams/${team}/workflows`);
+    if (!res.ok) return;
+    const workflows = await res.json();
+    // Index by workflow name
+    const map = {};
+    for (const wf of workflows) {
+      map[wf.name] = wf;
+    }
+    teamWorkflows.value = { ...teamWorkflows.value, [team]: map };
+  } catch {
+    // Silently fail — fallback to hardcoded statuses
+  }
+}
+
+/** Get stage label from workflow, or fallback to formatting the key. */
+export function getStageLabel(team, workflowName, stageKey) {
+  const teamWfs = teamWorkflows.value[team];
+  if (teamWfs) {
+    const wf = teamWfs[workflowName || "standard"];
+    if (wf) {
+      const stage = wf.stages.find(s => s.key === stageKey);
+      if (stage) return stage.label;
+    }
+  }
+  // Fallback: format the key (e.g. "in_progress" → "In Progress")
+  return stageKey ? stageKey.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") : "";
+}
+
+/** Get all stage keys for a team's workflow. */
+export function getWorkflowStages(team, workflowName) {
+  const teamWfs = teamWorkflows.value[team];
+  if (teamWfs) {
+    const wf = teamWfs[workflowName || "standard"];
+    if (wf) return wf.stages;
+  }
+  return null; // null = use hardcoded fallback
+}
+
 // ── Chat filter direction ──
 export const chatFilterDirection = signal("one-way"); // "one-way" | "bidi"
 
@@ -136,13 +184,17 @@ export const agentTurnState = signal({});
 export const managerTurnContext = signal(null);
 
 // ── Computed helpers ──
+// Terminal statuses (tasks that are "done" from a workflow perspective).
+// This set is updated when workflows load; defaults to the standard workflow.
+const _terminalStatuses = new Set(["done", "cancelled"]);
+
 export const actionItems = computed(() => {
   const boss = bossName.value.toLowerCase();
   return tasks.value
     .filter(t =>
       t.assignee &&
       t.assignee.toLowerCase() === boss &&
-      (t.status === "in_approval" || t.status === "merge_failed")
+      !_terminalStatuses.has(t.status)
     )
     .sort((a, b) => (a.updated_at || "").localeCompare(b.updated_at || ""));
 });
@@ -150,9 +202,7 @@ export const actionItems = computed(() => {
 export const actionItemCount = computed(() => actionItems.value.length);
 
 export const openTaskCount = computed(() =>
-  tasks.value.filter(t =>
-    t.status === "todo" || t.status === "in_progress" || t.status === "in_review"
-  ).length
+  tasks.value.filter(t => !_terminalStatuses.has(t.status)).length
 );
 
 // Cross-team active agents: agents from other teams that are currently working/in-turn

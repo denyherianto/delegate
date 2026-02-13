@@ -303,12 +303,20 @@ export function agentifyRefs(html, agentNames) {
 export { diff2HtmlRender, diff2HtmlParse };
 
 // ── Task sorting ──
+// Priority tiers for task ordering.  When a workflow is loaded, the tier
+// can be derived from stage properties (terminal → bottom, auto → top).
+// Fallback hardcoded mapping is kept for backward compatibility.
+const _tierMap = {
+  in_approval: 0, merging: 0, merge_failed: 0,
+  in_progress: 1, in_review: 1,
+  todo: 2,
+  done: 3, cancelled: 4,
+};
 export function taskTier(t) {
-  if (t.status === "in_approval" || t.status === "merging" || t.status === "merge_failed") return 0;
-  if (t.status === "in_progress" || t.status === "in_review") return 1;
-  if (t.status === "todo") return 2;
-  if (t.status === "done") return 3;
-  return 4;
+  if (t.status in _tierMap) return _tierMap[t.status];
+  // Workflow stages not in the hardcoded map: use generic heuristic
+  // Terminal stages → bottom, auto stages → top, others → middle
+  return 2;
 }
 
 export function taskIdStr(id) {

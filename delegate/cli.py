@@ -13,6 +13,11 @@ Commands:
     delegate config set source-repo <path>           — set delegate source repo path
     delegate repo add <team> <path_or_url> [--name]  — register a repository for a team
     delegate repo list <team>                        — list repos for a team
+    delegate workflow add <team> <path>              — register a workflow for a team
+    delegate workflow list <team>                    — list workflows for a team
+    delegate workflow show <team> <name>             — show workflow details/graph
+    delegate workflow update-actions <team> <name> <path> — update workflow actions
+    delegate workflow init <team>                    — register built-in standard workflow
     delegate self-update                             — update delegate from source repo
 """
 
@@ -268,6 +273,17 @@ def team_create(
     )
 
     success(f"Created team '{name}'")
+
+    # Register the built-in standard workflow
+    try:
+        from delegate.workflow import register_workflow, get_latest_version
+        builtin = Path(__file__).parent / "workflows" / "standard.py"
+        if builtin.is_file() and get_latest_version(hc_home, name, "standard") is None:
+            register_workflow(hc_home, name, builtin)
+            success("Registered default workflow: standard v1")
+    except Exception as exc:
+        from delegate.fmt import warn
+        warn(f"Could not register default workflow: {exc}")
 
     # Register repos
     registered: list[str] = []
@@ -593,6 +609,157 @@ def self_update(ctx: click.Context) -> None:
         raise SystemExit(1)
 
     click.echo("Delegate updated successfully. ✓")
+
+
+# ──────────────────────────────────────────────────────────────
+# delegate workflow add / list / show / update-actions
+# ──────────────────────────────────────────────────────────────
+
+@main.group("workflow")
+def workflow_group() -> None:
+    """Manage task workflows."""
+    pass
+
+
+@workflow_group.command("add")
+@click.argument("team_name")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.pass_context
+def workflow_add(ctx: click.Context, team_name: str, path: Path) -> None:
+    """Register a workflow for a team.
+
+    TEAM_NAME is the team this workflow belongs to.
+    PATH is the Python workflow definition file.
+
+    The file must use the @workflow decorator to define at least one
+    workflow with a name and version.  The version must be higher than
+    any existing version for that workflow name.
+
+    Example:
+        delegate workflow add myteam ./pipelines/standard.py
+    """
+    from delegate.workflow import register_workflow
+    from delegate.fmt import success
+
+    hc_home = _get_home(ctx)
+    try:
+        wf = register_workflow(hc_home, team_name, path)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc))
+
+    success(f"Registered workflow '{wf.name}' v{wf.version} for team '{team_name}'")
+    click.echo(wf.format_graph())
+
+
+@workflow_group.command("list")
+@click.argument("team_name")
+@click.pass_context
+def workflow_list(ctx: click.Context, team_name: str) -> None:
+    """List workflows registered for a team."""
+    from delegate.workflow import list_workflows
+
+    hc_home = _get_home(ctx)
+    workflows = list_workflows(hc_home, team_name)
+
+    if not workflows:
+        click.echo(f"No workflows registered for team '{team_name}'.")
+        return
+
+    click.echo(f"Workflows for team '{team_name}':")
+    for wf in workflows:
+        versions_str = ", ".join(f"v{v}" for v in wf["all_versions"])
+        stage_count = len(wf["stages"])
+        click.echo(
+            f"  {click.style(wf['name'], bold=True)} "
+            f"(latest: v{wf['version']}, {stage_count} stages) "
+            f"[{versions_str}]"
+        )
+
+
+@workflow_group.command("show")
+@click.argument("team_name")
+@click.argument("name")
+@click.option("--version", "version", type=int, default=None, help="Show a specific version (default: latest).")
+@click.pass_context
+def workflow_show(ctx: click.Context, team_name: str, name: str, version: int | None) -> None:
+    """Show the details and graph of a workflow."""
+    from delegate.workflow import load_workflow, get_latest_version
+
+    hc_home = _get_home(ctx)
+
+    if version is None:
+        version = get_latest_version(hc_home, team_name, name)
+        if version is None:
+            raise click.ClickException(f"No workflow '{name}' found for team '{team_name}'.")
+
+    try:
+        wf = load_workflow(hc_home, team_name, name, version)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc))
+
+    click.echo(wf.format_graph())
+    click.echo()
+    click.echo(f"Source: {wf.source_path}")
+
+
+@workflow_group.command("update-actions")
+@click.argument("team_name")
+@click.argument("name")
+@click.argument("actions_path", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.pass_context
+def workflow_update_actions(ctx: click.Context, team_name: str, name: str, actions_path: Path) -> None:
+    """Update actions for an existing workflow (no version bump).
+
+    TEAM_NAME is the team.
+    NAME is the workflow name.
+    ACTIONS_PATH is the directory containing action scripts.
+
+    This replaces the workflow's actions directory without changing
+    the stage graph or requiring a version bump.
+    """
+    from delegate.workflow import update_actions
+    from delegate.fmt import success
+
+    hc_home = _get_home(ctx)
+    try:
+        update_actions(hc_home, team_name, name, actions_path)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc))
+
+    success(f"Updated actions for workflow '{name}' (team '{team_name}')")
+
+
+@workflow_group.command("init")
+@click.argument("team_name")
+@click.pass_context
+def workflow_init(ctx: click.Context, team_name: str) -> None:
+    """Register the built-in 'standard' workflow for a team.
+
+    This copies the default workflow shipped with Delegate into the
+    team's workflows directory.  Safe to re-run.
+    """
+    from delegate.workflow import register_workflow, get_latest_version
+    from delegate.fmt import success, info
+
+    hc_home = _get_home(ctx)
+
+    # Check if already registered
+    current = get_latest_version(hc_home, team_name, "standard")
+    if current is not None:
+        info(f"Workflow 'standard' v{current} already registered for team '{team_name}'")
+        return
+
+    # Find the built-in standard.py
+    builtin = Path(__file__).parent / "workflows" / "standard.py"
+    if not builtin.is_file():
+        raise click.ClickException(f"Built-in standard workflow not found at {builtin}")
+
+    try:
+        wf = register_workflow(hc_home, team_name, builtin)
+    except (FileNotFoundError, ValueError) as exc:
+        raise click.ClickException(str(exc))
+
+    success(f"Registered built-in workflow '{wf.name}' v{wf.version} for team '{team_name}'")
 
 
 if __name__ == "__main__":

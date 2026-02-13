@@ -436,6 +436,13 @@ CREATE INDEX IF NOT EXISTS idx_review_comments_team_task_attempt ON review_comme
 ALTER TABLE task_comments ADD COLUMN team TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_task_comments_team_task_id ON task_comments(team, task_id);
 """,
+
+    # --- V13: Workflow columns on tasks ---
+    """\
+ALTER TABLE tasks ADD COLUMN workflow TEXT NOT NULL DEFAULT 'standard';
+ALTER TABLE tasks ADD COLUMN workflow_version INTEGER NOT NULL DEFAULT 1;
+CREATE INDEX IF NOT EXISTS idx_tasks_workflow ON tasks(workflow);
+""",
 ]
 
 # Columns that store JSON arrays and need parse/serialize on read/write.
