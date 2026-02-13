@@ -13,6 +13,21 @@ import * as path from "path";
  * globalSetup only seeds data into the already-created temp dir.
  */
 
+// Find the git common directory (main repo) to access .venv
+// This handles both regular repos and git worktrees
+let repoRoot = __dirname;
+const gitFile = path.join(__dirname, ".git");
+if (fs.existsSync(gitFile)) {
+  const gitContent = fs.readFileSync(gitFile, "utf-8").trim();
+  if (gitContent.startsWith("gitdir: ")) {
+    // This is a worktree — extract main repo path
+    const gitDir = gitContent.replace("gitdir: ", "");
+    // gitDir is something like /path/to/repo/.git/worktrees/T0047
+    // We want /path/to/repo, which is 3 levels up
+    repoRoot = path.resolve(gitDir, "../../..");
+  }
+}
+
 // Create (or reuse) a temp directory for this test run
 const tmpDir =
   process.env.DELEGATE_E2E_HOME ||
@@ -51,9 +66,10 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: `.venv/bin/python -m uvicorn delegate.web:create_app --factory --host 127.0.0.1 --port ${port}`,
+    command: `${repoRoot}/.venv/bin/python -m uvicorn delegate.web:create_app --factory --host 127.0.0.1 --port ${port}`,
     port,
     reuseExistingServer: !process.env.CI,
+    cwd: repoRoot,
     env: {
       ...process.env,
       DELEGATE_HOME: tmpDir,
