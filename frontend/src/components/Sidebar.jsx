@@ -128,6 +128,17 @@ function TeamSelector() {
   );
 }
 
+// Map task status to display verb (returns null for statuses with no agent-facing verb)
+function getStatusVerb(taskStatus) {
+  switch (taskStatus) {
+    case "in_progress": return "working on";
+    case "in_review": return "reviewing";
+    case "merge_failed": return "fixing";
+    case "todo": return "assigned";
+    default: return null;
+  }
+}
+
 // ── Agent widget ──
 function AgentsWidget({ collapsed }) {
   const allAgents = agents.value;
@@ -202,17 +213,8 @@ function AgentsWidget({ collapsed }) {
           .filter(entry => entry.agent === a.name && entry.type === "agent_activity")
           .slice(-1);
 
-        // Derive verb from task status
-        const getStatusVerb = (taskSt) => {
-          if (!taskSt) return null;
-          switch (taskSt) {
-            case "in_progress": return "working on";
-            case "in_review": return "reviewing";
-            case "merge_failed": return "fixing";
-            case "todo": return "assigned";
-            default: return null;
-          }
-        };
+        // Derive display verb from task status
+        const verb = taskStatus ? getStatusVerb(taskStatus) : null;
 
         return (
           <div
@@ -234,9 +236,9 @@ function AgentsWidget({ collapsed }) {
                   </>
                 ) : (
                   <>
-                    {displayTaskId && taskStatus ? (
+                    {displayTaskId && verb ? (
                       <>
-                        {getStatusVerb(taskStatus)}{" "}
+                        {verb}{" "}
                         <span
                           class="sb-agent-task-link"
                           onClick={(e) => { e.stopPropagation(); openPanel("task", displayTaskId); }}
