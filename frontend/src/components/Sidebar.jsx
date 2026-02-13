@@ -215,7 +215,9 @@ function AgentsWidget({ collapsed }) {
               </span>
               <span class="sb-agent-status">
                 {status === "idle" ? "idle" : respondingTo ? (
-                  `responding to ${cap(respondingTo)}`
+                  <>
+                    responding to <span class="sb-agent-task-link">{cap(respondingTo)}</span>
+                  </>
                 ) : (
                   <>
                     {displayTaskId ? (
