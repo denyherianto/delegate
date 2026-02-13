@@ -43,6 +43,9 @@ function _syncSignals(team) {
 // ── Main App ──
 function App() {
   const tab = activeTab.value;
+  // Subscribe to team signals so effects with these deps re-evaluate on change.
+  const team = currentTeam.value;
+  const teamList = teams.value;
 
   // Keyboard handler
   useEffect(() => {
@@ -217,7 +220,6 @@ function App() {
 
   // When team changes, restore ephemeral state from backing store and re-poll
   useEffect(() => {
-    const team = currentTeam.value;
     if (!team) return;
     batch(() => {
       tasks.value = [];
@@ -243,13 +245,12 @@ function App() {
         _pt.managerName[team] = mgr?.name ?? null;
       } catch (e) { }
     })();
-  }, [currentTeam.value]);
+  }, [team]);
 
   // SSE: live agent activity streams — one connection per team.
   // Events are buffered in the per-team backing store (_pt).
   // Only events for currentTeam are pushed into the reactive signals.
   useEffect(() => {
-    const teamList = teams.value;
     if (!teamList || !teamList.length) return;
 
     const connections = {};
@@ -352,7 +353,7 @@ function App() {
     return () => {
       for (const es of Object.values(connections)) es.close();
     };
-  }, [teams.value]);
+  }, [teamList]);
 
   return (
     <>
