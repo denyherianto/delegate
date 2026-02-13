@@ -60,7 +60,7 @@ VALID_TRANSITIONS = {
 _TASK_FIELDS = frozenset({
     "id", "title", "description", "status", "dri", "assignee",
     "project", "priority", "repo", "tags", "created_at", "updated_at",
-    "completed_at", "depends_on", "branch", "base_sha",
+    "completed_at", "depends_on", "branch", "base_sha", "commits",
     "rejection_reason", "approval_status", "merge_base", "merge_tip",
     "attachments", "review_attempt", "status_detail", "merge_attempts",
     "workflow", "workflow_version", "metadata",
