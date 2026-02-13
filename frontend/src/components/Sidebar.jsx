@@ -144,12 +144,6 @@ function AgentsWidget({ collapsed }) {
     const inTurn = turn?.inTurn ?? false;
     const lastTaskId = turn?.taskId ?? null;
     const sender = turn?.sender ?? "";
-    // Find assigned task with any non-terminal status
-    const assignedTask = allTasks.find(t =>
-      t.assignee === a.name &&
-      (t.status === "todo" || t.status === "in_progress" || t.status === "in_review" ||
-       t.status === "in_approval" || t.status === "merge_failed")
-    );
 
     let status = "idle";
     let displayTaskId = null;
@@ -158,18 +152,26 @@ function AgentsWidget({ collapsed }) {
 
     if (inTurn) {
       status = "working";
-      // Show task ID only if it's still assigned to this agent
-      if (lastTaskId && assignedTask && assignedTask.id === lastTaskId) {
+      // Task ID from SSE stream
+      if (lastTaskId) {
         displayTaskId = lastTaskId;
-        taskStatus = assignedTask.status;
-      } else if (!lastTaskId && sender) {
+        // Look up task by ID to get its status for the verb
+        const task = allTasks.find(t => t.id === lastTaskId);
+        if (task) {
+          taskStatus = task.status;
+        }
+      } else if (sender) {
         // In turn with no task but has sender -> responding to sender
         respondingTo = sender;
       }
-    } else if (assignedTask) {
+    } else if (lastTaskId) {
+      // Not in turn but has task from SSE
       status = "waiting";
-      displayTaskId = assignedTask.id;
-      taskStatus = assignedTask.status;
+      displayTaskId = lastTaskId;
+      const task = allTasks.find(t => t.id === lastTaskId);
+      if (task) {
+        taskStatus = task.status;
+      }
     }
 
     return { agent: a, status, displayTaskId, respondingTo, taskStatus };
@@ -205,8 +207,7 @@ function AgentsWidget({ collapsed }) {
           if (!taskSt) return null;
           switch (taskSt) {
             case "in_progress": return "working on";
-            case "in_review": return "review";
-            case "in_approval": return "approval";
+            case "in_review": return "reviewing";
             case "merge_failed": return "fixing";
             case "todo": return "assigned";
             default: return null;
