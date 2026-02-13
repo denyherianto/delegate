@@ -321,7 +321,7 @@ body {
   font-size: 10px;
   flex: 1;
   min-width: 0;
-  text-align: left;
+  text-align: right;
 }
 .sb-agent-task-link {
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
