@@ -183,10 +183,14 @@ function ApprovalBar({ task, currentReview, onAction }) {
         class="task-approval-bar-input"
         placeholder="Review comment (optional)..."
         value={summary}
-        onInput={(e) => setSummary(e.target.value)}
+        onInput={(e) => {
+          setSummary(e.target.value);
+          e.target.style.height = 'auto';
+          e.target.style.height = e.target.scrollHeight + 'px';
+        }}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
-        rows="1"
+        rows="3"
       />
       <div class="task-approval-bar-actions">
         <button

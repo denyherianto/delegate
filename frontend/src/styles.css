@@ -586,6 +586,7 @@ body {
 .task-approval-bar-resolved .approval-badge {
   padding: 5px 10px;
   font-size: 12px;
+  flex-shrink: 0;
 }
 .task-approval-bar-summary {
   font-size: 12px;
@@ -603,11 +604,14 @@ body {
   color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
-  padding: 6px 10px;
+  padding: 10px 12px;
   resize: vertical;
   outline: none;
   box-sizing: border-box;
   margin-bottom: 8px;
+  overflow: hidden;
+  min-height: 60px;
+  max-height: 200px;
 }
 .task-approval-bar-input:focus { border-color: var(--text-muted); }
 .task-approval-bar-actions {
@@ -676,7 +680,7 @@ body {
 .reject-reason-input { width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: inherit; font-size: 13px; outline: none; transition: border-color 100ms; }
 .reject-reason-input:focus { border-color: var(--border-focus); }
 .reject-reason-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
-.approval-badge { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; }
+.approval-badge { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; white-space: nowrap; }
 .approval-badge-approved { background: rgba(115,201,145,0.08); color: var(--semantic-green); }
 .approval-badge-rejected { background: rgba(241,76,76,0.08); color: var(--semantic-red); }
 .approval-badge-pending  { background: rgba(226,192,141,0.08); color: var(--semantic-yellow); }
