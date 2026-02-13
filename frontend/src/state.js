@@ -136,12 +136,25 @@ export const managerTurnContext = signal(null);
 export const actionItems = computed(() => {
   const boss = bossName.value.toLowerCase();
   return tasks.value
-    .filter(t => t.assignee && t.assignee.toLowerCase() === boss && t.status !== "done")
+    .filter(t =>
+      t.assignee &&
+      t.assignee.toLowerCase() === boss &&
+      (t.status === "in_approval" || t.status === "merge_failed")
+    )
     .sort((a, b) => (a.updated_at || "").localeCompare(b.updated_at || ""));
 });
+
+export const actionItemCount = computed(() => actionItems.value.length);
 
 export const openTaskCount = computed(() =>
   tasks.value.filter(t =>
     t.status === "todo" || t.status === "in_progress" || t.status === "in_review"
   ).length
 );
+
+// ── Notification bell state ──
+export const bellPopoverOpen = signal(false);
+
+// ── Away summary (populated by activity catchup feature) ──
+// Shape: { awayDuration, actionItems: [...], completed: [...], unreadCount } | null
+export const awaySummary = signal(null);

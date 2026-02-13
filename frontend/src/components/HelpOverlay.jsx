@@ -9,6 +9,7 @@ export function HelpOverlay() {
     { key: "/", description: "Focus chat input" },
     { key: "Esc", description: "Close panels / defocus chat input" },
     { key: "s", description: "Toggle sidebar" },
+    { key: "n", description: "Toggle notifications" },
     { key: "c", description: "Go to Chat" },
     { key: "t", description: "Go to Tasks" },
     { key: "a", description: "Go to Agents" },

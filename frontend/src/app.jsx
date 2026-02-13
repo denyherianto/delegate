@@ -6,7 +6,7 @@ import {
   activeTab, knownAgentNames,
   panelStack, popPanel, closeAllPanels,
   agentLastActivity, agentActivityLog, agentTurnState, managerTurnContext,
-  helpOverlayOpen, sidebarCollapsed, isMuted,
+  helpOverlayOpen, sidebarCollapsed, bellPopoverOpen, isMuted,
   syncFromUrl, navigate, navigateTab,
 } from "./state.js";
 import * as api from "./api.js";
@@ -18,6 +18,8 @@ import { TaskSidePanel } from "./components/TaskSidePanel.jsx";
 import { DiffPanel } from "./components/DiffPanel.jsx";
 import { ToastContainer } from "./components/Toast.jsx";
 import { HelpOverlay } from "./components/HelpOverlay.jsx";
+import { NotificationBell } from "./components/NotificationBell.jsx";
+import { NotificationPopover } from "./components/NotificationPopover.jsx";
 import { showToast, showActionToast } from "./toast.js";
 
 // ── Per-team backing stores (plain objects, not signals) ──
@@ -82,6 +84,7 @@ function App() {
       const isOverlayOpen = () => panelStack.value.length > 0 || helpOverlayOpen.value;
 
       if (e.key === "Escape") {
+        if (bellPopoverOpen.value) { bellPopoverOpen.value = false; return; }
         if (helpOverlayOpen.value) { helpOverlayOpen.value = false; return; }
         if (panelStack.value.length > 0) { popPanel(); return; }
         if (isInputFocused()) { document.activeElement.blur(); return; }
@@ -97,6 +100,10 @@ function App() {
       if (e.key === "s" && !isOverlayOpen()) {
         sidebarCollapsed.value = !sidebarCollapsed.value;
         localStorage.setItem("delegate-sidebar-collapsed", sidebarCollapsed.value ? "true" : "false");
+        return;
+      }
+      if (e.key === "n" && !isOverlayOpen()) {
+        bellPopoverOpen.value = !bellPopoverOpen.value;
         return;
       }
       if (e.key === "c" && !isOverlayOpen()) { navigateTab("chat"); return; }
@@ -387,6 +394,9 @@ function App() {
     <>
       <Sidebar />
       <div class="main">
+        <div class="main-header">
+          <NotificationBell />
+        </div>
         <div class="content">
           <ChatPanel />
           <TasksPanel />
@@ -396,6 +406,7 @@ function App() {
       <TaskSidePanel />
       <DiffPanel />
       <HelpOverlay />
+      <NotificationPopover />
       <ToastContainer />
     </>
   );

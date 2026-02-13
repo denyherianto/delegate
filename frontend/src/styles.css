@@ -2349,3 +2349,227 @@ select option:hover {
   font-weight: 600;
   color: var(--text-heading);
 }
+
+/* ================================================================
+   Notification Bell + Popover
+   ================================================================ */
+
+/* Header bar */
+.main-header {
+  height: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-primary);
+  flex-shrink: 0;
+}
+
+/* Bell button */
+.notif-bell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 100ms, background 100ms;
+}
+.notif-bell:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* Bell badge */
+.notif-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  background: var(--semantic-red);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* Popover backdrop */
+.notif-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 149;
+  background: transparent;
+}
+
+/* Popover container */
+.notif-popover {
+  position: absolute;
+  top: 32px;
+  right: 8px;
+  width: 380px;
+  max-height: 480px;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Popover header */
+.notif-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.notif-popover-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-heading);
+  margin: 0;
+}
+.notif-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color 100ms, background 100ms;
+}
+.notif-close-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* Popover body */
+.notif-popover-body {
+  padding: 8px 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Empty state */
+.notif-empty-state {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+/* Sections */
+.notif-section {
+  margin-bottom: 8px;
+}
+.notif-section:last-child {
+  margin-bottom: 0;
+}
+
+.notif-section-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 8px 16px 4px;
+}
+
+/* Notification item */
+.notif-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 100ms;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.notif-item:hover {
+  background: var(--bg-hover);
+}
+.notif-item.highlighted {
+  background: var(--bg-hover);
+}
+
+.notif-item-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notif-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 24px;
+}
+
+.notif-task-id {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.notif-task-title {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.notif-time {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Unread messages item */
+.notif-unread-item {
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background 100ms;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.notif-unread-item:hover {
+  background: var(--bg-hover);
+}
+.notif-unread-item.highlighted {
+  background: var(--bg-hover);
+}
+
+.notif-view-link {
+  color: var(--accent);
+  font-weight: 500;
+  font-size: 12px;
+}
