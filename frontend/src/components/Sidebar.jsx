@@ -215,17 +215,21 @@ function AgentsWidget({ collapsed }) {
               </span>
               <span class="sb-agent-status">
                 {status === "idle" ? "idle" : respondingTo ? (
-                  `responding to ${respondingTo}`
+                  `responding to ${cap(respondingTo)}`
                 ) : (
                   <>
-                    {status === "working" ? "working on " : "waiting on "}
-                    {displayTaskId && (
-                      <span
-                        class="sb-agent-task-link"
-                        onClick={(e) => { e.stopPropagation(); openPanel("task", displayTaskId); }}
-                      >
-                        {taskIdStr(displayTaskId)}
-                      </span>
+                    {displayTaskId ? (
+                      <>
+                        {status === "working" ? "working on " : "waiting on "}
+                        <span
+                          class="sb-agent-task-link"
+                          onClick={(e) => { e.stopPropagation(); openPanel("task", displayTaskId); }}
+                        >
+                          {taskIdStr(displayTaskId)}
+                        </span>
+                      </>
+                    ) : (
+                      status
                     )}
                   </>
                 )}
