@@ -11,6 +11,21 @@ import { test, expect } from "@playwright/test";
 
 const TEAM = "testteam";
 
+// Helper function to set textarea value and trigger Preact's onInput event
+async function fillTextarea(page, text) {
+  await page.evaluate((text) => {
+    const textarea = document.querySelector(".chat-input-box textarea");
+    if (textarea) {
+      textarea.value = text;
+      // Trigger the input event that Preact listens to
+      const event = new Event('input', { bubbles: true });
+      textarea.dispatchEvent(event);
+    }
+  }, text);
+  // Give Preact time to update state and re-render
+  await page.waitForTimeout(100);
+}
+
 test.describe("Chat input UX", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(`/${TEAM}/chat`);
@@ -22,7 +37,7 @@ test.describe("Chat input UX", () => {
   test("Shift+Enter inserts newline in chatbox", async ({ page }) => {
     const textarea = page.locator(".chat-input-box textarea");
     await textarea.click();
-    await textarea.fill("Line 1");
+    await fillTextarea(page, "Line 1");
     await page.keyboard.press("Shift+Enter");
     await textarea.pressSequentially("Line 2");
 
@@ -33,8 +48,8 @@ test.describe("Chat input UX", () => {
 
   test("Enter (without Shift) sends message and clears textarea", async ({ page }) => {
     const textarea = page.locator(".chat-input-box textarea");
-    await textarea.click();
-    await textarea.fill("Test message");
+    await fillTextarea(page, "Test message");
+    await textarea.focus(); // Ensure textarea has focus for keyboard event
 
     await page.keyboard.press("Enter");
     await page.waitForTimeout(300);
@@ -44,10 +59,7 @@ test.describe("Chat input UX", () => {
   });
 
   test("Inline rendering shows for code blocks", async ({ page }) => {
-    const textarea = page.locator(".chat-input-box textarea");
-    await textarea.click();
-    await textarea.fill("Here is some code:\n```js\nconst x = 1;\n```");
-    await page.waitForTimeout(300);
+    await fillTextarea(page, "Here is some code:\n```js\nconst x = 1;\n```");
 
     const overlay = page.locator(".chat-input-overlay");
     await expect(overlay).toBeVisible();
@@ -58,10 +70,7 @@ test.describe("Chat input UX", () => {
   });
 
   test("Inline rendering shows for inline code", async ({ page }) => {
-    const textarea = page.locator(".chat-input-box textarea");
-    await textarea.click();
-    await textarea.fill("Use `console.log()` to print");
-    await page.waitForTimeout(300);
+    await fillTextarea(page, "Use `console.log()` to print");
 
     const overlay = page.locator(".chat-input-overlay");
     await expect(overlay).toBeVisible();
@@ -72,10 +81,7 @@ test.describe("Chat input UX", () => {
   });
 
   test("Inline rendering shows for bullet lists", async ({ page }) => {
-    const textarea = page.locator(".chat-input-box textarea");
-    await textarea.click();
-    await textarea.fill("- Item 1\n- Item 2\n- Item 3");
-    await page.waitForTimeout(300);
+    await fillTextarea(page, "- Item 1\n- Item 2\n- Item 3");
 
     const overlay = page.locator(".chat-input-overlay");
     await expect(overlay).toBeVisible();
@@ -88,10 +94,7 @@ test.describe("Chat input UX", () => {
   });
 
   test("Inline rendering shows for numbered lists", async ({ page }) => {
-    const textarea = page.locator(".chat-input-box textarea");
-    await textarea.click();
-    await textarea.fill("1. First\n2. Second\n3. Third");
-    await page.waitForTimeout(300);
+    await fillTextarea(page, "1. First\n2. Second\n3. Third");
 
     const overlay = page.locator(".chat-input-overlay");
     await expect(overlay).toBeVisible();
@@ -104,20 +107,14 @@ test.describe("Chat input UX", () => {
   });
 
   test("Inline overlay hidden for plain text", async ({ page }) => {
-    const textarea = page.locator(".chat-input-box textarea");
-    await textarea.click();
-    await textarea.fill("Just plain text without any markdown");
-    await page.waitForTimeout(300);
+    await fillTextarea(page, "Just plain text without any markdown");
 
     const overlay = page.locator(".chat-input-overlay");
     await expect(overlay).not.toBeVisible();
   });
 
   test("Inline overlay hidden for commands (starting with /)", async ({ page }) => {
-    const textarea = page.locator(".chat-input-box textarea");
-    await textarea.click();
-    await textarea.fill("/help");
-    await page.waitForTimeout(300);
+    await fillTextarea(page, "/help");
 
     const overlay = page.locator(".chat-input-overlay");
     await expect(overlay).not.toBeVisible();
@@ -159,10 +156,7 @@ test.describe("Chat input UX", () => {
   });
 
   test("Code blocks with uppercase language identifiers are rendered", async ({ page }) => {
-    const textarea = page.locator(".chat-input-box textarea");
-    await textarea.click();
-    await textarea.fill("```JavaScript\nconst x = 1;\n```");
-    await page.waitForTimeout(300);
+    await fillTextarea(page, "```JavaScript\nconst x = 1;\n```");
 
     const overlay = page.locator(".chat-input-overlay");
     await expect(overlay).toBeVisible();
@@ -173,10 +167,7 @@ test.describe("Chat input UX", () => {
   });
 
   test("List items with inline code are rendered correctly", async ({ page }) => {
-    const textarea = page.locator(".chat-input-box textarea");
-    await textarea.click();
-    await textarea.fill("- Use `console.log()` for debugging\n- Try `npm test` to run tests");
-    await page.waitForTimeout(300);
+    await fillTextarea(page, "- Use `console.log()` for debugging\n- Try `npm test` to run tests");
 
     const overlay = page.locator(".chat-input-overlay");
     await expect(overlay).toBeVisible();
@@ -195,10 +186,7 @@ test.describe("Chat input UX", () => {
   });
 
   test("XSS protection - HTML in list items is escaped", async ({ page }) => {
-    const textarea = page.locator(".chat-input-box textarea");
-    await textarea.click();
-    await textarea.fill("- <script>alert('xss')</script>\n- <img src=x onerror=alert('xss')>");
-    await page.waitForTimeout(300);
+    await fillTextarea(page, "- <script>alert('xss')</script>\n- <img src=x onerror=alert('xss')>");
 
     const overlay = page.locator(".chat-input-overlay");
     await expect(overlay).toBeVisible();
