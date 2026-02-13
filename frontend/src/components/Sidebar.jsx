@@ -70,26 +70,42 @@ function Logo() {
 
 // ── Team selector ──
 function TeamSelector() {
-  const [open, setOpen] = useState(false);
   const ref = useRef();
+  const openRef = useRef(false);
+  const [open, setOpen] = useState(false);
+  openRef.current = open;
+
   const team = currentTeam.value;
   const teamList = teams.value;
   const isSingle = teamList.length <= 1;
 
+  // Close on outside mousedown (fires before click, more reliable).
   useEffect(() => {
-    if (!open) return;
     const handler = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      if (openRef.current && ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
     };
-    document.addEventListener("click", handler);
-    return () => document.removeEventListener("click", handler);
-  }, [open]);
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const toggle = useCallback((e) => {
+    e.stopPropagation();
+    if (!isSingle) setOpen(v => !v);
+  }, [isSingle]);
+
+  const pick = useCallback((t, e) => {
+    e.stopPropagation();
+    setOpen(false);
+    if (t !== currentTeam.value) currentTeam.value = t;
+  }, []);
 
   return (
     <div
       ref={ref}
       class={"sb-team" + (isSingle ? " single" : "")}
-      onClick={(e) => { e.stopPropagation(); if (!isSingle) setOpen(!open); }}
+      onClick={toggle}
     >
       <span class="sb-team-name">{team || "No team"}</span>
       {!isSingle && (
@@ -101,7 +117,7 @@ function TeamSelector() {
             <div
               key={t}
               class={"sb-team-option" + (t === team ? " active" : "")}
-              onClick={(e) => { e.stopPropagation(); setOpen(false); if (t !== currentTeam.value) currentTeam.value = t; }}
+              onClick={(e) => pick(t, e)}
             >
               {t}
             </div>

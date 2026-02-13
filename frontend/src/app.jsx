@@ -31,8 +31,30 @@ const _pt = {
 };
 const MAX_LOG_ENTRIES = 500;
 
-/** Sync the reactive signals from the backing store for *team*. */
+/** Sync the reactive signals from the backing store for *team*.
+ *  Throttled to at most one sync per animation frame to prevent
+ *  SSE event floods from overwhelming the render loop.           */
+let _syncRaf = 0;
+let _syncTeam = null;
+
 function _syncSignals(team) {
+  _syncTeam = team;
+  if (_syncRaf) return;               // already scheduled
+  _syncRaf = requestAnimationFrame(() => {
+    _syncRaf = 0;
+    const t = _syncTeam;
+    batch(() => {
+      agentLastActivity.value  = _pt.activity[t]    ? { ..._pt.activity[t] }    : {};
+      agentActivityLog.value   = _pt.activityLog[t] ? [..._pt.activityLog[t]] : [];
+      managerTurnContext.value = _pt.managerCtx[t]  ?? null;
+    });
+  });
+}
+
+/** Immediate (non-throttled) sync — used on team switch so the UI
+ *  reflects the stored state without a one-frame delay.            */
+function _syncSignalsNow(team) {
+  if (_syncRaf) { cancelAnimationFrame(_syncRaf); _syncRaf = 0; }
   batch(() => {
     agentLastActivity.value  = _pt.activity[team]    ? { ..._pt.activity[team] }    : {};
     agentActivityLog.value   = _pt.activityLog[team] ? [..._pt.activityLog[team]] : [];
@@ -228,7 +250,7 @@ function App() {
       messages.value = [];
       // Restore ephemeral activity state from the per-team backing store
       // (instant — no network round-trip needed).
-      _syncSignals(team);
+      _syncSignalsNow(team);
     });
     (async () => {
       try {
