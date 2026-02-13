@@ -72,11 +72,26 @@ def _default_state(role: str, seniority: str | None = None) -> dict:
     return {"role": role, "seniority": seniority, "pid": None, "token_budget": None}
 
 
-def make_roster(members: list[tuple[str, str]], boss: str | None = None) -> str:
-    """Generate roster.md content from a list of (name, role) pairs."""
+def make_roster(
+    members: list[tuple[str, str]],
+    boss: str | None = None,
+    humans: list[str] | None = None,
+) -> str:
+    """Generate roster.md content from a list of (name, role) pairs.
+
+    Args:
+        members: AI agent (name, role) pairs.
+        boss: Deprecated single boss name (backward compat).
+        humans: List of human member names.
+    """
     lines = ["# Team Roster\n"]
-    if boss:
-        lines.append(f"- **{boss}** (boss)")
+    # Human members
+    if humans:
+        for h in humans:
+            lines.append(f"- **{h}** (member)")
+    elif boss:
+        lines.append(f"- **{boss}** (member)")
+    # AI agents
     for name, role in members:
         lines.append(f"- **{name}** ({role})")
     lines.append("")
@@ -207,11 +222,18 @@ def bootstrap(
             if not override_path.exists():
                 override_path.write_text(f"# Team Charter Overrides\n\n{extra}\n")
 
-    # Roster — include boss name from config if set
-    boss_name = get_boss(hc_home)
+    # Roster — include all human members
+    from delegate.config import get_human_members
+    human_members = get_human_members(hc_home)
+    human_names = [m["name"] for m in human_members]
+    # Fallback: if no members dir yet, try legacy boss
+    if not human_names:
+        boss_name = get_boss(hc_home)
+        if boss_name:
+            human_names = [boss_name]
     rp = _roster_path(hc_home, team_name)
     if not rp.exists():
-        rp.write_text(make_roster(members, boss=boss_name))
+        rp.write_text(make_roster(members, humans=human_names))
 
     # Scripts dir (for user-defined team scripts)
     (td / "scripts").mkdir(exist_ok=True)

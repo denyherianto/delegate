@@ -421,14 +421,32 @@ def member_add(ctx: click.Context, name: str) -> None:
     """Add a human member to Delegate.
 
     Creates a member YAML file in ~/.delegate/members/.
-    The member is automatically added to all existing teams.
+    The member is automatically added to all existing teams' rosters.
     """
-    from delegate.config import add_member, get_human_members
+    from delegate.config import add_member
     from delegate.fmt import success
 
     hc_home = _get_home(ctx)
     add_member(hc_home, name)
     success(f"Added member '{name}'")
+
+    # Auto-add to all existing teams' rosters
+    td = _teams_dir(hc_home)
+    if td.is_dir():
+        from delegate.paths import roster_path as _roster_path
+        for team_dir in sorted(td.iterdir()):
+            if not team_dir.is_dir():
+                continue
+            rp = _roster_path(hc_home, team_dir.name)
+            if rp.exists():
+                roster_text = rp.read_text()
+                roster_line = f"- **{name}** (member)"
+                if roster_line not in roster_text:
+                    if not roster_text.endswith("\n"):
+                        roster_text += "\n"
+                    roster_text += roster_line + "\n"
+                    rp.write_text(roster_text)
+                    success(f"  Added to team '{team_dir.name}'")
 
 
 @member.command("list")
