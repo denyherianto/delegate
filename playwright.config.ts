@@ -77,10 +77,11 @@ export default defineConfig({
     command: `${repoRoot}/.venv/bin/python -m uvicorn delegate.web:create_app --factory --host 127.0.0.1 --port ${port}`,
     port,
     reuseExistingServer: !process.env.CI,
-    cwd: repoRoot,
+    cwd: __dirname,
     env: {
       ...process.env,
       DELEGATE_HOME: tmpDir,
+      PYTHONPATH: __dirname,
     },
     timeout: 15_000,
   },

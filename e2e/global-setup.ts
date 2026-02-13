@@ -34,10 +34,11 @@ async function globalSetup() {
   const venvPython = path.join(projectRoot, ".venv", "bin", "python");
 
   try {
+    const worktreeRoot = path.resolve(__dirname, "..");
     execSync(`${venvPython} ${seedScript} ${tmpDir}`, {
-      cwd: projectRoot,
+      cwd: worktreeRoot,
       stdio: "pipe",
-      env: { ...process.env, PYTHONPATH: projectRoot },
+      env: { ...process.env, PYTHONPATH: worktreeRoot },
     });
   } catch (err: any) {
     console.error("Seed script failed:");

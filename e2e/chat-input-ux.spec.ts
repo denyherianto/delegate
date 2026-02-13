@@ -12,24 +12,20 @@ import { test, expect } from "@playwright/test";
 const TEAM = "testteam";
 
 // Helper function to set textarea value and trigger Preact's onInput event
+// For text with newlines, we need to set the value directly and dispatch input event
+// because type() would interpret \n as pressing Enter which triggers send
 async function fillTextarea(page, text) {
   const textarea = page.locator(".chat-input-box textarea");
 
-  // Wait for textarea to be ready
-  await textarea.waitFor({ state: "visible" });
+  // Set the value directly via JavaScript
+  await textarea.evaluate((el, value) => {
+    el.value = value;
+    // Dispatch input event to trigger Preact's onInput handler
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, text);
 
-  // Click to focus
-  await textarea.click();
-
-  // Clear any existing text
-  await textarea.fill("");
-
-  // Type the text character by character to properly trigger all input events
-  // This is slower but ensures Preact's onInput is called for every change
-  await textarea.pressSequentially(text, { delay: 0 });
-
-  // Give Preact time to update state and re-render
-  await page.waitForTimeout(200);
+  // Give Preact a moment to update state
+  await page.waitForTimeout(50);
 }
 
 test.describe("Chat input UX", () => {
@@ -54,6 +50,11 @@ test.describe("Chat input UX", () => {
 
   test("Enter (without Shift) sends message and clears textarea", async ({ page }) => {
     const textarea = page.locator(".chat-input-box textarea");
+
+    // Wait for agents to load and recipient to be auto-selected
+    // The send button should become enabled when there's a recipient
+    await page.waitForTimeout(500);
+
     await fillTextarea(page, "Test message");
     await textarea.focus(); // Ensure textarea has focus for keyboard event
 
@@ -69,6 +70,19 @@ test.describe("Chat input UX", () => {
 
     // Use Playwright's built-in fill which should trigger native events
     await textarea.fill("```js\nconst x = 1;\n```");
+
+    // Debug: Check what's in the textarea and page
+    const textareaValue = await textarea.inputValue();
+    const textareaClass = await textarea.getAttribute("class");
+    console.log("Textarea value:", textareaValue);
+    console.log("Textarea class:", textareaClass);
+
+    // Check if overlay element exists at all
+    const overlayCount = await page.locator(".chat-input-overlay").count();
+    console.log("Overlay count:", overlayCount);
+
+    // Take a screenshot for debugging
+    await page.screenshot({ path: "/tmp/code-blocks-test.png" });
 
     // Wait for Preact to update state and render the overlay
     // Use waitFor to be more reliable than a fixed timeout
