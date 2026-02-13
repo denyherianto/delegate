@@ -921,26 +921,26 @@ export function ChatPanel() {
       {/* Text selection tooltip */}
       <SelectionTooltip containerRef={logRef} chatInputRef={inputRef} />
 
-      {/* Command autocomplete dropdown - positioned relative to input wrapper */}
+      {/* Command autocomplete dropdown - positioned relative to input box */}
       <div class="chat-input-wrapper">
-        {commandMode.value && (
-          <CommandAutocomplete
-            input={inputVal}
-            onSelect={(cmd) => {
-              if (inputRef.current) {
-                inputRef.current.value = `/${cmd.name} `;
-                inputRef.current.focus();
-                setInputVal(`/${cmd.name} `);
-                setSendBtnActive(true);
-              }
-            }}
-            onDismiss={() => {
-              commandMode.value = false;
-            }}
-          />
-        )}
         {/* Chat input — Cursor-style: textarea on top, toolbar on bottom */}
         <div class={`chat-input-box ${commandMode.value ? 'command-mode' : ''}`}>
+          {commandMode.value && (
+            <CommandAutocomplete
+              input={inputVal}
+              onSelect={(cmd) => {
+                if (inputRef.current) {
+                  inputRef.current.value = `/${cmd.name} `;
+                  inputRef.current.focus();
+                  setInputVal(`/${cmd.name} `);
+                  setSendBtnActive(true);
+                }
+              }}
+              onDismiss={() => {
+                commandMode.value = false;
+              }}
+            />
+          )}
           <textarea
             ref={inputRef}
             class={!commandMode.value && inputVal && hasMarkdown(inputVal) ? "chat-input-has-overlay" : ""}

@@ -861,11 +861,11 @@ body {
    ================================================================ */
 /* Wrapper for chat input and autocomplete dropdown positioning */
 .chat-input-wrapper {
-  position: relative; /* Anchor for command autocomplete dropdown */
   flex-shrink: 0;
 }
 
 .chat-input-box {
+  position: relative; /* Anchor for command autocomplete dropdown */
   border: 1px solid var(--border-default);
   border-radius: 10px;
   background: var(--bg-elevated);
@@ -874,6 +874,7 @@ body {
   flex-direction: column;
   flex-shrink: 0;
   transition: border-color 150ms;
+  overflow: visible; /* Allow dropdown to extend outside */
 }
 .chat-input-box:focus-within { border-color: var(--text-muted); }
 
