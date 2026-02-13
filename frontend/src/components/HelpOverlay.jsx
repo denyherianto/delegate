@@ -12,6 +12,7 @@ export function HelpOverlay() {
     { key: "c", description: "Go to Chat" },
     { key: "t", description: "Go to Tasks" },
     { key: "a", description: "Go to Agents" },
+    { key: "m", description: "Toggle audio mute" },
     { key: "?", description: "Show/hide keyboard shortcuts" },
   ];
 

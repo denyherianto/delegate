@@ -6,7 +6,7 @@ import {
   activeTab, knownAgentNames,
   panelStack, popPanel, closeAllPanels,
   agentLastActivity, agentActivityLog, agentTurnState, managerTurnContext,
-  helpOverlayOpen, sidebarCollapsed,
+  helpOverlayOpen, sidebarCollapsed, isMuted,
   syncFromUrl, navigate, navigateTab,
 } from "./state.js";
 import * as api from "./api.js";
@@ -102,6 +102,12 @@ function App() {
       if (e.key === "c" && !isOverlayOpen()) { navigateTab("chat"); return; }
       if (e.key === "t" && !isOverlayOpen()) { navigateTab("tasks"); return; }
       if (e.key === "a" && !isOverlayOpen()) { navigateTab("agents"); return; }
+      if (e.key === "m" && !isOverlayOpen()) {
+        e.preventDefault();
+        isMuted.value = !isMuted.value;
+        localStorage.setItem("delegate-muted", isMuted.value ? "true" : "false");
+        return;
+      }
       if (e.key === "?" && !isInputFocused()) { helpOverlayOpen.value = !helpOverlayOpen.value; return; }
     };
     document.addEventListener("keydown", handler);
