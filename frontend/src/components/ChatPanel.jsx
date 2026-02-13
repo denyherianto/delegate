@@ -196,6 +196,7 @@ export function ChatPanel() {
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
   const [filterSearch, setFilterSearch] = useState("");
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const [showEvents, setShowEvents] = useState(true);
   const [recipient, setRecipient] = useState("");
   const [inputVal, setInputVal] = useState("");
@@ -248,7 +249,10 @@ export function ChatPanel() {
       const raw = sessionStorage.getItem("chatFilters");
       if (!raw) return;
       const f = JSON.parse(raw);
-      if (f.search) setFilterSearch(f.search);
+      if (f.search) {
+        setFilterSearch(f.search);
+        setSearchExpanded(true); // Expand if there was saved search text
+      }
       if (f.from) setFilterFrom(f.from);
       if (f.to) setFilterTo(f.to);
       if (f.showEvents === false) setShowEvents(false);
@@ -609,6 +613,27 @@ export function ChatPanel() {
     searchTimerRef.current = setTimeout(() => setFilterSearch(val), 300);
   }, []);
 
+  const searchInputRef = useRef();
+
+  const handleSearchExpand = useCallback(() => {
+    setSearchExpanded(true);
+    // Focus input after state update
+    setTimeout(() => searchInputRef.current?.focus(), 0);
+  }, []);
+
+  const handleSearchBlur = useCallback(() => {
+    if (!filterSearch.trim()) {
+      setSearchExpanded(false);
+    }
+  }, [filterSearch]);
+
+  const handleSearchKeyDown = useCallback((e) => {
+    if (e.key === "Escape" && !filterSearch.trim()) {
+      setSearchExpanded(false);
+      searchInputRef.current?.blur();
+    }
+  }, [filterSearch]);
+
   // Team selector options
   const teamOptions = useMemo(() => {
     return teamList.map(t => ({ value: t, label: cap(t) }));
@@ -630,17 +655,34 @@ export function ChatPanel() {
           options={teamOptions}
           onChange={handleTeamChange}
         />
-        <div class="filter-search-wrap">
-          <svg class="filter-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="6" cy="6" r="4.5" /><line x1="9.5" y1="9.5" x2="13" y2="13" />
-          </svg>
-          <input
-            type="text"
-            class="filter-search"
-            placeholder="Search messages..."
-            value={filterSearch}
-            onInput={onSearchInput}
-          />
+        <div class={searchExpanded ? "filter-search-wrap expanded" : "filter-search-wrap"}>
+          {!searchExpanded ? (
+            <button
+              class="filter-search-icon-btn"
+              onClick={handleSearchExpand}
+              title="Search messages"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="6" cy="6" r="4.5" /><line x1="9.5" y1="9.5" x2="13" y2="13" />
+              </svg>
+            </button>
+          ) : (
+            <>
+              <svg class="filter-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="6" cy="6" r="4.5" /><line x1="9.5" y1="9.5" x2="13" y2="13" />
+              </svg>
+              <input
+                ref={searchInputRef}
+                type="text"
+                class="filter-search"
+                placeholder="Search messages..."
+                value={filterSearch}
+                onInput={onSearchInput}
+                onBlur={handleSearchBlur}
+                onKeyDown={handleSearchKeyDown}
+              />
+            </>
+          )}
         </div>
         <CustomSelect
           className="chat-filter-select"

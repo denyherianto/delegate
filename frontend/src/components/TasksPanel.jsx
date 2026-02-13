@@ -24,6 +24,7 @@ export function TasksPanel() {
 
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [collapsedTeams, setCollapsedTeams] = useState(new Set());
   const searchTimerRef = useRef(null);
@@ -36,7 +37,10 @@ export function TasksPanel() {
       if (!raw) return;
       const saved = JSON.parse(raw);
       if (saved.filters) setFilters(saved.filters);
-      if (saved.search) setSearchQuery(saved.search);
+      if (saved.search) {
+        setSearchQuery(saved.search);
+        setSearchExpanded(true); // Expand if there was saved search text
+      }
     } catch (e) { }
   }, []);
 
@@ -138,6 +142,27 @@ export function TasksPanel() {
     searchTimerRef.current = setTimeout(() => setSearchQuery(val), 300);
   }, []);
 
+  const searchInputRef = useRef();
+
+  const handleSearchExpand = useCallback(() => {
+    setSearchExpanded(true);
+    // Focus input after state update
+    setTimeout(() => searchInputRef.current?.focus(), 0);
+  }, []);
+
+  const handleSearchBlur = useCallback(() => {
+    if (!searchQuery.trim()) {
+      setSearchExpanded(false);
+    }
+  }, [searchQuery]);
+
+  const handleSearchKeyDown = useCallback((e) => {
+    if (e.key === "Escape" && !searchQuery.trim()) {
+      setSearchExpanded(false);
+      searchInputRef.current?.blur();
+    }
+  }, [searchQuery]);
+
   // Reset selection when filters change
   useEffect(() => {
     setSelectedIndex(-1);
@@ -235,15 +260,30 @@ export function TasksPanel() {
   return (
     <div class={`panel${activeTab.value === "tasks" ? " active" : ""}`}>
       <div class="task-filters">
-        <div class="filter-search-wrap">
-          {searchIcon}
-          <input
-            type="text"
-            class="filter-search"
-            placeholder="Search tasks..."
-            value={searchQuery}
-            onInput={onSearchInput}
-          />
+        <div class={searchExpanded ? "filter-search-wrap expanded" : "filter-search-wrap"}>
+          {!searchExpanded ? (
+            <button
+              class="filter-search-icon-btn"
+              onClick={handleSearchExpand}
+              title="Search tasks"
+            >
+              {searchIcon}
+            </button>
+          ) : (
+            <>
+              {searchIcon}
+              <input
+                ref={searchInputRef}
+                type="text"
+                class="filter-search"
+                placeholder="Search tasks..."
+                value={searchQuery}
+                onInput={onSearchInput}
+                onBlur={handleSearchBlur}
+                onKeyDown={handleSearchKeyDown}
+              />
+            </>
+          )}
         </div>
         <div class="task-filters-row">
           <div class="team-filter-dropdown">
