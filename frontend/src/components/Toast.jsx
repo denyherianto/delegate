@@ -25,8 +25,12 @@ function Toast({ toast }) {
 
   // Action toast layout (with title + body)
   if (title || body) {
+    const iconMap = { success: '\u2713', info: 'i', error: '!' };
+    const icon = iconMap[type] || '';
+
     return (
       <div class={`toast toast-${type}`}>
+        {icon && <div class="toast-icon">{icon}</div>}
         <div class="toast-content">
           {title && <div class="toast-title">{title}</div>}
           {body && <div class="toast-body">{body}</div>}
