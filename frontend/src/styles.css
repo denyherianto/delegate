@@ -4,10 +4,11 @@
 /* ================================================================
    Variables — Grayscale palette inspired by VS Code / Cursor
    Colors used sparingly with semantic meaning:
+     Green  = accent/brand
+     Blue   = shell commands
      Red    = human attention needed
-     Orange = off track / warning
-     Yellow = in progress
-     Green  = done / healthy
+     Whitish = active/in-progress
+     Gray   = idle/done
    ================================================================ */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; }
@@ -27,7 +28,7 @@ html, body { height: 100%; }
   --border-default: #333333;
   --border-subtle:  #2a2a2a;
   --border-input:   #3c3c3c;
-  --border-focus:   #007fd4;
+  --border-focus:   #2ea05a;
 
   /* ── Text ── */
   --text-primary:   #c4c4c4;
@@ -37,9 +38,14 @@ html, body { height: 100%; }
   --text-heading:   #c4c4c4;
 
   /* ── Accent — used very sparingly ── */
-  --accent:        #569cd6;
-  --accent-hover:  #6cb0e0;
-  --accent-muted:  rgba(86,156,214,0.08);
+  --accent:        #4ade80;
+  --accent-hover:  #5ee892;
+  --accent-muted:  rgba(74,222,128,0.08);
+
+  /* ── Shell/command blue (preserve blue for commands only) ── */
+  --cmd-blue:       #569cd6;
+  --cmd-blue-hover: #6cb0e0;
+  --cmd-blue-muted: rgba(86,156,214,0.08);
 
   /* ── Semantic colors (dots, borders only) ── */
   --semantic-red:    #f14c4c;
@@ -51,9 +57,9 @@ html, body { height: 100%; }
   /* ── Backwards-compat aliases ── */
   --bg-body:        var(--bg-primary);
   --bg-panel-body:  var(--bg-primary);
-  --accent-blue:    var(--accent);
-  --accent-green:   var(--semantic-green);
-  --accent-green-glow: rgba(115,201,145,0.3);
+  --accent-blue:    var(--cmd-blue);
+  --accent-green:   var(--accent);
+  --accent-green-glow: rgba(74,222,128,0.3);
 
   /* ── Buttons ── */
   --btn-bg:    #cccccc;
@@ -75,41 +81,37 @@ html, body { height: 100%; }
   /* ── Backdrop ── */
   --backdrop-bg: rgba(0,0,0,0.55);
 
-  /* ── Status dots — semantic color mapping ──
-     Red:    human attention needed (in_approval, merge_failed)
-     Orange: off track (rejected)
-     Yellow: in progress (in_progress, in_review, merging)
-     Green:  done/healthy
-     Gray:   neutral (todo, cancelled)
+  /* ── Status dots — 3-tier semantic color mapping ──
+     Red:    human attention needed (in_approval, merge_failed, rejected)
+     Whitish: active/agent working (in_progress, in_review, merging)
+     Gray:   idle/done (todo, done, cancelled)
   */
   --status-todo:           var(--semantic-gray);
   --status-todo-bg:        rgba(85,85,85,0.10);
-  --status-in-progress:    var(--semantic-yellow);
-  --status-in-progress-bg: rgba(226,192,141,0.10);
-  --status-in-review:      var(--semantic-yellow);
-  --status-in-review-bg:   rgba(226,192,141,0.10);
+  --status-in-progress:    #b0b0b0;
+  --status-in-progress-bg: rgba(176,176,176,0.10);
+  --status-in-review:      #b0b0b0;
+  --status-in-review-bg:   rgba(176,176,176,0.10);
   --status-in-approval:    var(--semantic-red);
   --status-in-approval-bg: rgba(241,76,76,0.10);
-  --status-merging:        var(--semantic-yellow);
-  --status-merging-bg:     rgba(226,192,141,0.10);
-  --status-done:           var(--semantic-green);
-  --status-done-bg:        rgba(115,201,145,0.10);
-  --status-rejected:       var(--semantic-orange);
-  --status-rejected-bg:    rgba(204,167,0,0.10);
-  --status-merge_failed:   var(--semantic-orange);
-  --status-merge_failed-bg:rgba(204,167,0,0.10);
+  --status-merging:        #b0b0b0;
+  --status-merging-bg:     rgba(176,176,176,0.10);
+  --status-done:           var(--semantic-gray);
+  --status-done-bg:        rgba(85,85,85,0.10);
+  --status-rejected:       var(--semantic-red);
+  --status-rejected-bg:    rgba(241,76,76,0.10);
+  --status-merge_failed:   var(--semantic-red);
+  --status-merge_failed-bg:rgba(241,76,76,0.10);
   --status-cancelled:      var(--semantic-gray);
   --status-cancelled-bg:   rgba(85,85,85,0.10);
 
-  /* ── Agent status dots ──
-     Green:  active (healthy)
-     Orange: stale (may be stuck)
-     Red:    stuck (needs attention)
-     Gray:   offline
+  /* ── Agent status dots — 3-tier (no red on agents) ──
+     Whitish: active (agent working)
+     Gray:    stale/stuck/offline (idle)
   */
-  --dot-active:  var(--semantic-green);
-  --dot-stale:   var(--semantic-orange);
-  --dot-stuck:   var(--semantic-red);
+  --dot-active:  #b0b0b0;
+  --dot-stale:   var(--semantic-gray);
+  --dot-stuck:   var(--semantic-gray);
   --dot-offline: var(--semantic-gray);
 }
 
@@ -851,7 +853,7 @@ body {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: #22c55e;
+  background: var(--accent);
   animation: typing-bounce 1.2s ease-in-out infinite;
 }
 .manager-typing-dot:nth-child(2) { animation-delay: 0.15s; }
@@ -947,7 +949,7 @@ body {
   transition: color 100ms;
   flex-shrink: 0;
 }
-.chat-tool-btn:hover { color: var(--text-primary); }
+.chat-tool-btn:hover { color: var(--accent); }
 .chat-tool-btn.recording { color: var(--semantic-green); }
 .chat-tool-btn.send-btn.active {
   color: var(--text-primary);
@@ -2292,7 +2294,7 @@ select option:hover {
 .command-name {
   font-family: 'JetBrains Mono', monospace;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--cmd-blue);
   min-width: 80px;
 }
 
@@ -2333,7 +2335,7 @@ select option:hover {
 /* Command message container */
 .msg-command {
   padding: 8px 12px 8px 15px;
-  border-left: 3px solid var(--semantic-green);
+  border-left: 3px solid var(--cmd-blue);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -2356,7 +2358,7 @@ select option:hover {
 
 .msg-command-text {
   font-family: 'JetBrains Mono', monospace;
-  color: var(--accent);
+  color: var(--cmd-blue);
 }
 
 /* Shell output block */
@@ -2563,12 +2565,12 @@ select option:hover {
 
 .status-badge.status-idle {
   background: var(--status-done-bg);
-  color: var(--semantic-green);
+  color: var(--semantic-gray);
 }
 
 .status-badge.status-working {
   background: var(--status-in-progress-bg);
-  color: var(--semantic-yellow);
+  color: #b0b0b0;
 }
 
 .status-task-link {
