@@ -2797,16 +2797,12 @@ select option:hover {
   font-size: 13px;
 }
 
-.cost-task-id {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: var(--accent);
-  text-decoration: none;
+.cost-task-link {
   cursor: pointer;
   min-width: 50px;
 }
 
-.cost-task-id:hover {
+.cost-task-link:hover {
   text-decoration: underline;
 }
 

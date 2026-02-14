@@ -1,4 +1,6 @@
 import { openPanel } from "../state.js";
+import { CopyBtn } from "./CopyBtn.jsx";
+import { taskIdStr } from "../utils.js";
 
 /**
  * Renders /cost command output - cost analytics summary.
@@ -57,13 +59,12 @@ export function CostBlock({ result }) {
             <div class="cost-section-title">Top Tasks by Cost:</div>
             {top_tasks.map(task => (
               <div key={task.task_id} class="cost-task-row">
-                <a
-                  href="#"
-                  class="cost-task-id"
+                <span
+                  class="task-id copyable cost-task-link"
                   onClick={(e) => handleTaskClick(e, task.task_id)}
                 >
-                  T{String(task.task_id).padStart(4, '0')}
-                </a>
+                  {taskIdStr(task.task_id)}<CopyBtn text={taskIdStr(task.task_id)} />
+                </span>
                 <span class="cost-task-title">{formatTaskTitle(task.title)}</span>
                 <span class="cost-task-amount">{formatCost(task.cost_usd)}</span>
               </div>
