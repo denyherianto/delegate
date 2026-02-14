@@ -77,7 +77,7 @@ class TestRejectNotification:
         assert "Reassign" in body
         assert "Discard" in body
 
-    def test_notification_sender_is_boss(self, tmp_team, client):
+    def test_notification_sender_is_system(self, tmp_team, client):
         task = _task_to_in_approval(tmp_team)
         client.post(
             f"/teams/{TEAM}/tasks/{task['id']}/reject",
@@ -85,8 +85,8 @@ class TestRejectNotification:
         )
         inbox = read_inbox(tmp_team, TEAM, "manager", unread_only=True)
         msg = inbox[0]
-        # Boss name is "nikhil" as set in conftest
-        assert msg.sender == "nikhil"
+        # System notifications now come from "system" sender
+        assert msg.sender == "system"
 
     def test_reject_sets_approval_status(self, tmp_team, client):
         task = _task_to_in_approval(tmp_team)

@@ -39,11 +39,10 @@ def _get_manager_name(hc_home: Path, team: str) -> str:
 def _get_sender_name(hc_home: Path) -> str:
     """Return a valid sender for system notifications.
 
-    Uses the human member name since they are the person who triggers
-    rejections, and 'system' has no agent directory which would
-    cause downstream routing failures.
+    Returns 'system' for automated merge conflict and rejection notifications.
     """
-    return get_default_human(hc_home)
+    from delegate.config import SYSTEM_USER
+    return SYSTEM_USER
 
 
 def notify_rejection(
