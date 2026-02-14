@@ -933,7 +933,6 @@ export function ChatPanel() {
             return (
               <div key={m.id || i} class="msg-event">
                 <LinkedDiv class="msg-event-text" html={eventHtml} />
-                <span class="msg-event-sep">|</span>
                 <span class="msg-event-time">{fmtTimestamp(m.timestamp)}</span>
               </div>
             );
