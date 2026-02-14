@@ -248,7 +248,7 @@ function App() {
       agents.value = [];
       agentStatsMap.value = {};
       messages.value = [];
-      taskTeamFilter.value = "current";  // Reset to current team on team switch
+      taskTeamFilter.value = "all";  // Reset to all teams on team switch
       _syncSignalsNow(t);
     });
 

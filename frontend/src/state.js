@@ -13,7 +13,7 @@ export const bossName = humanName;
 export const hcHome = signal("");   // absolute path to delegate home (e.g. /Users/x/.delegate)
 
 // ── Task team filter ──
-export const taskTeamFilter = signal("current"); // "current" | "all" | specific team name
+export const taskTeamFilter = signal("all"); // "current" | "all" | specific team name
 
 // ── API data (refreshed by polling) ──
 export const tasks = signal([]);
