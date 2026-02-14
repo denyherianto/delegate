@@ -15,7 +15,8 @@
  *               └─ InlineComment (rendered between lines where comments exist)
  */
 
-import { useState, useRef, useCallback, useMemo } from "preact/hooks";
+import { useState, useRef, useCallback, useMemo, useEffect } from "preact/hooks";
+import { memo } from "preact/compat";
 import { diff2HtmlParse, cap } from "../utils.js";
 import * as api from "../api.js";
 import { currentTeam } from "../state.js";
@@ -174,7 +175,7 @@ function InlineEditForm({ comment, taskId, onSaved, onCancel }) {
 
 // ── InlineComment display ──
 
-function InlineComment({ comment, dimmed, onEdit, onDelete }) {
+const InlineComment = memo(function InlineComment({ comment, dimmed, onEdit, onDelete }) {
   return (
     <div class={"rc-comment" + (dimmed ? " rc-comment-dimmed" : "")}>
       <div class="rc-comment-header">
@@ -204,11 +205,11 @@ function InlineComment({ comment, dimmed, onEdit, onDelete }) {
       <div class="rc-comment-body">{comment.body}</div>
     </div>
   );
-}
+});
 
 // ── DiffLine ──
 
-function DiffLine({ line, file, taskId, comments, oldComments, showOld, onCommentSaved, onCommentEdit, onCommentDelete }) {
+const DiffLine = memo(function DiffLine({ line, file, taskId, comments, oldComments, showOld, onCommentSaved, onCommentEdit, onCommentDelete }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   // Use the new line number for additions/context, old for deletions
@@ -286,7 +287,7 @@ function DiffLine({ line, file, taskId, comments, oldComments, showOld, onCommen
       )}
     </>
   );
-}
+});
 
 // ── EditableComment — wraps InlineComment with edit state ──
 
@@ -315,7 +316,7 @@ function EditableComment({ comment, taskId, onEdit, onDelete }) {
 
 // ── DiffBlock (hunk) ──
 
-function DiffBlock({ block, file, taskId, commentIndex, oldCommentIndex, showOld, onCommentSaved, onCommentEdit, onCommentDelete }) {
+const DiffBlock = memo(function DiffBlock({ block, file, taskId, commentIndex, oldCommentIndex, showOld, onCommentSaved, onCommentEdit, onCommentDelete }) {
   const header = block.header || "";
 
   return (
@@ -345,11 +346,11 @@ function DiffBlock({ block, file, taskId, commentIndex, oldCommentIndex, showOld
       })}
     </>
   );
-}
+});
 
 // ── DiffFile ──
 
-function DiffFile({ diffFile, taskId, commentIndex, oldCommentIndex, showOld, onCommentSaved, onCommentEdit, onCommentDelete, defaultCollapsed }) {
+const DiffFile = memo(function DiffFile({ diffFile, taskId, commentIndex, oldCommentIndex, showOld, onCommentSaved, onCommentEdit, onCommentDelete, defaultCollapsed }) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const name = fileName(diffFile);
   const fileCommentKey = commentKey(name, null);
@@ -420,7 +421,7 @@ function DiffFile({ diffFile, taskId, commentIndex, oldCommentIndex, showOld, on
       )}
     </div>
   );
-}
+});
 
 // ── Main: ReviewableDiff ──
 
@@ -433,11 +434,37 @@ export function ReviewableDiff({
 }) {
   const [localComments, setLocalComments] = useState([]);
   const [showOld, setShowOld] = useState(true);
+  const [visibleFileCount, setVisibleFileCount] = useState(3);
 
   // Parse the unified diff
   const files = useMemo(() => {
     if (!diffRaw) return [];
     return diff2HtmlParse(diffRaw);
+  }, [diffRaw]);
+
+  // Progressive file rendering: render first 3 files immediately,
+  // then lazy-mount remaining files on idle or scroll
+  useEffect(() => {
+    if (files.length <= 3) return;
+
+    // Schedule lazy mounting of remaining files
+    const loadRemainingFiles = () => {
+      setVisibleFileCount(files.length);
+    };
+
+    // Use requestIdleCallback if available, otherwise setTimeout
+    if (typeof requestIdleCallback !== 'undefined') {
+      const id = requestIdleCallback(loadRemainingFiles, { timeout: 100 });
+      return () => cancelIdleCallback(id);
+    } else {
+      const id = setTimeout(loadRemainingFiles, 100);
+      return () => clearTimeout(id);
+    }
+  }, [files.length]);
+
+  // Reset visible count when diffRaw changes
+  useEffect(() => {
+    setVisibleFileCount(3);
   }, [diffRaw]);
 
   // Merge server comments + local (optimistic) ones
@@ -474,6 +501,9 @@ export function ReviewableDiff({
     return <div class="diff-empty">No changes</div>;
   }
 
+  const visibleFiles = files.slice(0, visibleFileCount);
+  const hasMoreFiles = visibleFileCount < files.length;
+
   return (
     <div class="rc-reviewable-diff">
       {/* Previous reviews toggle */}
@@ -496,8 +526,8 @@ export function ReviewableDiff({
           <span class="rc-comment-badge">{allCurrentComments.length} comment{allCurrentComments.length !== 1 ? "s" : ""}</span>
         )}
       </div>
-      {/* Files */}
-      {files.map((f, i) => (
+      {/* Files (progressive rendering) */}
+      {visibleFiles.map((f, i) => (
         <DiffFile
           key={i}
           diffFile={f}
@@ -511,6 +541,9 @@ export function ReviewableDiff({
           defaultCollapsed={false}
         />
       ))}
+      {hasMoreFiles && (
+        <div class="diff-empty">Loading {files.length - visibleFileCount} more file{files.length - visibleFileCount !== 1 ? "s" : ""}...</div>
+      )}
     </div>
   );
 }

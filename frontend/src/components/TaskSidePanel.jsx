@@ -615,6 +615,25 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
     }
   }, [activityRaw, transformActivity]);
 
+  // Pre-compute comment HTML to avoid re-running markdown+linkification on every render
+  const timelineWithHtml = useMemo(() => {
+    if (!timeline) return null;
+    return timeline.map((e) => {
+      if (e.type === "comment") {
+        const commentHtml = agentifyRefs(
+          linkifyFilePaths(
+            linkifyTaskRefs(
+              renderMarkdown(e.body)
+            )
+          ),
+          agentNames
+        );
+        return { ...e, commentHtml };
+      }
+      return e;
+    });
+  }, [timeline, agentNames]);
+
   const handleLoadMore = async () => {
     if (loadingMore) return;
     setLoadingMore(true);
@@ -648,23 +667,15 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
 
   return (
     <div class="task-activity-tab">
-        {timeline === null ? (
+        {timelineWithHtml === null ? (
           <div class="diff-empty">Loading activity...</div>
-        ) : timeline.length === 0 ? (
+        ) : timelineWithHtml.length === 0 ? (
           <div class="diff-empty">No activity yet</div>
         ) : (
         <>
           <div class="task-activity-timeline">
-            {timeline.map((e, i) => {
+            {timelineWithHtml.map((e, i) => {
               if (e.type === "comment") {
-                const commentHtml = agentifyRefs(
-                  linkifyFilePaths(
-                    linkifyTaskRefs(
-                      renderMarkdown(e.body)
-                    )
-                  ),
-                  agentNames
-                );
                 return (
                   <div key={i} class="task-activity-event task-comment-entry">
                     <span class="task-activity-icon">{e.icon}</span>
@@ -673,7 +684,7 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
                         <span class="task-comment-author">{cap(e.author)}</span>
                         <span class="task-activity-time">{fmtRelativeTime(e.time)}</span>
                       </div>
-                      <LinkedDiv class="task-comment-text md-content" html={commentHtml} />
+                      <LinkedDiv class="task-comment-text md-content" html={e.commentHtml} />
                     </div>
                   </div>
                 );
@@ -746,18 +757,21 @@ export function TaskSidePanel() {
   const [activityRaw, setActivityRaw] = useState(null);
   const [activityLoaded, setActivityLoaded] = useState(false);
 
-  // Mark tab as visited when selected
+  // Mark tab as visited when selected and cache the active tab
   const switchTab = useCallback((tab) => {
     setActiveTab(tab);
     setVisitedTabs(prev => prev[tab] ? prev : { ...prev, [tab]: true });
-  }, []);
+    // Cache active tab per task ID so it's preserved on re-open
+    if (id !== null) {
+      _setCache(id, { activeTab: tab });
+    }
+  }, [id]);
 
   // Load task data when panel opens — stale-while-revalidate.
   // If we have cached data for this task, show it immediately;
   // then always re-fetch in the background to ensure freshness.
   useEffect(() => {
     if (id === null) { setTask(null); return; }
-    setActiveTab("overview");
 
     // ── Restore from cache (instant) ──
     const c = _getCache(id);
@@ -770,6 +784,10 @@ export function TaskSidePanel() {
     setOldComments(c.oldComments ?? []);
     setActivityRaw(c.activityRaw ?? null);
     setActivityLoaded(!!c.activityRaw);
+
+    // Restore active tab from cache, default to overview
+    const cachedTab = c.activeTab || "overview";
+    setActiveTab(cachedTab);
 
     // Mark changes and activity tabs as visited for eager loading
     const restored = { overview: true, changes: true, activity: true };
