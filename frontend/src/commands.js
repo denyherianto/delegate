@@ -7,7 +7,7 @@
 export const COMMANDS = {
   shell: {
     name: 'shell',
-    description: 'Run a shell command',
+    description: 'Run a shell command (e.g. /shell -d ~/Documents ls)',
     usage: '/shell [command]',
   },
   status: {
@@ -17,7 +17,7 @@ export const COMMANDS = {
   },
   diff: {
     name: 'diff',
-    description: 'Show task diff',
+    description: 'Show task diff (e.g. /diff 42 or /diff T0042)',
     usage: '/diff [task_id]',
   },
   cost: {
