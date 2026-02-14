@@ -2192,12 +2192,12 @@ select option:hover {
   gap: 4px;
 }
 .toast-title {
-  font-weight: 400;
+  font-weight: 500;
   color: var(--text-primary);
 }
 .toast-body {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 11px;
 }
 .toast-actions {
   display: flex;
@@ -2210,7 +2210,7 @@ select option:hover {
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
   padding: 0;
   transition: color 100ms;
 }
