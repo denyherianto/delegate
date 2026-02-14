@@ -87,11 +87,15 @@ def my_workflow():
     return [Todo, InProgress, InReview, Deploy, Done]
 ```
 
+**Mix models by role.** Use Opus for the manager and senior engineers, Sonnet for juniors. Expensive models make decisions; cheap models do the volume work. Configure per agent.
+
+**Team charter in markdown.** Edit a markdown file to set review standards, communication norms, and team values. Ship two presets — "quality first" (stricter reviews, more tests) and "ship fast" (lighter process, faster iteration) — or write your own.
+
 **Multi-team, multi-repo.** Run separate teams for different projects, each with their own agents, repos, and workflows.
 
-**Built-in shell.** Run any command from the chat with `/shell ls -la`. Set the working directory with the CWD picker. Output renders inline.
+**Built-in shell.** Run any command from the chat with `/shell ls -la`. Output renders inline.
 
-**Keyboard-driven.** `?` for shortcuts, `j/k` navigation, `t/c/a` to switch tabs, `r` to reply, `/` for commands. Vim-style escape mode.
+**Keyboard-driven.** `?` for shortcuts, `j/k` navigation, `t/c/a` to switch tabs, `r` to reply, `/` for commands.
 
 ## Architecture
 
