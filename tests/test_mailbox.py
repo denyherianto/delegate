@@ -14,6 +14,9 @@ from delegate.mailbox import (
     deliver,
     has_unread,
     count_unread,
+    agents_with_unread,
+    recent_processed,
+    recent_conversation,
 )
 
 TEAM = "testteam"
@@ -252,3 +255,165 @@ class TestMessageEscaping:
         send(tmp_team, TEAM, "alice", "bob", "Hello 🌍 — über cool")
         msgs = read_inbox(tmp_team, TEAM, "bob")
         assert msgs[0].body == "Hello 🌍 — über cool"
+
+
+class TestTeamIsolation:
+    """Test that team filters prevent cross-team message leakage.
+
+    Each function that queries messages must include 'AND team = ?' to prevent
+    messages from leaking across teams. We use different agent names per team
+    since names must be globally unique, but test that the team filter still
+    works correctly by ensuring queries only return results for the specified team.
+    """
+
+    def test_has_unread_team_isolation(self, tmp_team):
+        """has_unread() should only return true for messages in the specified team."""
+        from delegate.bootstrap import bootstrap
+
+        # Create two additional teams (tmp_team fixture already creates "testteam")
+        bootstrap(tmp_team, "alpha", manager="mgr-alpha", agents=["agent-alpha"])
+        bootstrap(tmp_team, "beta", manager="mgr-beta", agents=["agent-beta"])
+
+        # Send message to agent-alpha in team alpha
+        send(tmp_team, "alpha", "mgr-alpha", "agent-alpha", "Alpha message")
+
+        # agent-alpha should have unread in alpha
+        assert has_unread(tmp_team, "alpha", "agent-alpha")
+        # agent-beta in beta should not have unread
+        assert not has_unread(tmp_team, "beta", "agent-beta")
+
+    def test_count_unread_team_isolation(self, tmp_team):
+        """count_unread() should only count messages in the specified team."""
+        from delegate.bootstrap import bootstrap
+
+        bootstrap(tmp_team, "alpha", manager="mgr-alpha", agents=["agent-alpha"])
+        bootstrap(tmp_team, "beta", manager="mgr-beta", agents=["agent-beta"])
+
+        # Send 2 messages to agent-alpha in alpha, 1 to agent-beta in beta
+        send(tmp_team, "alpha", "mgr-alpha", "agent-alpha", "Alpha msg 1")
+        send(tmp_team, "alpha", "mgr-alpha", "agent-alpha", "Alpha msg 2")
+        send(tmp_team, "beta", "mgr-beta", "agent-beta", "Beta msg 1")
+
+        # Counts should be isolated by team
+        assert count_unread(tmp_team, "alpha", "agent-alpha") == 2
+        assert count_unread(tmp_team, "beta", "agent-beta") == 1
+
+    def test_agents_with_unread_team_isolation(self, tmp_team):
+        """agents_with_unread() should only return agents with unread in the specified team."""
+        from delegate.bootstrap import bootstrap
+
+        bootstrap(tmp_team, "alpha", manager="mgr-alpha", agents=["agent-a1", "agent-a2"])
+        bootstrap(tmp_team, "beta", manager="mgr-beta", agents=["agent-b1", "agent-b2"])
+
+        # Send messages in alpha
+        send(tmp_team, "alpha", "mgr-alpha", "agent-a1", "Alpha to a1")
+        send(tmp_team, "alpha", "mgr-alpha", "agent-a2", "Alpha to a2")
+
+        # Send message in beta
+        send(tmp_team, "beta", "mgr-beta", "agent-b2", "Beta to b2")
+
+        # Each team should only see its own agents
+        alpha_agents = agents_with_unread(tmp_team, "alpha")
+        beta_agents = agents_with_unread(tmp_team, "beta")
+
+        assert set(alpha_agents) == {"agent-a1", "agent-a2"}
+        assert set(beta_agents) == {"agent-b2"}
+
+    def test_recent_processed_team_isolation(self, tmp_team):
+        """recent_processed() should only return messages from the specified team."""
+        from delegate.bootstrap import bootstrap
+
+        bootstrap(tmp_team, "alpha", manager="mgr-alpha", agents=["agent-alpha"])
+        bootstrap(tmp_team, "beta", manager="mgr-beta", agents=["agent-beta"])
+
+        # Send and process messages in both teams
+        alpha_id = send(tmp_team, "alpha", "mgr-alpha", "agent-alpha", "Alpha msg")
+        beta_id = send(tmp_team, "beta", "mgr-beta", "agent-beta", "Beta msg")
+
+        mark_processed(tmp_team, "alpha", alpha_id)
+        mark_processed(tmp_team, "beta", beta_id)
+
+        # Each team should only see its own processed messages
+        alpha_msgs = recent_processed(tmp_team, "alpha", "agent-alpha")
+        beta_msgs = recent_processed(tmp_team, "beta", "agent-beta")
+
+        assert len(alpha_msgs) == 1
+        assert alpha_msgs[0].body == "Alpha msg"
+
+        assert len(beta_msgs) == 1
+        assert beta_msgs[0].body == "Beta msg"
+
+    def test_recent_processed_with_sender_team_isolation(self, tmp_team):
+        """recent_processed() with from_sender should filter by team."""
+        from delegate.bootstrap import bootstrap
+
+        bootstrap(tmp_team, "alpha", manager="mgr-alpha", agents=["agent-alpha"])
+        bootstrap(tmp_team, "beta", manager="mgr-beta", agents=["agent-beta"])
+
+        # Send from managers to agents in both teams
+        alpha_id = send(tmp_team, "alpha", "mgr-alpha", "agent-alpha", "Alpha from mgr")
+        beta_id = send(tmp_team, "beta", "mgr-beta", "agent-beta", "Beta from mgr")
+
+        mark_processed(tmp_team, "alpha", alpha_id)
+        mark_processed(tmp_team, "beta", beta_id)
+
+        # Filter by sender should still respect team boundaries
+        alpha_msgs = recent_processed(tmp_team, "alpha", "agent-alpha", from_sender="mgr-alpha")
+        beta_msgs = recent_processed(tmp_team, "beta", "agent-beta", from_sender="mgr-beta")
+
+        assert len(alpha_msgs) == 1
+        assert alpha_msgs[0].body == "Alpha from mgr"
+
+        assert len(beta_msgs) == 1
+        assert beta_msgs[0].body == "Beta from mgr"
+
+    def test_recent_conversation_team_isolation(self, tmp_team):
+        """recent_conversation() should only return messages from the specified team."""
+        from delegate.bootstrap import bootstrap
+
+        bootstrap(tmp_team, "alpha", manager="mgr-alpha", agents=["agent-alpha"])
+        bootstrap(tmp_team, "beta", manager="mgr-beta", agents=["agent-beta"])
+
+        # Create conversations in both teams
+        alpha_id1 = send(tmp_team, "alpha", "mgr-alpha", "agent-alpha", "Alpha incoming")
+        send(tmp_team, "alpha", "agent-alpha", "mgr-alpha", "Alpha outgoing")
+        beta_id1 = send(tmp_team, "beta", "mgr-beta", "agent-beta", "Beta incoming")
+        send(tmp_team, "beta", "agent-beta", "mgr-beta", "Beta outgoing")
+
+        # Mark incoming messages as processed
+        mark_processed(tmp_team, "alpha", alpha_id1)
+        mark_processed(tmp_team, "beta", beta_id1)
+
+        # Each team should only see its own conversation
+        alpha_conv = recent_conversation(tmp_team, "alpha", "agent-alpha")
+        beta_conv = recent_conversation(tmp_team, "beta", "agent-beta")
+
+        assert len(alpha_conv) == 2
+        assert set(m.body for m in alpha_conv) == {"Alpha incoming", "Alpha outgoing"}
+
+        assert len(beta_conv) == 2
+        assert set(m.body for m in beta_conv) == {"Beta incoming", "Beta outgoing"}
+
+    def test_recent_conversation_with_peer_team_isolation(self, tmp_team):
+        """recent_conversation() with peer should filter by team."""
+        from delegate.bootstrap import bootstrap
+
+        bootstrap(tmp_team, "alpha", manager="mgr-alpha", agents=["agent-alpha"])
+        bootstrap(tmp_team, "beta", manager="mgr-beta", agents=["agent-beta"])
+
+        # Create conversations with managers in both teams
+        alpha_id = send(tmp_team, "alpha", "mgr-alpha", "agent-alpha", "Alpha msg")
+        beta_id = send(tmp_team, "beta", "mgr-beta", "agent-beta", "Beta msg")
+
+        mark_processed(tmp_team, "alpha", alpha_id)
+        mark_processed(tmp_team, "beta", beta_id)
+
+        # Filter by peer should still respect team boundaries
+        alpha_conv = recent_conversation(tmp_team, "alpha", "agent-alpha", peer="mgr-alpha")
+        beta_conv = recent_conversation(tmp_team, "beta", "agent-beta", peer="mgr-beta")
+
+        assert len(alpha_conv) == 1
+        assert alpha_conv[0].body == "Alpha msg"
+
+        assert len(beta_conv) == 1
+        assert beta_conv[0].body == "Beta msg"
