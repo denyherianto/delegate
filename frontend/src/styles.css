@@ -901,9 +901,12 @@ body {
 .chat-tool-btn:hover { color: var(--accent); }
 .chat-tool-btn.recording { color: var(--semantic-green); }
 .chat-tool-btn.send-btn.active {
-  color: var(--accent);
-  background: var(--bg-active);
+  color: #fff;
+  background: var(--accent);
   border-radius: 6px;
+}
+.chat-tool-btn.send-btn.active:hover {
+  background: #5ee892;
 }
 
 /* ================================================================
