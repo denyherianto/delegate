@@ -288,6 +288,33 @@ body {
 .sb-dot.dot-merge_failed { background: var(--status-merge_failed); }
 .sb-dot.dot-cancelled   { background: var(--status-cancelled); }
 
+/* Scrollable container for agent list */
+.sb-agents-scroll {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* Team group */
+.sb-team-group {
+  margin-bottom: 4px;
+}
+
+.sb-team-name {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 6px 4px 2px;
+}
+
+/* Idle summary line */
+.sb-idle-summary {
+  font-size: 10px;
+  color: var(--text-faint);
+  padding: 2px 4px 2px 18px;  /* align with agent names after dot+gap */
+}
+
 /* Agent row */
 .sb-agent-row {
   display: flex;
@@ -313,7 +340,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   flex-shrink: 0;
-  width: 56px;
+  width: 48px;
   cursor: pointer;
 }
 .sb-agent-name:hover {
@@ -1310,23 +1337,6 @@ select option:hover {
   border: 1px solid var(--border-subtle);
 }
 
-/* ── Cross-team agent styles in sidebar ── */
-.sb-agent-divider {
-  height: 1px;
-  background: var(--border-subtle);
-  margin: 8px 0;
-}
-.sb-agent-row-crossteam {
-  opacity: 0.7;
-}
-.sb-agent-row-crossteam:hover {
-  opacity: 1;
-}
-.sb-agent-team-label {
-  font-size: 10px;
-  color: var(--text-muted);
-  margin-left: 4px;
-}
 
 /* ================================================================
    FilterBar (Linear-style composable filters)

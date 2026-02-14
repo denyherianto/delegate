@@ -20,6 +20,8 @@ export const tasks = signal([]);
 export const agents = signal([]);
 export const agentStatsMap = signal({}); // { agentName: statsObj }
 export const messages = signal([]);
+export const allTeamsAgents = signal([]); // All agents across all teams
+export const allTeamsTurnState = signal({}); // { teamName: { agentName: { inTurn, taskId, sender } } }
 
 // ── UI state ──
 export const activeTab = signal("chat");

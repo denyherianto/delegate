@@ -4,6 +4,7 @@ import {
   activeTab, openPanel,
   agentActivityLog, agentTurnState, sidebarCollapsed,
   navigate, navigateTab, crossTeamActiveAgents,
+  allTeamsAgents, allTeamsTurnState,
 } from "../state.js";
 import {
   cap, taskIdStr, getAgentDotClass,
@@ -88,193 +89,158 @@ function getStatusVerb(taskStatus) {
 
 // ── Agent widget ──
 function AgentsWidget({ collapsed }) {
-  const team = currentTeam.value;
-  const allAgents = agents.value;
-  const crossTeam = crossTeamActiveAgents.value;
+  const currentTeamName = currentTeam.value;
+  const allAgentsList = allTeamsAgents.value;
+  const allTurnState = allTeamsTurnState.value;
   const allTasks = tasks.value;
   const statsMap = agentStatsMap.value;
-  const turnState = agentTurnState.value;
   const activityLog = agentActivityLog.value;
 
-  if (collapsed || !allAgents.length) return null;
+  if (collapsed || !allAgentsList.length) return null;
 
-  // Compute status for current team agents
-  const currentTeamAgents = allAgents.filter(a => !a.team || a.team === team);
-  const agentsWithStatus = currentTeamAgents.map(a => {
-    const turn = turnState[a.name];
-    const inTurn = turn?.inTurn ?? false;
-    const lastTaskId = turn?.taskId ?? null;
-    const sender = turn?.sender ?? "";
+  // Group agents by team
+  const teamGroups = {};
+  for (const a of allAgentsList) {
+    const t = a.team || "unknown";
+    if (!teamGroups[t]) teamGroups[t] = [];
+    teamGroups[t].push(a);
+  }
 
-    let status = "idle";
-    let displayTaskId = null;
-    let respondingTo = null;
-    let taskStatus = null;
-
-    if (inTurn) {
-      status = "working";
-      // Task ID from SSE stream
-      if (lastTaskId) {
-        displayTaskId = lastTaskId;
-        // Look up task by ID to get its status for the verb
-        const task = allTasks.find(t => t.id === lastTaskId);
-        if (task) {
-          taskStatus = task.status;
-        }
-      } else if (sender) {
-        // In turn with no task but has sender -> responding to sender
-        respondingTo = sender;
-      }
-    } else if (lastTaskId) {
-      // Not in turn but has task from SSE
-      status = "waiting";
-      displayTaskId = lastTaskId;
-      const task = allTasks.find(t => t.id === lastTaskId);
-      if (task) {
-        taskStatus = task.status;
-      }
-    }
-
-    return { agent: a, status, displayTaskId, respondingTo, taskStatus };
-  });
-
-  // Sort: active (working first, then waiting) at top, idle at bottom, alphabetically within groups
-  const sorted = [...agentsWithStatus].sort((a, b) => {
-    const statusOrder = { working: 0, waiting: 1, idle: 2 };
-    const aOrder = statusOrder[a.status];
-    const bOrder = statusOrder[b.status];
-    if (aOrder !== bOrder) return aOrder - bOrder;
-    return (a.agent.name || "").localeCompare(b.agent.name || "");
-  });
-
-  // Compute status for cross-team agents (only active ones)
-  const crossTeamAgentsWithStatus = crossTeam.map(a => {
-    const turn = turnState[a.name];
-    const lastTaskId = turn?.taskId ?? null;
-    let taskStatus = null;
-    if (lastTaskId) {
-      const task = allTasks.find(t => t.id === lastTaskId);
-      if (task) taskStatus = task.status;
-    }
-    return {
-      agent: a,
-      status: "working",
-      displayTaskId: lastTaskId,
-      respondingTo: null,
-      taskStatus,
-    };
+  // Sort teams: current team first, then alphabetical
+  const teamNames = Object.keys(teamGroups).sort((a, b) => {
+    if (a === currentTeamName) return -1;
+    if (b === currentTeamName) return 1;
+    return a.localeCompare(b);
   });
 
   return (
-    <div class="sb-widget">
-      <div class="sb-widget-header">Agents</div>
-      {/* Current team agents */}
-      {sorted.map(({ agent: a, status, displayTaskId, respondingTo, taskStatus }) => {
-        let dotClass = getAgentDotClass(a, allTasks, statsMap[a.name]);
+    <div class="sb-widget sb-agents-widget">
+      <div class="sb-widget-header">Active Teams</div>
+      <div class="sb-agents-scroll">
+        {teamNames.map(teamName => {
+          const teamAgents = teamGroups[teamName];
+          const turnState = allTurnState[teamName] || {};
 
-        // Override dot color for idle agents
-        if (status === "idle") {
-          dotClass = "dot-offline";
-        }
+          // Compute status for each agent
+          const agentsWithStatus = teamAgents.map(a => {
+            const turn = turnState[a.name];
+            const inTurn = turn?.inTurn ?? false;
+            const lastTaskId = turn?.taskId ?? null;
+            const sender = turn?.sender ?? "";
 
-        // Get last 1 tool invocation for this agent
-        const agentActivities = activityLog
-          .filter(entry => entry.agent === a.name && entry.type === "agent_activity")
-          .slice(-1);
+            let status = "idle";
+            let displayTaskId = null;
+            let respondingTo = null;
+            let taskStatus = null;
 
-        // Derive display verb from task status
-        const verb = taskStatus ? getStatusVerb(taskStatus) : null;
+            if (inTurn) {
+              status = "working";
+              if (lastTaskId) {
+                displayTaskId = lastTaskId;
+                const task = allTasks.find(t => t.id === lastTaskId);
+                if (task) {
+                  taskStatus = task.status;
+                }
+              } else if (sender) {
+                respondingTo = sender;
+              }
+            } else if (lastTaskId) {
+              status = "waiting";
+              displayTaskId = lastTaskId;
+              const task = allTasks.find(t => t.id === lastTaskId);
+              if (task) {
+                taskStatus = task.status;
+              }
+            }
 
-        return (
-          <div
-            key={a.name}
-            class="sb-agent-row"
-          >
-            <div class="sb-agent-line1">
-              <span class={"sb-dot " + dotClass}></span>
-              <span
-                class="sb-agent-name"
-                onClick={(e) => { e.stopPropagation(); openPanel("agent", a.name); }}
-              >
-                {cap(a.name)}
-              </span>
-              <span class="sb-agent-status">
-                {status === "idle" ? "idle" : respondingTo ? (
-                  <>
-                    responding to <span class="sb-agent-task-link">{cap(respondingTo)}</span>
-                  </>
-                ) : (
-                  <>
-                    {displayTaskId && verb ? (
-                      <>
-                        {verb}{" "}
-                        <span
-                          class="sb-agent-task-link"
-                          onClick={(e) => { e.stopPropagation(); openPanel("task", displayTaskId); }}
-                        >
-                          {taskIdStr(displayTaskId)}
-                        </span>
-                      </>
-                    ) : (
-                      status
-                    )}
-                  </>
-                )}
-              </span>
-            </div>
-            {agentActivities.map((act, idx) => {
-              const toolDetail = act.tool
-                ? `${act.tool.toLowerCase()}${act.detail ? ": " + act.detail.split("/").pop().substring(0, 24) : ""}`
-                : "";
-              return toolDetail ? (
-                <div key={idx} class="sb-agent-tool-line">{toolDetail}</div>
-              ) : null;
-            })}
-          </div>
-        );
-      })}
+            return { agent: a, status, displayTaskId, respondingTo, taskStatus };
+          });
 
-      {/* Cross-team active agents */}
-      {crossTeamAgentsWithStatus.length > 0 && (
-        <>
-          <div class="sb-agent-divider"></div>
-          {crossTeamAgentsWithStatus.map(({ agent: a, displayTaskId, taskStatus }) => {
-            const verb = taskStatus ? getStatusVerb(taskStatus) : null;
-            return (
-              <div
-                key={a.name}
-                class="sb-agent-row sb-agent-row-crossteam"
-              >
-                <div class="sb-agent-line1">
-                  <span class="sb-dot dot-active"></span>
-                  <span
-                    class="sb-agent-name"
-                    onClick={(e) => { e.stopPropagation(); openPanel("agent", a.name); }}
+          // Split into active and idle
+          const active = agentsWithStatus.filter(a => a.status !== "idle");
+          const idle = agentsWithStatus.filter(a => a.status === "idle");
+
+          // Sort active: working first, then waiting, alpha within
+          active.sort((a, b) => {
+            const order = { working: 0, waiting: 1 };
+            const diff = (order[a.status] ?? 9) - (order[b.status] ?? 9);
+            return diff !== 0 ? diff : a.agent.name.localeCompare(b.agent.name);
+          });
+
+          const isCurrentTeam = teamName === currentTeamName;
+
+          return (
+            <div key={teamName} class="sb-team-group">
+              <div class="sb-team-name">{teamName}</div>
+              {active.map(({ agent: a, status, displayTaskId, respondingTo, taskStatus }) => {
+                let dotClass = getAgentDotClass(a, allTasks, statsMap[a.name]);
+
+                // Get last 1 tool invocation for this agent (only for current team)
+                const agentActivities = isCurrentTeam
+                  ? activityLog
+                      .filter(entry => entry.agent === a.name && entry.type === "agent_activity")
+                      .slice(-1)
+                  : [];
+
+                const verb = taskStatus ? getStatusVerb(taskStatus) : null;
+
+                return (
+                  <div
+                    key={a.name}
+                    class="sb-agent-row"
                   >
-                    {cap(a.name)}
-                  </span>
-                  <span class="sb-agent-team-label">({a.team})</span>
-                  <span class="sb-agent-status">
-                    {displayTaskId && verb ? (
-                      <>
-                        {verb}{" "}
-                        <span
-                          class="sb-agent-task-link"
-                          onClick={(e) => { e.stopPropagation(); openPanel("task", displayTaskId); }}
-                        >
-                          {taskIdStr(displayTaskId)}
-                        </span>
-                      </>
-                    ) : (
-                      "working"
-                    )}
-                  </span>
+                    <div class="sb-agent-line1">
+                      <span class={"sb-dot " + dotClass}></span>
+                      <span
+                        class="sb-agent-name"
+                        onClick={(e) => { e.stopPropagation(); openPanel("agent", a.name); }}
+                      >
+                        {cap(a.name)}
+                      </span>
+                      <span class="sb-agent-status">
+                        {respondingTo ? (
+                          <>
+                            responding to <span class="sb-agent-task-link">{cap(respondingTo)}</span>
+                          </>
+                        ) : (
+                          <>
+                            {displayTaskId && verb ? (
+                              <>
+                                {verb}{" "}
+                                <span
+                                  class="sb-agent-task-link"
+                                  onClick={(e) => { e.stopPropagation(); openPanel("task", displayTaskId); }}
+                                >
+                                  {taskIdStr(displayTaskId)}
+                                </span>
+                              </>
+                            ) : (
+                              status
+                            )}
+                          </>
+                        )}
+                      </span>
+                    </div>
+                    {agentActivities.map((act, idx) => {
+                      const toolDetail = act.tool
+                        ? `${act.tool.toLowerCase()}${act.detail ? ": " + act.detail.split("/").pop().substring(0, 24) : ""}`
+                        : "";
+                      return toolDetail ? (
+                        <div key={idx} class="sb-agent-tool-line">{toolDetail}</div>
+                      ) : null;
+                    })}
+                  </div>
+                );
+              })}
+              {idle.length > 0 && (
+                <div class="sb-idle-summary">
+                  {idle.length} agent{idle.length !== 1 ? "s" : ""} idle
                 </div>
-              </div>
-            );
-          })}
-        </>
-      )}
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

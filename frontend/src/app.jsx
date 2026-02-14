@@ -12,6 +12,7 @@ import {
   getLastGreeted, updateLastGreeted,
   fetchWorkflows,
   isInputFocused,
+  allTeamsAgents, allTeamsTurnState,
 } from "./state.js";
 import * as api from "./api.js";
 import { Sidebar } from "./components/Sidebar.jsx";
@@ -59,6 +60,7 @@ function _syncSignals(team) {
       agentActivityLog.value   = _pt.activityLog[t] ? [..._pt.activityLog[t]] : [];
       agentTurnState.value     = _pt.turnState[t]   ? { ..._pt.turnState[t] }   : {};
       managerTurnContext.value = _pt.managerCtx[t]  ?? null;
+      allTeamsTurnState.value  = { ..._pt.turnState };  // All teams' turn state
     });
   });
 }
@@ -72,6 +74,7 @@ function _syncSignalsNow(team) {
     agentActivityLog.value   = _pt.activityLog[team] ? [..._pt.activityLog[team]] : [];
     agentTurnState.value     = _pt.turnState[team]   ? { ..._pt.turnState[team] }   : {};
     managerTurnContext.value = _pt.managerCtx[team]  ?? null;
+    allTeamsTurnState.value  = { ..._pt.turnState };  // All teams' turn state
   });
 }
 
@@ -198,9 +201,10 @@ function App() {
             ? api.fetchTasks(t)
             : api.fetchTasks(filter);
 
-        const [taskData, agentData] = await Promise.all([
+        const [taskData, agentData, allAgentData] = await Promise.all([
           taskDataPromise,
           api.fetchAgents(t),
+          api.fetchAgentsCrossTeam(),
         ]);
 
         const statsMap = {};
@@ -219,6 +223,7 @@ function App() {
             agents.value = agentData;
             agentStatsMap.value = statsMap;
             knownAgentNames.value = agentData.map(a => a.name);
+            allTeamsAgents.value = allAgentData;
           });
         }
       } catch (e) {
