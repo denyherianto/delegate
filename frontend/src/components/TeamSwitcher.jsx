@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "preact/hooks";
-import { currentTeam, teams, tasks, agents, navigate } from "../state.js";
+import { currentTeam, teams, tasks, agents, navigate, activeTab, taskTeamFilter } from "../state.js";
 import { cap } from "../utils.js";
 
 /**
@@ -13,7 +13,6 @@ export function TeamSwitcher({ open, onClose }) {
   const listRef = useRef();
 
   const teamList = teams.value;
-  const currentTeamVal = currentTeam.value;
   const allTasks = tasks.value;
   const allAgents = agents.value;
 
@@ -27,7 +26,7 @@ export function TeamSwitcher({ open, onClose }) {
     .map(t => {
       const teamObj = typeof t === "object" ? t : { name: t };
       const name = teamObj.name;
-      const isCurrent = name === currentTeamVal;
+      const isCurrent = name === currentTeam.value;
       return {
         name,
         agentCount: isCurrent ? allAgents.length : (teamObj.agent_count || 0),
@@ -82,11 +81,16 @@ export function TeamSwitcher({ open, onClose }) {
   }, [selectedIndex, open]);
 
   const selectTeam = useCallback((teamName) => {
-    if (teamName !== currentTeamVal) {
-      navigate(teamName, "chat");
+    const current = currentTeam.value;
+    if (teamName !== current) {
+      const currentTab = activeTab.value;
+      navigate(teamName, currentTab);
+      if (currentTab === "tasks") {
+        taskTeamFilter.value = teamName;
+      }
     }
     onClose();
-  }, [currentTeamVal, onClose]);
+  }, [onClose]);
 
   if (!open) return null;
 
