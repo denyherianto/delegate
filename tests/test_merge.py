@@ -130,7 +130,7 @@ class TestMergeTask:
         assert "Add feature.py" in log.stdout
 
     def test_rebase_conflict(self, hc_home, tmp_path):
-        """Rebase conflict → merge_task returns REBASE_CONFLICT reason."""
+        """True content conflict → rebase fails, squash-reapply also fails → SQUASH_CONFLICT."""
         repo = _setup_git_repo(tmp_path)
 
         # Create feature branch that modifies file.txt
@@ -148,8 +148,9 @@ class TestMergeTask:
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
 
         assert result.success is False
-        assert result.reason == MergeFailureReason.REBASE_CONFLICT
-        assert "conflict" in result.message.lower() or "rebase" in result.message.lower()
+        # Rebase fails, then squash-reapply also fails on true content conflict
+        assert result.reason == MergeFailureReason.SQUASH_CONFLICT
+        assert "conflict" in result.message.lower()
 
     def test_missing_branch(self, hc_home):
         """Task with no branch should fail."""
@@ -608,7 +609,8 @@ class TestMergeBaseAndTip:
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
 
         assert result.success is False
-        assert result.reason == MergeFailureReason.REBASE_CONFLICT
+        # Rebase fails, squash-reapply also fails on true content conflict
+        assert result.reason == MergeFailureReason.SQUASH_CONFLICT
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
         assert updated["merge_base"] == {}
         assert updated["merge_tip"] == {}

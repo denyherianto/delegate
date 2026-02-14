@@ -140,7 +140,7 @@ class TestNotifyConflict:
         assert "alice/T0001" in body
         assert "Conflict in auth.py" in body
 
-    def test_message_suggests_rebase(self, notify_team):
+    def test_message_suggests_reset_soft(self, notify_team):
         task = _make_task_at_in_approval(notify_team)
         task["branch"] = "alice/T0001"
         change_status(notify_team, TEAM, task["id"], "merging")
@@ -151,7 +151,7 @@ class TestNotifyConflict:
         inbox = read_inbox(notify_team, TEAM, "edison", unread_only=True)
         body = inbox[0].body
 
-        assert "rebase" in body.lower()
+        assert "reset --soft" in body.lower()
         assert "alice" in body
 
     def test_no_details_shows_placeholder(self, notify_team):

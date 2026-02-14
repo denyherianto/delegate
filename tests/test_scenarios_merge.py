@@ -209,7 +209,7 @@ class TestMergeScenarios:
         Create T001 with feature branch modifying file X. While T001 is pending,
         commit directly to main modifying the SAME lines in file X.
         Call merge_task() -> verify:
-        - Returns MergeResult with success=False, reason=REBASE_CONFLICT
+        - Returns MergeResult with success=False, reason=SQUASH_CONFLICT
         - Main is untouched (same commit as before merge attempt)
         - Task branch is intact (not deleted)
         - Temp worktree cleaned up
@@ -239,9 +239,9 @@ class TestMergeScenarios:
         task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
         result = merge_task(hc_home, TEAM, task["id"])
 
-        # Verify merge failed with REBASE_CONFLICT
+        # Verify merge failed — rebase fails, squash-reapply also fails on true content conflict
         assert result.success is False, "Merge should fail on conflict"
-        assert result.reason == MergeFailureReason.REBASE_CONFLICT, f"Expected REBASE_CONFLICT, got {result.reason}"
+        assert result.reason == MergeFailureReason.SQUASH_CONFLICT, f"Expected SQUASH_CONFLICT, got {result.reason}"
 
         # Verify main is untouched
         post_merge_sha = subprocess.run(
