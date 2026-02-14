@@ -341,7 +341,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   flex-shrink: 0;
-  width: 48px;
+  min-width: 60px;
+  max-width: 72px;
   cursor: pointer;
 }
 .sb-agent-name:hover {
