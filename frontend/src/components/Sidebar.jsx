@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "preact/hooks";
+import { useCallback } from "preact/hooks";
 import {
   currentTeam, teams, tasks, agents, agentStatsMap,
   activeTab, openPanel,
@@ -64,66 +64,6 @@ function Logo() {
           <path transform="translate(5400,0)" d="M300-10Q203-10 143.5 48.5Q84 107 84 210V340Q84 443 143.5 501.5Q203 560 300 560Q365 560 413.5 534Q462 508 489 461Q516 414 516 350V252H172V200Q172 139 207 103.5Q242 68 300 68Q350 68 382.5 87.5Q415 107 422 140H512Q503 71 445 30.5Q387-10 300-10ZM172 322H428V350Q428 415 394.5 450.5Q361 486 300 486Q239 486 205.5 450.5Q172 415 172 350Z"/>
         </g>
       </svg>
-    </div>
-  );
-}
-
-// ── Team selector ──
-function TeamSelector() {
-  const ref = useRef();
-  const openRef = useRef(false);
-  const [open, setOpen] = useState(false);
-  openRef.current = open;
-
-  const team = currentTeam.value;
-  const teamList = teams.value;
-  const isSingle = teamList.length <= 1;
-
-  // Close on outside mousedown (fires before click, more reliable).
-  useEffect(() => {
-    const handler = (e) => {
-      if (openRef.current && ref.current && !ref.current.contains(e.target)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const toggle = useCallback((e) => {
-    e.stopPropagation();
-    if (!isSingle) setOpen(v => !v);
-  }, [isSingle]);
-
-  const pick = useCallback((t, e) => {
-    e.stopPropagation();
-    setOpen(false);
-    if (t !== currentTeam.value) navigate(t);
-  }, []);
-
-  return (
-    <div
-      ref={ref}
-      class={"sb-team" + (isSingle ? " single" : "")}
-      onClick={toggle}
-    >
-      <span class="sb-team-name">{team || "No team"}</span>
-      {!isSingle && (
-        <span class="sb-team-chevron" style={open ? { transform: "rotate(180deg)" } : {}}>&#9662;</span>
-      )}
-      {open && (
-        <div class="sb-team-dropdown">
-          {teamList.map(t => (
-            <div
-              key={t}
-              class={"sb-team-option" + (t === team ? " active" : "")}
-              onClick={(e) => pick(t, e)}
-            >
-              {t}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -377,9 +317,6 @@ export function Sidebar() {
       <div class="sb-widgets">
         <AgentsWidget collapsed={collapsed} />
       </div>
-
-      {/* Team selector at bottom */}
-      {!collapsed && <TeamSelector />}
     </div>
   );
 }
