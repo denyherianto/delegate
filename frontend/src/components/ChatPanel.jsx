@@ -146,6 +146,63 @@ function CollapsibleMessage({ html, messageId, isBoss }) {
   );
 }
 
+// ── Collapsible event message ──
+function CollapsibleEventMessage({ html, messageId }) {
+  const wrapperRef = useRef();
+  const [isLong, setIsLong] = useState(false);
+  const isExpanded = expandedMessages.value.has(messageId);
+
+  useEffect(() => {
+    // Query the content div directly instead of passing ref through LinkedDiv
+    const el = wrapperRef.current?.querySelector('.msg-event-text');
+    if (!el) return;
+
+    const checkOverflow = () => {
+      if (el.scrollHeight > COLLAPSE_THRESHOLD) {
+        setIsLong(true);
+      } else {
+        setIsLong(false);
+      }
+    };
+
+    // Use requestAnimationFrame to ensure layout is complete
+    requestAnimationFrame(checkOverflow);
+
+    // Re-check on resize
+    const observer = new ResizeObserver(checkOverflow);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [html]);
+
+  const toggle = useCallback(() => {
+    const next = new Set(expandedMessages.value);
+    if (next.has(messageId)) {
+      next.delete(messageId);
+    } else {
+      next.add(messageId);
+    }
+    expandedMessages.value = next;
+  }, [messageId]);
+
+  const wrapperClass = "msg-event-content-wrapper" + (isLong && !isExpanded ? " collapsed" : "");
+
+  return (
+    <>
+      <div class={wrapperClass} ref={wrapperRef}>
+        <LinkedDiv class="msg-event-text" html={html} />
+        {isLong && !isExpanded && (
+          <div class="msg-event-fade-overlay" />
+        )}
+      </div>
+      {isLong && (
+        <button class="msg-expand-btn" onClick={toggle}>
+          {isExpanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </>
+  );
+}
+
 // ── Voice-to-text hook ──
 function useSpeechRecognition(inputRef) {
   const [active, setActive] = useState(false);
@@ -1096,7 +1153,7 @@ export function ChatPanel() {
             const eventHtml = agentifyRefs(linkifyFilePaths(linkifyTaskRefs(esc(m.content))), agNames);
             return (
               <div key={m.id || i} class="msg-event">
-                <LinkedDiv class="msg-event-text" html={eventHtml} />
+                <CollapsibleEventMessage html={eventHtml} messageId={m.id || `event-${i}`} />
                 <span class="msg-event-time">{fmtTimestamp(m.timestamp)}</span>
                 <span class="msg-event-check-spacer" />
               </div>
