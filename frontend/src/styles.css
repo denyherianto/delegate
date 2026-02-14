@@ -2118,9 +2118,9 @@ select option:hover {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
-.toast-error { border: 1px solid var(--semantic-red); }
-.toast-success { border: 1px solid var(--semantic-green); }
-.toast-info { border: 1px solid var(--border-subtle); }
+.toast-error { border: 1px solid var(--border-default); }
+.toast-success { border: 1px solid var(--border-default); }
+.toast-info { border: 1px solid var(--border-default); }
 .toast-icon {
   flex-shrink: 0;
   width: 18px;

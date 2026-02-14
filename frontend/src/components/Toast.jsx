@@ -50,8 +50,12 @@ function Toast({ toast }) {
   }
 
   // Simple toast layout (original)
+  const iconMap = { success: '\u2713', info: 'i', error: '!' };
+  const icon = iconMap[type] || '';
+
   return (
     <div class={`toast toast-${type}`}>
+      {icon && <div class="toast-icon">{icon}</div>}
       <div class="toast-message">{message}</div>
       <button class="toast-close" onClick={handleDismiss} aria-label="Close">
         ×
