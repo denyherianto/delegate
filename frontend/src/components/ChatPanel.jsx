@@ -768,7 +768,7 @@ export function ChatPanel() {
         setAcIndex(i => (i - 1 + ac.commands.length) % ac.commands.length);
         return;
       }
-      if (e.key === "Tab") {
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
         e.preventDefault();
         const cmd = ac.commands[ac.index];
         if (cmd) selectAutocomplete(cmd);

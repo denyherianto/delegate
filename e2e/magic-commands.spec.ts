@@ -141,6 +141,21 @@ test.describe("Magic command autocomplete", () => {
     await expect(chatInput).toHaveText("/shell ");
     await expect(dropdown).not.toBeVisible({ timeout: 2_000 });
   });
+
+  test("Enter key selects from autocomplete instead of sending", async ({ page }) => {
+    const chatInput = page.locator(".chat-input");
+    await fillChatInput(page, "/sh");
+    await chatInput.focus();
+
+    const dropdown = page.locator(".command-autocomplete");
+    await expect(dropdown).toBeVisible();
+
+    // Enter should select /shell (not send "/sh" as a message)
+    await page.keyboard.press("Enter");
+
+    await expect(chatInput).toHaveText("/shell ");
+    await expect(dropdown).not.toBeVisible({ timeout: 2_000 });
+  });
 });
 
 test.describe("Command hints", () => {
