@@ -238,3 +238,14 @@ export function getLastSeen() {
 export function updateLastSeen() {
   localStorage.setItem(LS_KEY, new Date().toISOString());
 }
+
+// ── Last-greeted tracking (localStorage) ──
+const LS_GREETED_KEY = "delegate-last-greeted";
+
+export function getLastGreeted() {
+  return localStorage.getItem(LS_GREETED_KEY) || null;
+}
+
+export function updateLastGreeted() {
+  localStorage.setItem(LS_GREETED_KEY, new Date().toISOString());
+}

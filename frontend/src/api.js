@@ -61,8 +61,11 @@ export async function sendMessage(team, recipient, content) {
   return r.json();
 }
 
-export async function greetTeam(team) {
-  const r = await fetch(`/teams/${team}/greet`, {
+export async function greetTeam(team, lastSeen = null) {
+  const url = lastSeen
+    ? `/teams/${team}/greet?last_seen=${encodeURIComponent(lastSeen)}`
+    : `/teams/${team}/greet`;
+  const r = await fetch(url, {
     method: "POST",
   });
   if (!r.ok) {

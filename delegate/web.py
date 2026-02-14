@@ -180,15 +180,18 @@ def _build_greeting(
     manager: str,
     human: str,
     now_utc: "datetime",
+    last_seen: "datetime | None" = None,
 ) -> str:
     """Build a context-aware startup greeting from the manager.
 
     Takes into account:
     - Time of day (in the user's local timezone via the system clock)
     - Active in-progress tasks (brief status summary)
+    - Activity since last_seen (if provided and recent)
     """
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, timedelta
     from delegate.task import list_tasks
+    from delegate.mailbox import list_messages
 
     # Time-of-day awareness (use local time, not UTC)
     local_hour = datetime.now().hour
@@ -212,6 +215,31 @@ def _build_greeting(
     except Exception:
         active = review = approval = failed = []
 
+    # Build "while you were away" context if last_seen is recent enough
+    away_parts: list[str] = []
+    if last_seen and (now_utc - last_seen) < timedelta(hours=24):
+        try:
+            # Tasks completed since last_seen
+            all_tasks = list_tasks(hc_home, team, status="done")
+            completed_since = [
+                t for t in all_tasks
+                if t.get("completed_at") and
+                   datetime.fromisoformat(t["completed_at"].replace("Z", "+00:00")) > last_seen
+            ]
+            if completed_since:
+                away_parts.append(f"{len(completed_since)} task{'s' if len(completed_since) != 1 else ''} completed")
+
+            # Messages to human since last_seen
+            messages = list_messages(hc_home, team, recipient=human)
+            new_messages = [
+                m for m in messages
+                if datetime.fromisoformat(m["created_at"].replace("Z", "+00:00")) > last_seen
+            ]
+            if new_messages:
+                away_parts.append(f"{len(new_messages)} new message{'s' if len(new_messages) != 1 else ''}")
+        except Exception:
+            pass
+
     # Build status line
     status_parts: list[str] = []
     if active:
@@ -225,6 +253,9 @@ def _build_greeting(
 
     # Assemble
     lines = [f"{time_greeting} — {manager.capitalize()} here, your team manager."]
+
+    if away_parts:
+        lines.append("While you were away: " + ", ".join(away_parts) + ".")
 
     if status_parts:
         lines.append("Current board: " + ", ".join(status_parts) + ".")
@@ -375,37 +406,11 @@ async def _daemon_loop(
             finally:
                 in_flight.discard((team, agent))
 
-    # --- One-time startup: greeting from the first team's manager ---
-    # Always sends on daemon startup. Other teams get greeted when
-    # the human switches to them in the frontend for the first time.
-    try:
-        from delegate.task import list_tasks
-        from datetime import datetime, timezone
-
-        teams = _list_teams(hc_home)
-        human_name = get_default_human(hc_home)
-        now_utc = datetime.now(timezone.utc)
-
-        # Only greet the first team at startup
-        if teams:
-            team = teams[0]
-            manager_name = get_member_by_role(hc_home, team, "manager")
-            if manager_name:
-                greeting = _build_greeting(
-                    hc_home, team, manager_name, human_name, now_utc,
-                )
-                send_message(
-                    hc_home, team,
-                    sender=manager_name,
-                    recipient=human_name,
-                    message=greeting,
-                )
-                logger.info(
-                    "Manager %s sent startup greeting to %s | team=%s",
-                    manager_name, human_name, team,
-                )
-    except Exception:
-        logger.exception("Error during startup greeting")
+    # --- Greeting logic ---
+    # Greeting is now handled by the frontend on page load / return-from-away.
+    # The daemon doesn't send greetings on startup since it can't know if anyone
+    # is looking at the screen. Frontend uses localStorage to track last-greeted
+    # timestamp and only triggers greeting after meaningful absence (30+ min).
 
     # --- Main loop ---
     while True:
@@ -1028,11 +1033,16 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         return {"status": "queued"}
 
     @app.post("/teams/{team}/greet")
-    def greet_team(team: str):
+    def greet_team(team: str, last_seen: str | None = None):
         """Send a welcome greeting from the team's manager to the human.
-        Called by the frontend when the human switches to a team for the first time."""
-        from datetime import datetime, timezone
+        Called by the frontend after meaningful absence (30+ min).
+
+        Args:
+            last_seen: ISO timestamp of when user was last active (optional)
+        """
+        from datetime import datetime, timezone, timedelta
         from delegate.bootstrap import get_member_by_role
+        from delegate.mailbox import list_messages
 
         human_name = get_default_human(hc_home)
         manager_name = get_member_by_role(hc_home, team, "manager")
@@ -1043,8 +1053,35 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 detail=f"No manager found for team '{team}'",
             )
 
+        # Check if manager sent a message to human in the last 15 minutes
+        # If so, skip the greeting to avoid noise
         now_utc = datetime.now(timezone.utc)
-        greeting = _build_greeting(hc_home, team, manager_name, human_name, now_utc)
+        try:
+            recent_messages = list_messages(hc_home, team, recipient=human_name)
+            cutoff = now_utc - timedelta(minutes=15)
+            recent_manager_msg = any(
+                m["sender"] == manager_name and
+                datetime.fromisoformat(m["created_at"].replace("Z", "+00:00")) > cutoff
+                for m in recent_messages
+            )
+            if recent_manager_msg:
+                logger.info(
+                    "Skipping greeting — manager %s sent message to %s in last 15 min | team=%s",
+                    manager_name, human_name, team,
+                )
+                return {"status": "skipped"}
+        except Exception:
+            pass  # If we can't check, proceed with greeting
+
+        # Parse last_seen if provided
+        last_seen_dt = None
+        if last_seen:
+            try:
+                last_seen_dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+            except Exception:
+                pass
+
+        greeting = _build_greeting(hc_home, team, manager_name, human_name, now_utc, last_seen_dt)
         _send(
             hc_home, team,
             manager_name,
@@ -1052,8 +1089,8 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             greeting,
         )
         logger.info(
-            "Manager %s sent team-switch greeting to %s | team=%s",
-            manager_name, human_name, team,
+            "Manager %s sent greeting to %s | team=%s | last_seen=%s",
+            manager_name, human_name, team, last_seen or "none",
         )
         return {"status": "sent"}
 

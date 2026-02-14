@@ -9,6 +9,7 @@ import {
   helpOverlayOpen, sidebarCollapsed, bellPopoverOpen, isMuted, teamSwitcherOpen, commandMode,
   syncFromUrl, navigate, navigateTab, taskTeamFilter,
   actionItemCount, awaySummary, getLastSeen, updateLastSeen,
+  getLastGreeted, updateLastGreeted,
   fetchWorkflows,
 } from "./state.js";
 import * as api from "./api.js";
@@ -38,8 +39,8 @@ const _pt = {
 };
 const MAX_LOG_ENTRIES = 500;
 
-// Track which teams have been greeted in this browser session
-const _greetedTeams = new Set();
+// Greeting threshold: only greet after meaningful absence (30 minutes)
+const GREETING_THRESHOLD = 30 * 60 * 1000; // 30 minutes in milliseconds
 
 /** Sync the reactive signals from the backing store for *team*.
  *  Throttled to at most one sync per animation frame to prevent
@@ -272,10 +273,16 @@ function App() {
         const mgr = agentData.find(a => a.role === "manager");
         _pt.managerName[t] = mgr?.name ?? null;
 
-        // Send welcome greeting if this is the first time viewing this team
-        if (!_greetedTeams.has(t)) {
-          _greetedTeams.add(t);
-          api.greetTeam(t).catch(() => {});
+        // Send welcome greeting if this is first visit or after meaningful absence
+        const now = Date.now();
+        const lastGreeted = getLastGreeted();
+        const lastGreetedTime = lastGreeted ? new Date(lastGreeted).getTime() : null;
+        const shouldGreet = !lastGreetedTime || (now - lastGreetedTime) >= GREETING_THRESHOLD;
+
+        if (shouldGreet) {
+          const lastSeen = getLastSeen();
+          api.greetTeam(t, lastSeen).catch(() => {});
+          updateLastGreeted();
         }
       } catch (e) { }
     })();
@@ -359,6 +366,18 @@ function App() {
           // Show toast if there are items to report
           if (currentActionItems.length > 0 || completed.length > 0 || unreadCount > 0) {
             showReturnToast(awaySummary.value);
+          }
+
+          // Send greeting if away time exceeds greeting threshold
+          const now = Date.now();
+          const lastGreeted = getLastGreeted();
+          const lastGreetedTime = lastGreeted ? new Date(lastGreeted).getTime() : null;
+          const shouldGreet = awayMs >= GREETING_THRESHOLD &&
+                              (!lastGreetedTime || (now - lastGreetedTime) >= GREETING_THRESHOLD);
+
+          if (shouldGreet) {
+            api.greetTeam(currentTeam.value, lastSeen).catch(() => {});
+            updateLastGreeted();
           }
         }
 
