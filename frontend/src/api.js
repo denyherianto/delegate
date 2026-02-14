@@ -10,7 +10,13 @@ export async function fetchConfig() {
 
 export async function fetchTeams() {
   const r = await fetch("/teams");
-  return r.ok ? r.json() : [];
+  if (!r.ok) return [];
+  const data = await r.json();
+  // Backend may return [{name, team_id, ...}] or plain ["name", ...].
+  if (data.length > 0 && typeof data[0] === "object") {
+    return data.map(t => t.name);
+  }
+  return data;
 }
 
 export async function fetchTasks(team) {
