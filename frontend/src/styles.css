@@ -178,17 +178,22 @@ body {
 
 /* Top: logo + collapse toggle */
 .sb-top {
+  height: 48px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 12px 10px;
+  padding: 0 12px;
+  box-sizing: border-box;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 4px;
 }
 .sb-collapsed .sb-top {
+  height: 48px;
+  min-height: 48px;
   justify-content: center;
-  padding: 14px 0 10px;
+  padding: 0;
 }
 .sb-logo { flex-shrink: 0; }
 .sb-logo svg { display: block; }
@@ -2891,8 +2896,8 @@ select option:hover {
 
 /* Header bar */
 .main-header {
-  height: 60px;
-  min-height: 60px;
+  height: 48px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
