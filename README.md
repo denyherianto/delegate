@@ -15,13 +15,17 @@
 
 ---
 
-Delegate is a CLI tool that creates a team of AI agents to build software for you. Describe what you want in plain English. Delegate breaks it into tasks, assigns them to agents, manages code reviews between them, and merges the result — while you watch (or don't).
+Delegate creates a persistent team of AI agents on your local machine. Describe what you want in plain English — Delegate breaks it into tasks, assigns them to agents, manages code reviews between them, and merges the result. You watch it all happen in a real-time web UI, or check in later. The team remembers your codebase across tasks.
 
 <!-- TODO: Replace with an actual screenshot or demo GIF
 <p align="center">
   <img src="docs/screenshot.png" alt="Delegate UI" width="800">
 </p>
 -->
+
+### How is this different?
+
+Most AI coding tools give you **one agent, one task, then it's gone**. Delegate gives you a **team that persists** — agents accumulate context about your codebase, your patterns, and each other over weeks of work. And unlike terminal-based tools, you get a **browser UI** where you can watch agents work in real-time, review diffs, approve merges, and run shell commands — all without leaving the browser.
 
 ## Quickstart
 
@@ -55,13 +59,15 @@ All of this is visible in real-time in the web UI — tasks moving, agents worki
 
 ## Key features
 
+**Persistent teams, not disposable agents.** Create a team once, use it across hundreds of tasks. Agents maintain memory — journals, notes, context files — so they learn your codebase, conventions, and patterns over time. One team per project, running for as long as you need.
+
+**Browser UI with real-time visibility.** Watch agents pick up tasks, write code, and review each other's work — live. Approve merges, browse diffs, inspect files, and run shell commands without leaving the browser. No terminal babysitting.
+
 **Full development lifecycle.** Tasks flow through `todo → in_progress → in_review → in_approval → merging → done` with agents handling each stage. Rejections cycle back automatically.
 
 **Real git, real branches.** Each agent works in isolated [git worktrees](https://git-scm.com/docs/git-worktree). No magic file systems. Branches are named `delegate/<team>/T0001`. You can inspect them anytime.
 
 **Code review between agents.** Agents don't just write code — they review each other's work. Reviewers check out the branch, run the full test suite, and gate the merge queue. Reviews are visible in the UI with full diffs.
-
-**Merge automation.** Rebase onto main, run pre-merge tests, fast-forward merge. If there are conflicts, Delegate tries a squash-reapply first. True conflicts get escalated with detailed hunks and resolution instructions.
 
 **Customizable workflows.** Define your own task lifecycle in Python:
 
@@ -179,6 +185,12 @@ npm install
 npx playwright install
 npx playwright test
 ```
+
+## About
+
+Delegate is built by a solo developer as a side project. No VC funding, no growth targets — just a tool I wanted for myself and decided to open-source. MIT licensed, free forever.
+
+If you find it useful, star the repo or say hi in an issue. Bug reports and contributions are welcome.
 
 ## License
 
