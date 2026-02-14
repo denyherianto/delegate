@@ -1228,13 +1228,12 @@ select option:hover {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  gap: 6px;
+  padding: 6px 12px;
   border: 1px solid var(--border-default);
-  border-radius: 12px;
+  border-radius: 6px;
   background: var(--bg-surface);
   cursor: pointer;
-  font-size: 12px;
   user-select: none;
   transition: border-color 100ms;
 }
