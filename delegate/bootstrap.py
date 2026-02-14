@@ -220,21 +220,11 @@ def bootstrap(
 
     # Check that agent names don't conflict with human members
     # (cross-team agent name duplicates are now allowed)
-    existing_agents = get_all_agent_names(hc_home)
     existing_humans = get_all_member_names(hc_home)
     for name, _ in members:
         # Check human member conflict
         if name in existing_humans:
             raise ValueError(f"Name \"{name}\" conflicts with a human member. Names must be globally unique.")
-        # Allow re-bootstrapping the same team (idempotent check)
-        # If the agent exists, make sure it's only on this team (re-bootstrap case)
-        if name in existing_agents:
-            agent_teams = existing_agents[name]
-            # Allow if the only team is the current team (idempotent re-bootstrap)
-            # Disallow if the agent exists on this team plus other teams (shouldn't happen)
-            if team_name in agent_teams and len(agent_teams) > 1:
-                other_teams = [t for t in agent_teams if t != team_name]
-                raise ValueError(f"Agent name \"{name}\" already exists on team(s): {', '.join(other_teams)}. Cannot re-bootstrap with this name.")
 
     # Ensure top-level directories exist
     hc_home.mkdir(parents=True, exist_ok=True)

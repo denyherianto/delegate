@@ -352,6 +352,21 @@ def test_bootstrap_allows_duplicate_manager_name(hc):
     assert set(all_agents["edison"]) == {"team1", "team2"}
 
 
+def test_bootstrap_idempotent_with_cross_team_duplicates(hc):
+    """Re-bootstrapping a team works even when agent names exist on other teams."""
+    # Bootstrap team1 with agent "alice"
+    bootstrap(hc, "team1", manager="mgr1", agents=["alice", "bob"])
+    # Bootstrap team2 with agent "alice" (cross-team duplicate)
+    bootstrap(hc, "team2", manager="mgr2", agents=["alice", "charlie"])
+    # Re-bootstrap team1 with same agents — should succeed (idempotent)
+    bootstrap(hc, "team1", manager="mgr1", agents=["alice", "bob"])
+    # Verify alice still exists on both teams
+    from delegate.bootstrap import get_all_agent_names
+    all_agents = get_all_agent_names(hc)
+    assert "alice" in all_agents
+    assert set(all_agents["alice"]) == {"team1", "team2"}
+
+
 def test_bootstrap_rejects_agent_conflicting_with_human(hc):
     """bootstrap rejects agent names that conflict with human member names."""
     # hc fixture already has "nikhil" as a human member
