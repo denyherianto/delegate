@@ -355,7 +355,7 @@ body {
   cursor: pointer;
   border-radius: 0 4px 4px 0;
   transition: background 100ms;
-  border-left: 2px solid transparent;
+  border-left: 1px solid transparent;
 }
 .task-row:hover { background: var(--bg-hover); }
 .task-row.selected {
@@ -603,7 +603,7 @@ body {
 .msg {
   padding: 8px 12px 8px 15px;
   border-bottom: 1px solid var(--border-subtle);
-  border-left: 3px solid transparent;
+  border-left: 1px solid transparent;
   transition: background 100ms;
 }
 .msg:last-child { border-bottom: none; }
@@ -685,7 +685,7 @@ body {
   gap: 8px;
   padding: 4px 32px 4px 15px;
   margin: 2px 0;
-  border-left: 3px solid var(--text-faint);
+  border-left: 1px solid var(--text-faint);
   border-bottom: 1px solid var(--border-subtle);
 }
 .msg-event:last-child { border-bottom: none; }
@@ -1506,8 +1506,8 @@ select option:hover {
    Agent panel content
    ================================================================ */
 .agent-msg { padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); }
-.agent-msg.unread { border-left: 2px solid var(--text-secondary); }
-.agent-msg.pending { border-left: 2px solid var(--semantic-yellow); }
+.agent-msg.unread { border-left: 1px solid var(--text-secondary); }
+.agent-msg.pending { border-left: 1px solid var(--semantic-yellow); }
 .agent-msg-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .agent-msg-sender { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-weight: 400; font-size: 12px; color: var(--text-primary); }
 .agent-msg-time { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
@@ -1898,7 +1898,7 @@ select option:hover {
 }
 .md-content a:hover { text-decoration: underline; }
 .md-content blockquote {
-  border-left: 3px solid var(--border-default);
+  border-left: 1px solid var(--border-default);
   padding: 0.3em 0 0.3em 12px;
   margin: 0.5em 0;
   color: var(--text-muted);
@@ -2295,7 +2295,7 @@ select option:hover {
 /* Command message container */
 .msg-command {
   padding: 8px 12px 8px 15px;
-  border-left: 3px solid var(--cmd-blue);
+  border-left: 1px solid var(--cmd-blue);
   border-bottom: 1px solid var(--border-subtle);
 }
 
