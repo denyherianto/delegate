@@ -305,13 +305,17 @@ def test_add_agent_rejects_human_member_name(tmp_team):
         add_agent(tmp_team, TEAM, "nikhil")
 
 
-def test_add_agent_rejects_cross_team_same_name(hc):
-    """add_agent errors if the agent name already exists on another team (global uniqueness)."""
+def test_add_agent_allows_cross_team_same_name(hc):
+    """add_agent allows the same agent name on different teams."""
     bootstrap(hc, "team1", manager="mgr1", agents=["alice"])
     bootstrap(hc, "team2", manager="mgr2", agents=["bob"])
-    # "alice" is already on team1 — should fail on team2
-    with pytest.raises(ValueError, match='Agent name "alice" already exists on team "team1". Names must be globally unique.'):
-        add_agent(hc, "team2", "alice")
+    # "alice" is already on team1 — should succeed on team2 (cross-team duplicates now allowed)
+    add_agent(hc, "team2", "alice")
+    # Verify alice exists on both teams
+    from delegate.bootstrap import get_all_agent_names
+    all_agents = get_all_agent_names(hc)
+    assert "alice" in all_agents
+    assert set(all_agents["alice"]) == {"team1", "team2"}
 
 
 def test_add_agent_team_not_found(hc):
@@ -324,20 +328,28 @@ def test_add_agent_team_not_found(hc):
 # Global uniqueness tests
 # ──────────────────────────────────────────────────────────────
 
-def test_bootstrap_rejects_cross_team_duplicate_agent(hc):
-    """bootstrap rejects creating a team with an agent name that exists on another team."""
+def test_bootstrap_allows_cross_team_duplicate_agent(hc):
+    """bootstrap allows creating teams with duplicate agent names across teams."""
     bootstrap(hc, "team1", manager="mgr1", agents=["alice", "bob"])
-    # Try to create team2 with "alice" who already exists on team1
-    with pytest.raises(ValueError, match='Agent name "alice" already exists on team "team1". Names must be globally unique.'):
-        bootstrap(hc, "team2", manager="mgr2", agents=["alice", "charlie"])
+    # Create team2 with "alice" who already exists on team1 — should succeed
+    bootstrap(hc, "team2", manager="mgr2", agents=["alice", "charlie"])
+    # Verify alice exists on both teams
+    from delegate.bootstrap import get_all_agent_names
+    all_agents = get_all_agent_names(hc)
+    assert "alice" in all_agents
+    assert set(all_agents["alice"]) == {"team1", "team2"}
 
 
-def test_bootstrap_rejects_manager_name_conflict(hc):
-    """bootstrap rejects creating a team with a manager name that exists on another team."""
+def test_bootstrap_allows_duplicate_manager_name(hc):
+    """bootstrap allows creating teams with the same manager name across teams."""
     bootstrap(hc, "team1", manager="edison", agents=["alice"])
-    # Try to create team2 with manager "edison" who already exists on team1
-    with pytest.raises(ValueError, match='Agent name "edison" already exists on team "team1". Names must be globally unique.'):
-        bootstrap(hc, "team2", manager="edison", agents=["bob"])
+    # Create team2 with manager "edison" who already exists on team1 — should succeed
+    bootstrap(hc, "team2", manager="edison", agents=["bob"])
+    # Verify edison exists on both teams
+    from delegate.bootstrap import get_all_agent_names
+    all_agents = get_all_agent_names(hc)
+    assert "edison" in all_agents
+    assert set(all_agents["edison"]) == {"team1", "team2"}
 
 
 def test_bootstrap_rejects_agent_conflicting_with_human(hc):
@@ -359,18 +371,18 @@ def test_add_agent_rejects_human_member_conflict_global(hc):
 
 
 def test_get_all_agent_names(hc):
-    """get_all_agent_names returns a mapping of agent_name -> team_name across all teams."""
+    """get_all_agent_names returns a mapping of agent_name -> list[team_name] across all teams."""
     from delegate.bootstrap import get_all_agent_names
     bootstrap(hc, "team1", manager="mgr1", agents=["alice", "bob"])
     bootstrap(hc, "team2", manager="mgr2", agents=["charlie"])
 
     all_agents = get_all_agent_names(hc)
     assert all_agents == {
-        "mgr1": "team1",
-        "alice": "team1",
-        "bob": "team1",
-        "mgr2": "team2",
-        "charlie": "team2",
+        "mgr1": ["team1"],
+        "alice": ["team1"],
+        "bob": ["team1"],
+        "mgr2": ["team2"],
+        "charlie": ["team2"],
     }
 
 

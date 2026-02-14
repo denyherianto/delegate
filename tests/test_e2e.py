@@ -310,11 +310,15 @@ class TestUniquenessEnforcement:
         with pytest.raises(ValueError, match="conflicts with.*human member"):
             bootstrap(hc, team_name="gamma", manager=DIRECTOR, agents=["dave"])
 
-    def test_same_name_across_teams_rejected(self, hc):
-        """Agent names must be globally unique — reuse across teams is rejected."""
-        # "alice" is already in team alpha — should fail in a new team
-        with pytest.raises(ValueError, match='Agent name "alice" already exists on team "alpha". Names must be globally unique.'):
-            bootstrap(hc, team_name="gamma", manager="alice", agents=["bob"])
+    def test_same_name_across_teams_allowed(self, hc):
+        """Agent names can be reused across teams (cross-team duplicates allowed)."""
+        # "alice" is already in team alpha — should succeed in a new team
+        bootstrap(hc, team_name="gamma", manager="alice", agents=["bob"])
+        # Verify alice exists on both teams
+        from delegate.bootstrap import get_all_agent_names
+        all_agents = get_all_agent_names(hc)
+        assert "alice" in all_agents
+        assert set(all_agents["alice"]) == {"alpha", "gamma"}
 
     def test_unique_names_across_teams_accepted(self, hc):
         """Teams with completely unique names are accepted."""
