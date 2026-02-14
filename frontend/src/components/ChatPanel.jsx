@@ -20,7 +20,7 @@ import { SelectionTooltip } from "./SelectionTooltip.jsx";
 import { CommandAutocomplete } from "./CommandAutocomplete.jsx";
 import { ShellOutputBlock } from "./ShellOutputBlock.jsx";
 import { StatusBlock } from "./StatusBlock.jsx";
-import { parseCommand, COMMANDS } from "../commands.js";
+import { parseCommand, filterCommands, COMMANDS } from "../commands.js";
 
 // ── Linked content with event delegation ──
 function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
@@ -201,6 +201,8 @@ export function ChatPanel() {
   const [recipient, setRecipient] = useState("");
   const [inputVal, setInputVal] = useState("");
   const [sendBtnActive, setSendBtnActive] = useState(false);
+  const [acIndex, setAcIndex] = useState(0);       // autocomplete selected index
+  const acRef = useRef({ visible: false, commands: [], index: 0 }); // refs for keydown handler
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
 
@@ -220,6 +222,23 @@ export function ChatPanel() {
   const lastTeamRef = useRef(team); // Track last team to detect switches
   const mic = useSpeechRecognition(inputRef);
   const muted = isMuted.value;
+
+  // ── Autocomplete state ──
+  // Show autocomplete only while typing the command name (before first space).
+  // Once a space follows a recognized command, we're in "argument entry" mode.
+  // Reset autocomplete index when input changes
+  const acQueryKey = inputVal.startsWith("/") ? inputVal.split(" ")[0] : "";
+  useEffect(() => { setAcIndex(0); }, [acQueryKey]);
+
+  const acParsed = parseCommand(inputVal);
+  const acIsTypingName = inputVal.startsWith("/") && !inputVal.includes(" ");
+  const acCommands = acIsTypingName ? filterCommands(acParsed?.name || "") : [];
+  const acVisible = acCommands.length > 0;
+  // Derive which recognized command we're working with (for argument hints)
+  const recognizedCmd = (!acIsTypingName && acParsed && COMMANDS[acParsed.name]) ? COMMANDS[acParsed.name] : null;
+
+  // Keep ref in sync so the keydown handler always reads current values
+  acRef.current = { visible: acVisible, commands: acCommands, index: acIndex };
 
   // Check if text contains markdown syntax we support
   const hasMarkdown = useCallback((text) => {
@@ -360,6 +379,9 @@ export function ChatPanel() {
       }
       setInputVal(draft);
       setSendBtnActive(!!draft.trim());
+      // Reset command mode on team switch — re-derive from restored draft
+      commandMode.value = draft.startsWith('/');
+      if (!draft.startsWith('/')) commandCwd.value = '';
     }
     lastTeamRef.current = team;
   }, [team]);
@@ -719,6 +741,41 @@ export function ChatPanel() {
   }, [team, recipient, mic, executeCommand]);
 
   const handleKeydown = useCallback((e) => {
+    const ac = acRef.current; // always-current autocomplete state
+
+    // Escape always exits command mode (whether autocomplete is visible or not)
+    if (e.key === "Escape" && commandMode.value) {
+      e.preventDefault();
+      commandMode.value = false;
+      if (inputRef.current) {
+        inputRef.current.textContent = "";
+        inputRef.current.style.height = "auto";
+      }
+      setInputVal("");
+      setSendBtnActive(false);
+      return;
+    }
+
+    // Autocomplete keyboard navigation (only when dropdown is visible)
+    if (ac.visible) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setAcIndex(i => (i + 1) % ac.commands.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setAcIndex(i => (i - 1 + ac.commands.length) % ac.commands.length);
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const cmd = ac.commands[ac.index];
+        if (cmd) selectAutocomplete(cmd);
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -730,6 +787,19 @@ export function ChatPanel() {
     e.preventDefault();
     const text = e.clipboardData.getData('text/plain');
     document.execCommand('insertText', false, text);
+  }, []);
+
+  // Select a command from autocomplete — fill the input and enter argument mode
+  const selectAutocomplete = useCallback((cmd) => {
+    if (inputRef.current) {
+      const newVal = `/${cmd.name} `;
+      inputRef.current.textContent = newVal;
+      moveCursorToEnd(inputRef.current);
+      inputRef.current.focus();
+      setInputVal(newVal);
+      setSendBtnActive(true);
+      setAcIndex(0);
+    }
   }, []);
 
   // Move cursor to end of contenteditable element
@@ -941,23 +1011,12 @@ export function ChatPanel() {
 
       {/* Chat input — Cursor-style: contenteditable on top, toolbar on bottom */}
       <div class={`chat-input-box ${commandMode.value ? 'command-mode' : ''}`}>
-          {commandMode.value && (
+          {/* Autocomplete dropdown — only while typing command name */}
+          {acVisible && (
             <CommandAutocomplete
-              input={inputVal}
-              inputRef={inputRef}
-              onSelect={(cmd) => {
-                if (inputRef.current) {
-                  const newVal = `/${cmd.name} `;
-                  inputRef.current.textContent = newVal;
-                  moveCursorToEnd(inputRef.current);
-                  inputRef.current.focus();
-                  setInputVal(newVal);
-                  setSendBtnActive(true);
-                }
-              }}
-              onDismiss={() => {
-                commandMode.value = false;
-              }}
+              commands={acCommands}
+              selectedIndex={acIndex}
+              onSelect={selectAutocomplete}
             />
           )}
           <div
@@ -979,13 +1038,13 @@ export function ChatPanel() {
               // Update CWD from parsed command if it has -d flag
               const cmd = parseCommand(val);
               if (cmd && cmd.name === 'shell' && cmd.args.includes('-d')) {
-                // Simple -d flag parsing (not perfect but works for basic usage)
                 const match = cmd.args.match(/-d\s+(\S+)/);
                 if (match) commandCwd.value = match[1];
               }
             }}
           />
-        {commandMode.value && parseCommand(inputVal)?.name === 'shell' && (
+        {/* Argument-mode hints: show CWD for /shell, or usage for recognized command */}
+        {commandMode.value && recognizedCmd && recognizedCmd.name === 'shell' && (
           <div class="chat-cwd-badge">
             <span class="chat-cwd-label">cwd:</span>
             <input
@@ -995,6 +1054,11 @@ export function ChatPanel() {
               placeholder="~"
               onInput={(e) => { commandCwd.value = e.target.value; }}
             />
+          </div>
+        )}
+        {commandMode.value && recognizedCmd && recognizedCmd.name !== 'shell' && !acParsed?.args && (
+          <div class="command-hint">
+            <span class="command-hint-text">{recognizedCmd.description} — press Enter to run</span>
           </div>
         )}
         <div class="chat-input-toolbar">
