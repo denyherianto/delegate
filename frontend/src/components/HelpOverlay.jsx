@@ -15,6 +15,8 @@ export function HelpOverlay() {
     { key: "t", description: "Go to Tasks" },
     { key: "a", description: "Go to Agents" },
     { key: "m", description: "Toggle microphone" },
+    { key: "Ctrl+Enter", description: "Approve task (in approval textarea)" },
+    { key: "Ctrl+Shift+Enter", description: "Request changes (in approval textarea)" },
     { key: "?", description: "Show/hide keyboard shortcuts" },
   ];
 
