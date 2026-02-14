@@ -2473,10 +2473,13 @@ select option:hover {
   height: 14px;
 }
 
+.shell-output-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 12px 0 0;
+}
+
 .shell-output-copy-icon {
-  position: absolute;
-  top: 8px;
-  right: 8px;
   padding: 4px;
   background: var(--bg-surface);
   border: none;
@@ -2501,32 +2504,8 @@ select option:hover {
   height: 14px;
 }
 
-.msg-command-copy-icon {
-  padding: 4px;
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  margin-left: auto;
-}
-
-.msg-command-copy-icon:hover {
-  color: var(--text-primary);
-}
-
-.msg-command-copy-icon svg {
-  width: 14px;
-  height: 14px;
-}
 
 .shell-output-body {
-  position: relative;
   max-height: 400px;
   overflow-y: auto;
 }

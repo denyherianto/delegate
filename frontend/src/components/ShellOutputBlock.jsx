@@ -71,10 +71,12 @@ export function ShellOutputBlock({ result, onErrorState }) {
 
   return (
     <div class="shell-output-block">
-      <div class="shell-output-body" ref={contentRef}>
+      <div class="shell-output-toolbar">
         <button class="shell-output-copy-icon" onClick={handleCopy} title="Copy output">
           <ClipboardIcon />
         </button>
+      </div>
+      <div class="shell-output-body" ref={contentRef}>
         <pre class="shell-output-stdout">{displayContent}</pre>
         {shouldCollapse && !expanded && (
           <button class="shell-expand-btn" onClick={() => setExpanded(true)}>
