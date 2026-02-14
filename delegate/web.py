@@ -190,7 +190,7 @@ def _build_first_run_greeting(
     lines: list[str] = []
 
     lines.append(
-        f"Hi {human}! I'm your delegate — I manage a team of "
+        f"Hi {human.capitalize()}! I'm your delegate — I manage a team of "
         f"{agent_count} engineer{'s' if agent_count != 1 else ''} "
         f"ready to build software for you."
     )
