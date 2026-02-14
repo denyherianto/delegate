@@ -3,6 +3,7 @@ import { currentTeam, tasks, activeTab, openPanel, taskTeamFilter, teams, getWor
 import { cap, fmtStatus, taskIdStr } from "../utils.js";
 import { playTaskSound } from "../audio.js";
 import { FilterBar, applyFilters } from "./FilterBar.jsx";
+import { PillSelect } from "./PillSelect.jsx";
 import { CopyBtn } from "./CopyBtn.jsx";
 
 // ── Fallback status options (used when no workflow is loaded) ──
@@ -276,6 +277,25 @@ export function TasksPanel() {
   return (
     <div class={`panel${activeTab.value === "tasks" ? " active" : ""}`}>
       <div class="task-filters">
+        <PillSelect
+          label="Team"
+          value={teamFilter}
+          options={[
+            { value: "current", label: cap(team) },
+            { value: "all", label: "All teams" },
+            ...allTeams.filter(t => t.name !== team).map(t => ({
+              value: t.name,
+              label: cap(t.name)
+            }))
+          ]}
+          onChange={handleTeamFilterChange}
+        />
+        <FilterBar
+          filters={filters}
+          onFiltersChange={setFilters}
+          fieldConfig={fieldConfig}
+        />
+        <div style={{ flex: 1 }} />
         <div class={searchExpanded ? "filter-search-wrap expanded" : "filter-search-wrap"}>
           {!searchExpanded ? (
             <button
@@ -300,26 +320,6 @@ export function TasksPanel() {
               />
             </>
           )}
-        </div>
-        <div class="task-filters-row">
-          <div class="team-filter-dropdown">
-            <select
-              class="team-filter-select"
-              value={teamFilter}
-              onChange={(e) => handleTeamFilterChange(e.target.value)}
-            >
-              <option value="current">{cap(team)}</option>
-              <option value="all">All teams</option>
-              {allTeams.filter(t => t.name !== team).map(t => (
-                <option key={t.name} value={t.name}>{cap(t.name)}</option>
-              ))}
-            </select>
-          </div>
-          <FilterBar
-            filters={filters}
-            onFiltersChange={setFilters}
-            fieldConfig={fieldConfig}
-          />
         </div>
       </div>
       <div>

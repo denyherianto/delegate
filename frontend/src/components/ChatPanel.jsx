@@ -15,6 +15,7 @@ import { playMsgSound } from "../audio.js";
 import { showToast } from "../toast.js";
 import { CopyBtn } from "./CopyBtn.jsx";
 import { CustomSelect } from "./CustomSelect.jsx";
+import { PillSelect } from "./PillSelect.jsx";
 import { ManagerActivityBar } from "./ManagerActivityBar.jsx";
 import { SelectionTooltip } from "./SelectionTooltip.jsx";
 import { CommandAutocomplete } from "./CommandAutocomplete.jsx";
@@ -217,7 +218,7 @@ export function ChatPanel() {
   const [filterTo, setFilterTo] = useState("");
   const [filterSearch, setFilterSearch] = useState("");
   const [searchExpanded, setSearchExpanded] = useState(false);
-  const [showEvents, setShowEvents] = useState(true);
+  const [typeFilter, setTypeFilter] = useState("all");
   const [recipient, setRecipient] = useState("");
   const [inputVal, setInputVal] = useState("");
   const [sendBtnActive, setSendBtnActive] = useState(false);
@@ -418,7 +419,9 @@ export function ChatPanel() {
       }
       if (f.from) setFilterFrom(f.from);
       if (f.to) setFilterTo(f.to);
-      if (f.showEvents === false) setShowEvents(false);
+      // Backward compat: convert old showEvents boolean to typeFilter
+      if (f.typeFilter) setTypeFilter(f.typeFilter);
+      else if (f.showEvents === false) setTypeFilter("chat");
       if (f.direction === "bidi") chatFilterDirection.value = "bidi";
     } catch (e) { }
   }, []);
@@ -428,10 +431,10 @@ export function ChatPanel() {
     try {
       sessionStorage.setItem("chatFilters", JSON.stringify({
         search: filterSearch, from: filterFrom, to: filterTo,
-        showEvents, direction,
+        typeFilter, direction,
       }));
     } catch (e) { }
-  }, [filterSearch, filterFrom, filterTo, showEvents, direction]);
+  }, [filterSearch, filterFrom, filterTo, typeFilter, direction]);
 
   // Initial load: fetch last 100 messages
   useEffect(() => {
@@ -512,7 +515,9 @@ export function ChatPanel() {
   // Filter + sort messages
   const filteredMsgs = useMemo(() => {
     let filtered = msgs;
-    if (!showEvents) filtered = filtered.filter(m => m.type !== "event");
+    // Type filter: "all", "chat", or "events"
+    if (typeFilter === "chat") filtered = filtered.filter(m => m.type !== "event");
+    if (typeFilter === "events") filtered = filtered.filter(m => m.type === "event");
     const between = direction === "bidi" && !!(filterFrom && filterTo);
     if (filterFrom || filterTo) {
       filtered = filtered.filter(m => {
@@ -526,7 +531,7 @@ export function ChatPanel() {
     const sq = filterSearch.toLowerCase().trim();
     if (sq) filtered = filtered.filter(m => (m.content || "").toLowerCase().includes(sq));
     return filtered;
-  }, [msgs, showEvents, filterFrom, filterTo, filterSearch, direction]);
+  }, [msgs, typeFilter, filterFrom, filterTo, filterSearch, direction]);
 
   // Track scroll position and load older messages
   useEffect(() => {
@@ -651,9 +656,7 @@ export function ChatPanel() {
         if (!cmd.args) {
           result = { error: 'Usage: /shell [command]', exit_code: -1 };
         } else {
-          // Strip -d <path> from args since it's already captured in commandCwd
-          const shellArgs = cmd.args.replace(/-d\s+\S+/, '').trim();
-          result = await api.execShell(team, shellArgs, commandCwd.value || undefined);
+          result = await api.execShell(team, cmd.args, commandCwd.value || undefined);
         }
       } else if (cmd.name === 'status') {
         // Status is client-side, build result from API calls
@@ -890,12 +893,42 @@ export function ChatPanel() {
     <div class="panel active" style={{ display: activeTab.value === "chat" ? "" : "none" }}>
       {/* Consolidated filter bar with team selector */}
       <div class="chat-filters">
-        <CustomSelect
-          className="chat-team-select"
+        <PillSelect
+          label="Team"
           value={team}
           options={teamOptions}
           onChange={handleTeamChange}
         />
+        <PillSelect
+          label="From"
+          value={filterFrom}
+          options={[{ value: "", label: "All" }, ...agentOptions]}
+          onChange={setFilterFrom}
+        />
+        <span
+          class={"filter-arrow" + (direction === "bidi" ? " bidi" : "")}
+          onClick={toggleDirection}
+          title="Toggle direction"
+        >
+          {direction === "bidi" ? "\u2194" : "\u2192"}
+        </span>
+        <PillSelect
+          label="To"
+          value={filterTo}
+          options={[{ value: "", label: "All" }, ...agentOptions]}
+          onChange={setFilterTo}
+        />
+        <PillSelect
+          label="Type"
+          value={typeFilter}
+          options={[
+            { value: "all", label: "All" },
+            { value: "chat", label: "Chat" },
+            { value: "events", label: "Events" }
+          ]}
+          onChange={setTypeFilter}
+        />
+        <div style={{ flex: 1 }} />
         <div class={searchExpanded ? "filter-search-wrap expanded" : "filter-search-wrap"}>
           {!searchExpanded ? (
             <button
@@ -925,29 +958,6 @@ export function ChatPanel() {
             </>
           )}
         </div>
-        <CustomSelect
-          className="chat-filter-select"
-          value={filterFrom}
-          options={[{ value: "", label: "From: All" }, ...agentOptions]}
-          onChange={setFilterFrom}
-        />
-        <span
-          class={"filter-arrow" + (direction === "bidi" ? " bidi" : "")}
-          onClick={toggleDirection}
-          title="Toggle direction"
-        >
-          {direction === "bidi" ? "\u2194" : "\u2192"}
-        </span>
-        <CustomSelect
-          className="chat-filter-select"
-          value={filterTo}
-          options={[{ value: "", label: "To: All" }, ...agentOptions]}
-          onChange={setFilterTo}
-        />
-        <label>
-          <input type="checkbox" checked={showEvents} onChange={e => setShowEvents(e.target.checked)} />
-          {" "}Events
-        </label>
       </div>
 
       {/* Message list */}

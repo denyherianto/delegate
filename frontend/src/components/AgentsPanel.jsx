@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "preact/hooks";
+import { useState, useMemo, useEffect, useCallback } from "preact/hooks";
 import { currentTeam, teams, tasks, agents, agentStatsMap, activeTab, openPanel } from "../state.js";
 import {
   cap, esc, fmtTokensShort, fmtCost, fmtDuration, fmtRelativeTime, taskIdStr,
@@ -6,6 +6,7 @@ import {
 } from "../utils.js";
 import { CopyBtn } from "./CopyBtn.jsx";
 import { fetchAgentsCrossTeam } from "../api.js";
+import { PillSelect } from "./PillSelect.jsx";
 
 export function AgentsPanel() {
   const team = currentTeam.value;
@@ -15,9 +16,7 @@ export function AgentsPanel() {
   const statsMap = agentStatsMap.value;
 
   const [selectedTeam, setSelectedTeam] = useState(team);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [crossTeamAgents, setCrossTeamAgents] = useState([]);
-  const dropdownRef = useRef();
 
   // Reset selectedTeam when currentTeam changes
   useEffect(() => {
@@ -31,21 +30,8 @@ export function AgentsPanel() {
     }
   }, [selectedTeam]);
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handler = (e) => {
-      if (dropdownOpen && dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [dropdownOpen]);
-
-  const toggleDropdown = useCallback(() => setDropdownOpen(v => !v), []);
-  const selectTeam = useCallback((t) => {
+  const handleTeamChange = useCallback((t) => {
     setSelectedTeam(t);
-    setDropdownOpen(false);
   }, []);
 
   // Determine which agents to show
@@ -144,42 +130,20 @@ export function AgentsPanel() {
 
   return (
     <div class={`panel${activeTab.value === "agents" ? " active" : ""}`}>
-      {/* Team filter dropdown */}
+      {/* Team filter */}
       <div class="agents-team-filter-wrap">
-        <div
-          ref={dropdownRef}
-          class="agents-team-filter"
-          onClick={toggleDropdown}
-        >
-          <span class="agents-team-filter-label">
-            {selectedTeam === "all" ? "All teams" : selectedTeam}
-          </span>
-          <span class="agents-team-filter-chevron" style={dropdownOpen ? { transform: "rotate(180deg)" } : {}}>
-            &#9662;
-          </span>
-          {dropdownOpen && (
-            <div class="agents-team-dropdown">
-              <div
-                class={"agents-team-option" + (selectedTeam === "all" ? " active" : "")}
-                onClick={() => selectTeam("all")}
-              >
-                All teams
-              </div>
-              {teamList.map(t => {
-                const teamName = typeof t === "object" ? t.name : t;
-                return (
-                  <div
-                    key={teamName}
-                    class={"agents-team-option" + (selectedTeam === teamName ? " active" : "")}
-                    onClick={() => selectTeam(teamName)}
-                  >
-                    {teamName}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <PillSelect
+          label="Team"
+          value={selectedTeam}
+          options={[
+            { value: "all", label: "All teams" },
+            ...teamList.map(t => {
+              const name = typeof t === "object" ? t.name : t;
+              return { value: name, label: name };
+            })
+          ]}
+          onChange={handleTeamChange}
+        />
       </div>
 
       {/* Agent list */}
