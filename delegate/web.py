@@ -1174,6 +1174,9 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 # No repos dir, use home directory
                 resolved_cwd = str(Path.home())
 
+        # Expand ~ and ~user paths
+        resolved_cwd = str(Path(resolved_cwd).expanduser())
+
         # Validate CWD exists
         cwd_path = Path(resolved_cwd)
         if not cwd_path.exists() or not cwd_path.is_dir():

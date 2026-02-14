@@ -36,8 +36,8 @@ export function ShellOutputBlock({ result }) {
     );
   }
 
-  const { stdout = '', stderr = '', exit_code = 0, cwd = '', duration_ms = 0 } = result;
-  const hasError = exit_code !== 0;
+  const { stdout = '', stderr = '', exit_code = 0, cwd = '', duration_ms = 0, error = '' } = result;
+  const hasError = exit_code !== 0 || !!error;
   const durationSec = (duration_ms / 1000).toFixed(2);
 
   const lines = stdout.split('\n');
@@ -69,6 +69,12 @@ export function ShellOutputBlock({ result }) {
           <button class="shell-expand-btn" onClick={() => setExpanded(true)}>
             Show all ({lineCount} lines)
           </button>
+        )}
+        {error && (
+          <div class="shell-output-stderr">
+            <div class="shell-output-stderr-label">Error:</div>
+            <pre>{error}</pre>
+          </div>
         )}
         {stderr && (
           <div class="shell-output-stderr">
