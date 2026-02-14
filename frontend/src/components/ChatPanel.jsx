@@ -54,16 +54,11 @@ function CommandMessage({ message, parsed }) {
       <div class="msg-command-header">
         <span class="msg-command-sender">{cap(message.sender)}:</span>
         <span class="msg-command-text">{message.content}</span>
-        {duration && <span class="shell-output-duration">{duration}</span>}
-        {!duration && (
-          <>
-            <span class="msg-task-sep">|</span>
-            <span class="msg-time">{fmtTimestamp(message.timestamp)}</span>
-          </>
-        )}
         <button class="msg-command-copy-icon" onClick={handleCommandCopy} title="Copy command">
           <ClipboardIcon />
         </button>
+        <span class="msg-time">{fmtTimestamp(message.timestamp)}</span>
+        <span class="msg-checkmark-spacer" />
       </div>
       {parsed?.name === 'shell' && (
         <ShellOutputBlock result={message.result} onErrorState={setHasError} />
@@ -1001,6 +996,7 @@ export function ChatPanel() {
               <div key={m.id || i} class="msg-event">
                 <LinkedDiv class="msg-event-text" html={eventHtml} />
                 <span class="msg-event-time">{fmtTimestamp(m.timestamp)}</span>
+                <span class="msg-event-check-spacer" />
               </div>
             );
           }

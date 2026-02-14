@@ -638,8 +638,8 @@ body {
   font-weight: 600;
 }
 .msg-recipient { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; color: var(--text-muted); font-size: 12px; }
-.msg-time { color: var(--text-faint); font-size: 12px; font-variant-numeric: tabular-nums; margin-left: auto; flex-shrink: 0; }
-.msg-checkmark { flex-shrink: 0; margin-left: 4px; min-width: 16px; display: inline-block; text-align: left; }
+.msg-time { color: var(--text-faint); font-size: 12px; font-variant-numeric: tabular-nums; margin-left: auto; flex-shrink: 0; white-space: nowrap; }
+.msg-checkmark { flex-shrink: 0; margin-left: 4px; width: 16px; display: inline-block; text-align: left; }
 .msg-content { color: var(--text-primary); font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 
 /* Collapsible long messages */
@@ -683,7 +683,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 4px 32px 4px 15px;
+  padding: 4px 12px 4px 15px;
   margin: 2px 0;
   border-left: 1px solid var(--text-faint);
   border-bottom: 1px solid var(--border-subtle);
@@ -692,10 +692,11 @@ body {
 .msg-event:hover { background: rgba(255, 255, 255, 0.02); }
 .msg-event-text { flex: 1; color: var(--text-muted); font-size: 12px; line-height: 1.4; }
 .msg-event-time { color: var(--text-faint); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; margin-left: auto; }
+.msg-event-check-spacer { width: 16px; flex-shrink: 0; margin-left: 4px; }
 
 /* Task separator and badge (left side, next to sender) */
 .msg-task-sep { color: var(--text-faint); font-size: 12px; flex-shrink: 0; }
-.msg-command-header .msg-task-sep { margin-left: auto; }
+/* (msg-time now handles margin-left: auto in command headers) */
 .msg-task-badge {
   flex-shrink: 0;
   font-size: 12px;
@@ -2347,6 +2348,8 @@ select option:hover {
   font-size: 12px;
   border-bottom: 1px solid var(--border-subtle);
 }
+.msg-command-header .msg-time { margin-left: auto; }
+.msg-command-header .msg-checkmark-spacer { width: 16px; flex-shrink: 0; margin-left: 4px; }
 
 .msg-command-sender {
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
