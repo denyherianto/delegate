@@ -426,8 +426,9 @@ def _cleanup_after_merge(
             )
         # 2. Prune so git knows the branch is no longer checked out
         _run_git(["worktree", "prune"], cwd=rd)
-        # 3. Now delete the branch (should succeed)
-        result = _run_git(["branch", "-d", branch], cwd=rd)
+        # 3. Now delete the branch (use -D because rebase changes commit SHAs,
+        #    making git think the branch isn't "fully merged")
+        result = _run_git(["branch", "-D", branch], cwd=rd)
         if result.returncode != 0:
             logger.warning(
                 "Failed to delete branch %s in %s: %s",
