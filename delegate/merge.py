@@ -47,7 +47,6 @@ The merge worker is called from the daemon loop (via ``merge_once``).
 
 import enum
 import logging
-import shlex
 import subprocess
 import uuid
 from pathlib import Path
@@ -389,14 +388,14 @@ def _run_pre_merge(
         script = get_pre_merge_script(hc_home, team, repo_name)
 
     if script is not None:
-        cmd = shlex.split(script)
         try:
             script_result = subprocess.run(
-                cmd,
+                script,
                 cwd=wt_dir,
                 capture_output=True,
                 text=True,
                 timeout=600,
+                shell=True,
             )
             output = script_result.stdout + script_result.stderr
             ok = script_result.returncode == 0
