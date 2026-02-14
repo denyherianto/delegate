@@ -191,7 +191,7 @@ body {
   padding: 14px 0 10px;
 }
 .sb-logo { flex-shrink: 0; }
-.sb-logo svg { display: block; opacity: 0.6; }
+.sb-logo svg { display: block; }
 .sb-toggle {
   background: none;
   border: none;
