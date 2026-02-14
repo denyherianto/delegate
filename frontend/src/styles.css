@@ -254,12 +254,13 @@ body {
 }
 .sb-widget:first-child { border-top: none; }
 .sb-widget-header {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: normal;
   color: var(--text-muted);
   margin-bottom: 6px;
   padding: 0 4px;
+  font-weight: 600;
 }
 
 /* Shared dot */

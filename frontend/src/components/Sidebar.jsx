@@ -160,6 +160,9 @@ function AgentsWidget({ collapsed }) {
           const active = agentsWithStatus.filter(a => a.status !== "idle");
           const idle = agentsWithStatus.filter(a => a.status === "idle");
 
+          // Only show teams with at least one active member
+          if (active.length === 0) return null;
+
           // Sort active: working first, then waiting, alpha within
           active.sort((a, b) => {
             const order = { working: 0, waiting: 1 };
