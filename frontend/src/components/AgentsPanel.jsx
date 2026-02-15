@@ -98,8 +98,8 @@ export function AgentsPanel() {
     const totalTokens = (stats.total_tokens_in || 0) + (stats.total_tokens_out || 0);
     const cost = stats.total_cost_usd != null ? "$" + Number(stats.total_cost_usd).toFixed(2) : "$0.00";
 
-    // Get latest activity for line 2
-    const latestActivity = activityLog.find(log => log.agent === a.name);
+    // Get latest activity for line 2 (log is ordered oldest-first, so search from end)
+    const latestActivity = activityLog.findLast(log => log.agent === a.name);
     const showLine2 = a.pid && (currentTask || latestActivity);
 
     return (
