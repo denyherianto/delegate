@@ -54,7 +54,7 @@ class TestUploadEndpoint:
         uploaded = data["uploaded"][0]
         assert uploaded["original_name"] == "test.png"
         assert uploaded["stored_path"].startswith("uploads/")
-        assert uploaded["url"].startswith(f"/teams/{TEAM}/uploads/")
+        assert uploaded["url"].startswith("uploads/")
         assert uploaded["size_bytes"] == len(PNG_1x1)
         assert uploaded["mime_type"] == "image/png"
 
@@ -204,8 +204,8 @@ class TestServeEndpoint:
         uploaded = upload_resp.json()["uploaded"][0]
         url = uploaded["url"]
 
-        # Now fetch it
-        serve_resp = client.get(url)
+        # Now fetch it (prepend /teams/{team}/ to the relative URL)
+        serve_resp = client.get(f"/teams/{TEAM}/{url}")
         assert serve_resp.status_code == 200
         assert serve_resp.content == PNG_1x1
         assert serve_resp.headers["content-type"] == "image/png"
@@ -218,7 +218,7 @@ class TestServeEndpoint:
         upload_resp = client.post(f"/teams/{TEAM}/uploads", files=files)
         uploaded = upload_resp.json()["uploaded"][0]
 
-        serve_resp = client.get(uploaded["url"])
+        serve_resp = client.get(f"/teams/{TEAM}/{uploaded['url']}")
         assert serve_resp.status_code == 200
         assert serve_resp.headers["content-disposition"] == "inline"
 
@@ -230,7 +230,7 @@ class TestServeEndpoint:
         upload_resp = client.post(f"/teams/{TEAM}/uploads", files=files)
         uploaded = upload_resp.json()["uploaded"][0]
 
-        serve_resp = client.get(uploaded["url"])
+        serve_resp = client.get(f"/teams/{TEAM}/{uploaded['url']}")
         assert serve_resp.status_code == 200
         # SVG should be forced to download, not inline
         assert "attachment" in serve_resp.headers["content-disposition"]
@@ -243,7 +243,7 @@ class TestServeEndpoint:
         upload_resp = client.post(f"/teams/{TEAM}/uploads", files=files)
         uploaded = upload_resp.json()["uploaded"][0]
 
-        serve_resp = client.get(uploaded["url"])
+        serve_resp = client.get(f"/teams/{TEAM}/{uploaded['url']}")
         assert serve_resp.status_code == 200
         assert "content-security-policy" in serve_resp.headers
         assert "default-src 'none'" in serve_resp.headers["content-security-policy"]
@@ -281,7 +281,7 @@ class TestServeEndpoint:
         upload_resp = client.post(f"/teams/{TEAM}/uploads", files=files)
         uploaded = upload_resp.json()["uploaded"][0]
 
-        serve_resp = client.get(uploaded["url"])
+        serve_resp = client.get(f"/teams/{TEAM}/{uploaded['url']}")
         assert serve_resp.status_code == 200
         # JSON should be downloaded, not shown inline
         assert "attachment" in serve_resp.headers["content-disposition"]

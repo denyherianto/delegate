@@ -1383,7 +1383,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
             # Build response
             stored_path = f"uploads/{year}/{month}/{final_filename}"
-            url = f"/teams/{team}/uploads/{year}/{month}/{final_filename}"
+            url = f"uploads/{year}/{month}/{final_filename}"
 
             uploaded.append({
                 "original_name": filename,

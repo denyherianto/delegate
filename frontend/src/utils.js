@@ -248,7 +248,7 @@ export function toApiPath(raw, team) {
   if (p.startsWith("teams/")) return p;
 
   // Legacy relative: shared/foo, agents/foo, worktrees/foo → prefix with teams/{team}/
-  if (p.startsWith("shared/") || p.startsWith("agents/") || p.startsWith("worktrees/")) {
+  if (p.startsWith("shared/") || p.startsWith("agents/") || p.startsWith("worktrees/") || p.startsWith("uploads/")) {
     return `teams/${team}/${p}`;
   }
 
