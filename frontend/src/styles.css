@@ -1664,6 +1664,7 @@ select option:hover {
 .rc-gutter-action { width: 24px; min-width: 24px; max-width: 24px; text-align: center; padding: 0; background: var(--bg-surface); border-right: 1px solid var(--border-subtle); position: relative; }
 .rc-add-comment-btn { display: none; width: 18px; height: 18px; padding: 0; margin: 0 auto; border: none; border-radius: 50%; background: var(--text-secondary); color: var(--bg-primary); font-size: 14px; font-weight: 700; line-height: 18px; cursor: pointer; }
 .rc-line:hover .rc-add-comment-btn { display: block; }
+.rc-floating-add-btn { display: block; z-index: 10; }
 .rc-code { padding: 0 8px; background: var(--bg-surface); }
 .rc-code-pre { margin: 0; padding: 1px 0; font-size: 12px; font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; color: var(--text-secondary); white-space: pre-wrap; word-break: break-all; overflow-wrap: break-word; }
 .rc-line-add .rc-code { background: var(--diff-add-bg); }

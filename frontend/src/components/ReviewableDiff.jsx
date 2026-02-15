@@ -207,10 +207,39 @@ const InlineComment = memo(function InlineComment({ comment, dimmed, onEdit, onD
   );
 });
 
-// ── DiffLine ──
+// ── PlainDiffLine — lightweight static line without comments ──
 
-const DiffLine = memo(function DiffLine({ line, file, taskId, comments, oldComments, showOld, onCommentSaved, onCommentEdit, onCommentDelete }) {
-  const [formOpen, setFormOpen] = useState(false);
+function PlainDiffLine({ line, file }) {
+  const lineNum = line.newNumber || line.oldNumber;
+  const type = line.type; // "insert", "delete", "context"
+
+  const lineClass =
+    type === "insert" ? "rc-line-add" :
+    type === "delete" ? "rc-line-del" :
+    "rc-line-ctx";
+
+  const content = line.content || "";
+
+  return (
+    <tr
+      class={"rc-line rc-plain-line " + lineClass}
+      data-file={file}
+      data-line={lineNum}
+    >
+      <td class="rc-gutter rc-gutter-old">{line.oldNumber || ""}</td>
+      <td class="rc-gutter rc-gutter-new">{line.newNumber || ""}</td>
+      <td class="rc-gutter rc-gutter-action"></td>
+      <td class="rc-code">
+        <pre class="rc-code-pre">{content}</pre>
+      </td>
+    </tr>
+  );
+}
+
+// ── DiffLine — full interactive line with comments ──
+
+const DiffLine = memo(function DiffLine({ line, file, taskId, comments, oldComments, showOld, autoOpenForm, onCommentSaved, onCommentEdit, onCommentDelete }) {
+  const [formOpen, setFormOpen] = useState(autoOpenForm || false);
   const [editingId, setEditingId] = useState(null);
   // Use the new line number for additions/context, old for deletions
   const lineNum = line.newNumber || line.oldNumber;
@@ -226,7 +255,11 @@ const DiffLine = memo(function DiffLine({ line, file, taskId, comments, oldComme
 
   return (
     <>
-      <tr class={"rc-line " + lineClass}>
+      <tr
+        class={"rc-line " + lineClass}
+        data-file={file}
+        data-line={lineNum}
+      >
         <td class="rc-gutter rc-gutter-old">{line.oldNumber || ""}</td>
         <td class="rc-gutter rc-gutter-new">{line.newNumber || ""}</td>
         <td class="rc-gutter rc-gutter-action">
@@ -314,9 +347,9 @@ function EditableComment({ comment, taskId, onEdit, onDelete }) {
   );
 }
 
-// ── DiffBlock (hunk) ──
+// ── DiffBlock (hunk) with virtualization ──
 
-const DiffBlock = memo(function DiffBlock({ block, file, taskId, commentIndex, oldCommentIndex, showOld, onCommentSaved, onCommentEdit, onCommentDelete }) {
+const DiffBlock = memo(function DiffBlock({ block, file, taskId, commentIndex, oldCommentIndex, showOld, promotedLines, onCommentSaved, onCommentEdit, onCommentDelete }) {
   const header = block.header || "";
 
   return (
@@ -329,29 +362,43 @@ const DiffBlock = memo(function DiffBlock({ block, file, taskId, commentIndex, o
       {block.lines.map((line, i) => {
         const lineNum = line.newNumber || line.oldNumber;
         const key = commentKey(file, lineNum);
-        return (
-          <DiffLine
-            key={i}
-            line={line}
-            file={file}
-            taskId={taskId}
-            comments={commentIndex[key]}
-            oldComments={oldCommentIndex[key]}
-            showOld={showOld}
-            onCommentSaved={onCommentSaved}
-            onCommentEdit={onCommentEdit}
-            onCommentDelete={onCommentDelete}
-          />
-        );
+        const hasComments = commentIndex[key] || oldCommentIndex[key];
+        const isPromoted = promotedLines && promotedLines.has(lineNum);
+
+        // Use full DiffLine only if line has comments OR was promoted for comment form
+        if (hasComments || isPromoted) {
+          return (
+            <DiffLine
+              key={i}
+              line={line}
+              file={file}
+              taskId={taskId}
+              comments={commentIndex[key]}
+              oldComments={oldCommentIndex[key]}
+              showOld={showOld}
+              autoOpenForm={isPromoted && !hasComments}
+              onCommentSaved={onCommentSaved}
+              onCommentEdit={onCommentEdit}
+              onCommentDelete={onCommentDelete}
+            />
+          );
+        }
+
+        // Otherwise use lightweight PlainDiffLine
+        return <PlainDiffLine key={i} line={line} file={file} />;
       })}
     </>
   );
 });
 
-// ── DiffFile ──
+// ── DiffFile with event delegation for plain line hover ──
 
 const DiffFile = memo(function DiffFile({ diffFile, taskId, commentIndex, oldCommentIndex, showOld, onCommentSaved, onCommentEdit, onCommentDelete, defaultCollapsed }) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const [hoveredLine, setHoveredLine] = useState(null);
+  const [floatingBtnPos, setFloatingBtnPos] = useState(null);
+  const [promotedLines, setPromotedLines] = useState(new Set());
+  const tableRef = useRef(null);
   const name = fileName(diffFile);
   const fileCommentKey = commentKey(name, null);
   const fileComments = commentIndex[fileCommentKey] || [];
@@ -366,6 +413,48 @@ const DiffFile = memo(function DiffFile({ diffFile, taskId, commentIndex, oldCom
       if (commentIndex[key]) commentCount += commentIndex[key].length;
     }
   }
+
+  // Event delegation for hover on plain lines
+  const handleTableMouseMove = useCallback((e) => {
+    // Only handle hover for plain lines (not full DiffLine components with their own buttons)
+    const row = e.target.closest('tr.rc-plain-line');
+    if (row) {
+      const lineNum = parseInt(row.dataset.line, 10);
+      if (lineNum && lineNum !== hoveredLine) {
+        setHoveredLine(lineNum);
+        // Position the floating button at the action column
+        const actionCell = row.querySelector('.rc-gutter-action');
+        if (actionCell) {
+          const rect = actionCell.getBoundingClientRect();
+          const tableRect = tableRef.current?.getBoundingClientRect();
+          if (tableRect) {
+            setFloatingBtnPos({
+              top: rect.top - tableRect.top + rect.height / 2,
+              left: rect.left - tableRect.left + rect.width / 2,
+            });
+          }
+        }
+      }
+    } else {
+      setHoveredLine(null);
+      setFloatingBtnPos(null);
+    }
+  }, [hoveredLine]);
+
+  const handleTableMouseLeave = useCallback(() => {
+    setHoveredLine(null);
+    setFloatingBtnPos(null);
+  }, []);
+
+  const handleFloatingBtnClick = useCallback((e) => {
+    e.stopPropagation();
+    if (hoveredLine) {
+      // Promote the line to a full DiffLine component
+      setPromotedLines((prev) => new Set(prev).add(hoveredLine));
+      setHoveredLine(null);
+      setFloatingBtnPos(null);
+    }
+  }, [hoveredLine]);
 
   return (
     <div class="rc-file">
@@ -393,30 +482,52 @@ const DiffFile = memo(function DiffFile({ diffFile, taskId, commentIndex, oldCom
               <InlineComment comment={c} dimmed />
             </div>
           ))}
-          <table class="rc-diff-table">
-            <colgroup>
-              <col style="width:40px" />
-              <col style="width:40px" />
-              <col style="width:24px" />
-              <col />
-            </colgroup>
-            <tbody>
-              {diffFile.blocks.map((block, i) => (
-                <DiffBlock
-                  key={i}
-                  block={block}
-                  file={name}
-                  taskId={taskId}
-                  commentIndex={commentIndex}
-                  oldCommentIndex={oldCommentIndex}
-                  showOld={showOld}
-                  onCommentSaved={onCommentSaved}
-                  onCommentEdit={onCommentEdit}
-                  onCommentDelete={onCommentDelete}
-                />
-              ))}
-            </tbody>
-          </table>
+          <div
+            style={{ position: 'relative' }}
+            onMouseMove={handleTableMouseMove}
+            onMouseLeave={handleTableMouseLeave}
+          >
+            <table class="rc-diff-table" ref={tableRef}>
+              <colgroup>
+                <col style="width:40px" />
+                <col style="width:40px" />
+                <col style="width:24px" />
+                <col />
+              </colgroup>
+              <tbody>
+                {diffFile.blocks.map((block, i) => (
+                  <DiffBlock
+                    key={i}
+                    block={block}
+                    file={name}
+                    taskId={taskId}
+                    commentIndex={commentIndex}
+                    oldCommentIndex={oldCommentIndex}
+                    showOld={showOld}
+                    promotedLines={promotedLines}
+                    onCommentSaved={onCommentSaved}
+                    onCommentEdit={onCommentEdit}
+                    onCommentDelete={onCommentDelete}
+                  />
+                ))}
+              </tbody>
+            </table>
+            {/* Floating "+" button for plain lines */}
+            {floatingBtnPos && hoveredLine && (
+              <button
+                class="rc-add-comment-btn rc-floating-add-btn"
+                style={{
+                  position: 'absolute',
+                  top: `${floatingBtnPos.top}px`,
+                  left: `${floatingBtnPos.left}px`,
+                  transform: 'translate(-50%, -50%)',
+                  pointerEvents: 'auto',
+                }}
+                onClick={handleFloatingBtnClick}
+                title="Add comment"
+              >+</button>
+            )}
+          </div>
         </div>
       )}
     </div>
