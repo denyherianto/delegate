@@ -2394,7 +2394,7 @@ select option:hover {
   left: 50%;
   transform: translate(-50%, -50%) scale(0.95);
   width: 90%;
-  max-width: 480px;
+  max-width: 640px;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: 8px;
@@ -2424,9 +2424,24 @@ select option:hover {
 
 .help-overlay-body {
   padding: 20px 24px 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.help-overlay-column {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.help-column-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 4px 0;
 }
 
 .help-shortcut-row {

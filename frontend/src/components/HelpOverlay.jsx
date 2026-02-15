@@ -5,17 +5,24 @@ export function HelpOverlay() {
 
   if (!isOpen) return null;
 
-  const shortcuts = [
-    { key: "r", description: "Focus chat input" },
-    { key: "/", description: "Search messages" },
-    { key: "Esc", description: "Close panels / defocus chat input" },
-    { key: "s", description: "Toggle sidebar" },
-    { key: "n", description: "Toggle notifications" },
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+
+  const navigationShortcuts = [
     { key: "c", description: "Go to Chat" },
     { key: "t", description: "Go to Tasks" },
     { key: "a", description: "Go to Agents" },
+    { key: "s", description: "Toggle sidebar" },
+    { key: "n", description: "Toggle notifications" },
+    { key: isMac ? "Cmd+K" : "Ctrl+K", description: "Switch team" },
+  ];
+
+  const actionShortcuts = [
+    { key: "r", description: "Focus chat input" },
+    { key: "/", description: "Search messages" },
     { key: "m", description: "Toggle microphone" },
-    { key: "?", description: "Show/hide keyboard shortcuts" },
+    { key: isMac ? "Cmd+Down" : "Ctrl+End", description: "Scroll to bottom" },
+    { key: "Esc", description: "Close / defocus" },
+    { key: "?", description: "This help" },
   ];
 
   const handleBackdropClick = (e) => {
@@ -32,12 +39,24 @@ export function HelpOverlay() {
           <h2 class="help-overlay-title">Keyboard Shortcuts</h2>
         </div>
         <div class="help-overlay-body">
-          {shortcuts.map(({ key, description }) => (
-            <div class="help-shortcut-row" key={key}>
-              <kbd class="help-shortcut-key">{key}</kbd>
-              <span class="help-shortcut-desc">{description}</span>
-            </div>
-          ))}
+          <div class="help-overlay-column">
+            <h3 class="help-column-title">Navigation</h3>
+            {navigationShortcuts.map(({ key, description }) => (
+              <div class="help-shortcut-row" key={key}>
+                <kbd class="help-shortcut-key">{key}</kbd>
+                <span class="help-shortcut-desc">{description}</span>
+              </div>
+            ))}
+          </div>
+          <div class="help-overlay-column">
+            <h3 class="help-column-title">Actions</h3>
+            {actionShortcuts.map(({ key, description }) => (
+              <div class="help-shortcut-row" key={key}>
+                <kbd class="help-shortcut-key">{key}</kbd>
+                <span class="help-shortcut-desc">{description}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </>

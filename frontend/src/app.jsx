@@ -86,6 +86,7 @@ function App() {
 
   // ── Keyboard shortcuts ──
   useEffect(() => {
+    const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
     const handler = (e) => {
       // Help overlay blocks all shortcuts (user is reading help)
       const isHelpOpen = () => helpOverlayOpen.value;
@@ -99,6 +100,20 @@ function App() {
         if (isInputFocused()) { document.activeElement.blur(); return; }
         return;
       }
+
+      // Scroll to bottom: Cmd+Down (macOS) or Ctrl+End (Windows/Linux)
+      if (!isHelpOpen()) {
+        if ((isMac && e.key === "ArrowDown" && e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) ||
+            (!isMac && e.key === "End" && e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey)) {
+          e.preventDefault();
+          const chatLog = document.querySelector(".chat-log");
+          if (chatLog) {
+            chatLog.scrollTop = chatLog.scrollHeight;
+          }
+          return;
+        }
+      }
+
       if (isInputFocused()) return;
       // r focuses chat input (when on Chat tab)
       if (e.key === "r" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && !isHelpOpen() && panelStack.value.length === 0) {
