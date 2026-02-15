@@ -254,7 +254,7 @@ function AgentView({ agentName }) {
     );
   };
 
-  const TABS = ["activity", "messages", "logs", "reflections", "journal", "stats"];
+  const TABS = ["messages", "activity", "logs", "reflections", "journal", "stats"];
   const data = tabData[tab];
 
   return (

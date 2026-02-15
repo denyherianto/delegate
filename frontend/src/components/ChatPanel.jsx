@@ -847,11 +847,11 @@ export function ChatPanel() {
     const names = new Set(allAgents.map(a => a.name));
     msgs.forEach(m => { if (m.type === "chat") { names.add(m.sender); names.add(m.recipient); } });
     const roleMap = {};
-    allAgents.forEach(a => { roleMap[a.name] = a.role || "worker"; });
+    allAgents.forEach(a => { roleMap[a.name] = a.role || "engineer"; });
     return [...names].sort().map(n => ({
       value: n,
       label: roleMap[n] ? `${cap(n)} (${roleMap[n]})` : cap(n),
-      role: roleMap[n] || "worker",
+      role: roleMap[n] || "engineer",
     }));
   }, [allAgents, msgs]);
 

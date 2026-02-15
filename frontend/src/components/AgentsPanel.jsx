@@ -63,7 +63,7 @@ export function AgentsPanel() {
   const renderAgentRow = (a) => {
     const stats = (statsMap[a.team] || {})[a.name] || {};
     const currentTask = inProgressTasks.find(t => t.assignee === a.name && t.team === a.team);
-    const roleBadge = roleBadgeMap[a.role] || cap(a.role || "worker");
+    const roleBadge = roleBadgeMap[a.role] || cap(a.role || "engineer");
     const doneToday = doneTodayByAgent[a.name] || 0;
 
     // Count assigned tasks (non-done, non-cancelled)
@@ -106,7 +106,7 @@ export function AgentsPanel() {
         <div class="agent-row-line1">
           <span class={dotClass}></span>
           <span class="agent-name">{a.name}</span>
-          <span class={"agent-role badge-role-" + (a.role || "worker")}>{roleBadge}</span>
+          <span class={"agent-role badge-role-" + (a.role || "engineer")}>{roleBadge}</span>
           <span class="agent-spacer"></span>
           <span class="agent-last-seen">{lastSeen}</span>
           <span class="agent-stats">

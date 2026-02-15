@@ -308,6 +308,7 @@ function CommitList({ commits, multiRepo }) {
                     currentComments={[]}
                     oldComments={[]}
                     isReviewable={false}
+                    defaultCollapsed={true}
                   />
                 ) : (
                   <div class="diff-empty">Empty diff</div>
@@ -324,21 +325,36 @@ function CommitList({ commits, multiRepo }) {
 // ── Overview tab ──
 function OverviewTab({ task, stats }) {
   const t = task;
-  const descHtml = t.description ? linkifyFilePaths(linkifyTaskRefs(renderMarkdown(t.description))) : "";
+  const descHtml = useMemo(() =>
+    t.description ? linkifyFilePaths(linkifyTaskRefs(renderMarkdown(t.description))) : "",
+    [t.description]
+  );
 
   return (
     <div>
-      {/* Meta grid */}
-      <div class="task-panel-meta-grid">
-        <div class="task-panel-meta-item"><div class="task-detail-label">DRI</div><div class="task-detail-value">{t.dri ? cap(t.dri) : "\u2014"}</div></div>
-        <div class="task-panel-meta-item"><div class="task-detail-label">Assignee</div><div class="task-detail-value">{t.assignee ? cap(t.assignee) : "\u2014"}</div></div>
-        <div class="task-panel-meta-item"><div class="task-detail-label">Priority</div><div class="task-detail-value">{cap(t.priority)}</div></div>
-        <div class="task-panel-meta-item"><div class="task-detail-label">Time</div><div class="task-detail-value">{stats ? fmtElapsed(stats.elapsed_seconds) : "\u2014"}</div></div>
+      {/* Inline metadata */}
+      <div class="task-panel-meta-inline">
+        <span class="task-panel-meta-pair">
+          <span class="task-panel-meta-label">DRI:</span> {t.dri ? cap(t.dri) : "\u2014"}
+        </span>
+        <span class="task-panel-meta-separator"> · </span>
+        <span class="task-panel-meta-pair">
+          <span class="task-panel-meta-label">Assignee:</span> {t.assignee ? cap(t.assignee) : "\u2014"}
+        </span>
+        <span class="task-panel-meta-separator"> · </span>
+        <span class="task-panel-meta-pair">
+          <span class="task-panel-meta-label">Est:</span> {stats ? fmtElapsed(stats.elapsed_seconds) : "\u2014"}
+        </span>
       </div>
       {stats && (
-        <div class="task-panel-meta-grid">
-          <div class="task-panel-meta-item"><div class="task-detail-label">Tokens (in/out)</div><div class="task-detail-value">{fmtTokens(stats.total_tokens_in, stats.total_tokens_out)}</div></div>
-          <div class="task-panel-meta-item"><div class="task-detail-label">Cost</div><div class="task-detail-value">{fmtCost(stats.total_cost_usd)}</div></div>
+        <div class="task-panel-meta-inline" style={{ marginTop: "8px" }}>
+          <span class="task-panel-meta-pair">
+            <span class="task-panel-meta-label">Tokens:</span> {fmtTokens(stats.total_tokens_in, stats.total_tokens_out)}
+          </span>
+          <span class="task-panel-meta-separator"> · </span>
+          <span class="task-panel-meta-pair">
+            <span class="task-panel-meta-label">Cost:</span> {fmtCost(stats.total_cost_usd)}
+          </span>
         </div>
       )}
       {/* Dates */}
@@ -508,6 +524,7 @@ function ChangesTab({ task, diffRaw, currentReview, oldComments, stats }) {
           currentComments={currentReview ? (currentReview.comments || []) : []}
           oldComments={oldComments || []}
           isReviewable={isReviewable}
+          defaultCollapsed={true}
         />
       ) : null}
       {/* Commits (collapsible) */}
@@ -562,6 +579,7 @@ function MergePreviewTab({ task, mergePreviewRaw, stats }) {
         currentComments={[]}
         oldComments={[]}
         isReviewable={false}
+        defaultCollapsed={true}
       />
     </div>
   );
@@ -757,15 +775,11 @@ export function TaskSidePanel() {
   const [activityRaw, setActivityRaw] = useState(null);
   const [activityLoaded, setActivityLoaded] = useState(false);
 
-  // Mark tab as visited when selected and cache the active tab
+  // Mark tab as visited when selected
   const switchTab = useCallback((tab) => {
     setActiveTab(tab);
     setVisitedTabs(prev => prev[tab] ? prev : { ...prev, [tab]: true });
-    // Cache active tab per task ID so it's preserved on re-open
-    if (id !== null) {
-      _setCache(id, { activeTab: tab });
-    }
-  }, [id]);
+  }, []);
 
   // Load task data when panel opens — stale-while-revalidate.
   // If we have cached data for this task, show it immediately;
@@ -785,14 +799,11 @@ export function TaskSidePanel() {
     setActivityRaw(c.activityRaw ?? null);
     setActivityLoaded(!!c.activityRaw);
 
-    // Restore active tab from cache, default to overview
-    const cachedTab = c.activeTab || "overview";
-    setActiveTab(cachedTab);
+    // Always open on overview tab (don't restore cached tab selection)
+    setActiveTab("overview");
 
-    // Mark changes and activity tabs as visited for eager loading
-    const restored = { overview: true, changes: true, activity: true };
-    if (c.mergePreviewRaw) restored.merge = true;
-    setVisitedTabs(restored);
+    // Only mark overview as initially visited (lazy-load other tabs)
+    setVisitedTabs({ overview: true });
 
     const cached = allTasks.find(t => t.id === id);
     if (cached) setTask(cached);
@@ -957,22 +968,20 @@ export function TaskSidePanel() {
         )}
         {/* Header */}
         <div class="task-panel-header">
-          <div class="task-panel-title-row">
+          <div class="task-panel-header-line-1">
             <span class="task-panel-id copyable">
               {taskIdStr(id)}
-              {taskTeamFilter.value === "all" && t && t.team && (
-                <span class="task-team-badge">{cap(t.team)}</span>
-              )}
               <CopyBtn text={taskIdStr(id)} />
             </span>
-            <span class="task-panel-title">{t ? t.title : "Loading..."}</span>
-          </div>
-          <div class="task-panel-meta-row">
-            <span class="task-panel-status">
+            {taskTeamFilter.value === "all" && t && t.team && (
+              <span class="task-team-name">{cap(t.team)}</span>
+            )}
+            <span class="task-panel-header-status">
               {t && <span class={"badge badge-" + t.status}>{fmtStatus(t.status)}</span>}
             </span>
-            <span class="task-panel-assignee copyable">{t && t.assignee ? cap(t.assignee) : ""}{t && t.assignee && <CopyBtn text={t.assignee} />}</span>
-            <span class="task-panel-priority">{t && t.priority ? cap(t.priority) : ""}</span>
+          </div>
+          <div class="task-panel-header-line-2">
+            <span class="task-panel-title">{t ? t.title : "Loading..."}</span>
           </div>
           <button class="task-panel-close" onClick={close}>&times;</button>
         </div>

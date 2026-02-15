@@ -325,7 +325,7 @@ export function taskIdStr(id) {
 
 // ── Roles ──
 export const roleBadgeMap = {
-  worker: "Worker", manager: "Manager", qa: "QA",
+  engineer: "Engineer", worker: "Worker", manager: "Manager", qa: "QA",
   design: "Design", backend: "Backend", frontend: "Frontend",
 };
 
