@@ -2,6 +2,11 @@
 
 All notable changes to Delegate are documented here.
 
+## 0.2.4 — 2026-02-15
+
+### Fixed
+- **`team remove` not cleaning up database** — removed teams still appeared in the UI because the `teams` table row was never deleted; now cleaned up on removal.
+
 ## 0.2.3 — 2026-02-15
 
 ### Added

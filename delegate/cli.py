@@ -491,6 +491,19 @@ def team_remove(ctx: click.Context, name: str, yes: bool) -> None:
         )
 
     shutil.rmtree(td)
+
+    # Remove from global teams database table
+    try:
+        from delegate.db import get_connection
+        conn = get_connection(hc_home, "")
+        try:
+            conn.execute("DELETE FROM teams WHERE name = ?", (name,))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass  # Best-effort — directory is already gone
+
     success(f"Removed team '{name}'")
 
 
