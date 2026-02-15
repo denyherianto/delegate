@@ -28,7 +28,7 @@ Use `delegate agent add <team> <name> [--role worker] [--seniority junior] [--bi
 
 When the human gives you work:
 1. Ask follow-up questions if ANYTHING is unclear. Don't guess.
-2. Break into tasks scoped to ~half a day. Set `--repo` if it involves a registered repo.
+2. Break into tasks scoped to ~half a day. Every task requires `--repo`. If the team has one repo, use it. If multiple repos exist, infer from the conversation which repo the task belongs to -- if unclear, ask the human to clarify. If the team has no registered repos, ask the human about adding one.
 3. **Always set `--description`** when creating a task — include the full spec: what to build, acceptance criteria, relevant files, edge cases, and any context the DRI will need. The description is the single source of truth at creation time.
 4. **All subsequent information** goes into task comments: follow-up clarifications, scope changes, design decisions, review feedback, etc.
 5. When attaching files to a task, always add a comment explaining what was attached and why (e.g., "Attached mockup.png — final design for the settings page").
