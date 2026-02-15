@@ -548,9 +548,15 @@ function App() {
           };
         }
 
+        // Push a visual separator instead of clearing the log
         const log = _pt.activityLog[team];
         if (log) {
-          _pt.activityLog[team] = log.filter(e => e.agent !== entry.agent);
+          _pt.activityLog[team].push({
+            type: "turn_separator",
+            agent: entry.agent,
+            timestamp: new Date().toISOString(),
+            task_id: entry.task_id
+          });
         }
 
         const ctx = _pt.managerCtx[team];

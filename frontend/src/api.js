@@ -46,6 +46,11 @@ export async function fetchAgentsCrossTeam() {
   return r.ok ? r.json() : [];
 }
 
+export async function fetchAgentActivity(team, agentName, n = 100) {
+  const r = await fetch(`/teams/${team}/agents/${agentName}/activity?n=${n}`);
+  return r.ok ? r.json() : [];
+}
+
 export async function fetchMessages(team, params) {
   // Filter out undefined/null params
   const cleanParams = {};

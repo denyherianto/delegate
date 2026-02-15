@@ -1733,6 +1733,9 @@ select option:hover {
 .agent-activity-tool-read { color: #8a8a8a; }
 .agent-activity-tool-grep, .agent-activity-tool-glob { color: #8a8a8a; }
 .agent-activity-detail { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-activity-separator { display: flex; align-items: center; gap: 8px; padding: 12px 0; margin: 8px 0; }
+.agent-activity-separator-line { flex: 1; height: 1px; background: var(--border-subtle); }
+.agent-activity-separator-text { color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0; }
 
 .agent-markdown-content { padding: 12px 16px; line-height: 1.6; color: var(--text-primary); font-size: 13px; letter-spacing: 0.01em; }
 .agent-markdown-content h1, .agent-markdown-content h2, .agent-markdown-content h3 { margin: 16px 0 6px; color: var(--text-heading); line-height: 1.4; }

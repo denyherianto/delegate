@@ -88,6 +88,29 @@ function AgentView({ agentName }) {
     }
   }, [team, agentName, tabData]);
 
+  // Backfill activity log from REST endpoint when Activity tab opens
+  useEffect(() => {
+    if (tab === "activity" && team && agentName) {
+      const allEntries = agentActivityLog.value;
+      const entries = allEntries.filter(e => e.agent === agentName);
+
+      // Only backfill if we have no entries for this agent
+      if (entries.length === 0) {
+        api.fetchAgentActivity(team, agentName, 100).then(backfillEntries => {
+          if (backfillEntries && backfillEntries.length > 0) {
+            // Merge backfilled entries into the activity log, deduping by timestamp
+            const existingTimestamps = new Set(allEntries.map(e => e.timestamp));
+            const newEntries = backfillEntries.filter(e => !existingTimestamps.has(e.timestamp));
+
+            if (newEntries.length > 0) {
+              agentActivityLog.value = [...allEntries, ...newEntries];
+            }
+          }
+        }).catch(() => {});
+      }
+    }
+  }, [tab, team, agentName]);
+
   const renderInbox = (msgs) => {
     if (!msgs || !msgs.length) return <div class="diff-empty">No messages</div>;
     return msgs.map((m, i) => (
@@ -203,6 +226,18 @@ function AgentView({ agentName }) {
     return (
       <div class="agent-activity-log">
         {entries.map((e, i) => {
+          // Render turn separator
+          if (e.type === "turn_separator") {
+            return (
+              <div key={i} class="agent-activity-separator">
+                <span class="agent-activity-separator-line"></span>
+                <span class="agent-activity-separator-text">Turn ended</span>
+                <span class="agent-activity-separator-line"></span>
+              </div>
+            );
+          }
+
+          // Render regular activity entry
           const toolLower = (e.tool || "").toLowerCase();
           const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : "";
           return (
