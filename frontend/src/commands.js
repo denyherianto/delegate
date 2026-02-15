@@ -25,6 +25,11 @@ export const COMMANDS = {
     description: 'Show cost summary',
     usage: '/cost',
   },
+  agent: {
+    name: 'agent',
+    description: 'Add an agent to the team (e.g. /agent add alice --role engineer)',
+    usage: '/agent add <name> [--role <role>] [--seniority junior|senior] [--bio \'...\']',
+  },
 };
 
 /**

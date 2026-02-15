@@ -51,6 +51,19 @@ export async function fetchAgentActivity(team, agentName, n = 100) {
   return r.ok ? r.json() : [];
 }
 
+export async function addAgent(team, name, options = {}) {
+  const r = await fetch(`/teams/${team}/agents/add`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, ...options }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
 export async function fetchMessages(team, params) {
   // Filter out undefined/null params
   const cleanParams = {};

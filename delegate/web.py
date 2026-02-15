@@ -1540,6 +1540,29 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
     # --- Magic commands endpoints ---
 
+    class AddAgentRequest(BaseModel):
+        name: str
+        role: str | None = None
+        seniority: str | None = None
+        bio: str | None = None
+
+    @app.post("/teams/{team}/agents/add")
+    def add_agent_endpoint(team: str, req: AddAgentRequest):
+        from delegate.bootstrap import add_agent
+        kwargs = {"hc_home": hc_home, "team_name": team, "agent_name": req.name}
+        if req.role is not None:
+            kwargs["role"] = req.role
+        if req.seniority is not None:
+            kwargs["seniority"] = req.seniority
+        if req.bio is not None:
+            kwargs["bio"] = req.bio
+        try:
+            add_agent(**kwargs)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        seniority_display = req.seniority or ("junior" if req.role != "manager" else "senior")
+        return {"message": f"Added agent '{req.name}' to team '{team}' (role: {req.role or 'engineer'}, seniority: {seniority_display})"}
+
     class ShellExecRequest(BaseModel):
         command: str
         cwd: str | None = None

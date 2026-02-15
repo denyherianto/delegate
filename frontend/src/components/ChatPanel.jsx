@@ -66,6 +66,15 @@ function CommandMessage({ message, parsed }) {
         </div>
       )}
       {parsed?.name === 'cost' && <CostBlock result={message.result} />}
+      {parsed?.name === 'agent' && message.result && !message.result.error && (
+        <div class="shell-output-block"><pre>{message.result.message}</pre></div>
+      )}
+      {parsed?.name === 'agent' && message.result?.error && (
+        <div class="shell-output-stderr">
+          <div class="shell-output-stderr-label">Error:</div>
+          <pre>{message.result.error}</pre>
+        </div>
+      )}
     </div>
   );
 }
@@ -944,8 +953,84 @@ export function ChatPanel() {
         }
       } else if (cmd.name === 'cost') {
         result = await api.fetchCostSummary(team);
+      } else if (cmd.name === 'agent') {
+        // Parse /agent add <name> [--role X] [--seniority X] [--bio 'X']
+        const tokens = cmd.args.split(/\s+/).filter(t => t);
+
+        if (tokens.length === 0 || tokens[0] !== 'add') {
+          result = { error: 'Usage: /agent add <name> [--role <role>] [--seniority junior|senior] [--bio \'...\']', exit_code: -1 };
+        } else {
+          let nameToken = null;
+          const options = {};
+          let i = 1; // Start after "add"
+
+          while (i < tokens.length) {
+            const token = tokens[i];
+            if (token.startsWith('--')) {
+              const flag = token.slice(2);
+              if (flag === 'role' || flag === 'seniority') {
+                if (i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) {
+                  options[flag] = tokens[i + 1];
+                  i += 2;
+                } else {
+                  result = { error: `Missing value for --${flag}`, exit_code: -1 };
+                  break;
+                }
+              } else if (flag === 'bio') {
+                // Handle quoted bio strings
+                if (i + 1 < tokens.length) {
+                  let bioValue = tokens[i + 1];
+                  i += 2;
+
+                  // Check if bio starts with a quote
+                  if (bioValue.startsWith('"') || bioValue.startsWith("'")) {
+                    const quote = bioValue[0];
+                    bioValue = bioValue.slice(1);
+
+                    // Find closing quote
+                    while (i < tokens.length && !bioValue.endsWith(quote)) {
+                      bioValue += ' ' + tokens[i];
+                      i++;
+                    }
+
+                    // Remove trailing quote
+                    if (bioValue.endsWith(quote)) {
+                      bioValue = bioValue.slice(0, -1);
+                    }
+                  }
+
+                  options.bio = bioValue;
+                } else {
+                  result = { error: 'Missing value for --bio', exit_code: -1 };
+                  break;
+                }
+              } else {
+                result = { error: `Unknown flag: ${token}`, exit_code: -1 };
+                break;
+              }
+            } else if (!nameToken) {
+              nameToken = token;
+              i++;
+            } else {
+              result = { error: `Unexpected token: ${token}`, exit_code: -1 };
+              break;
+            }
+          }
+
+          if (!result) {
+            if (!nameToken) {
+              result = { error: 'Usage: /agent add <name> [--role <role>] [--seniority junior|senior] [--bio \'...\']', exit_code: -1 };
+            } else {
+              try {
+                result = await api.addAgent(team, nameToken, options);
+              } catch (err) {
+                result = { error: err.message, exit_code: -1 };
+              }
+            }
+          }
+        }
       } else {
-        result = { error: `Unknown command: /${cmd.name}. Available: /shell, /status, /diff, /cost`, exit_code: -1 };
+        result = { error: `Unknown command: /${cmd.name}. Available: /shell, /status, /diff, /cost, /agent`, exit_code: -1 };
       }
 
       // Persist to DB
