@@ -29,6 +29,7 @@ lifetime is independent of DB sessions.
 
 import logging
 import random
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -394,14 +395,18 @@ def _create_telephone(
         if memory:
             (ad / "context.md").write_text(memory)
 
+    # Platform-appropriate temp directory (resolves macOS /tmp → /private/tmp)
+    tmpdir = str(Path(tempfile.gettempdir()).resolve())
+
     return Telephone(
         preamble=preamble,
         cwd=team_dir(hc_home, team),
         model=model,
         allowed_write_paths=_write_paths_for_role(hc_home, team, agent, role),
-        add_dirs=[str(hc_home)],
+        add_dirs=[str(hc_home), tmpdir],
         disallowed_tools=DISALLOWED_TOOLS,
         on_rotation=_on_rotation,
+        sandbox_enabled=True,
     )
 
 

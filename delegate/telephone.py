@@ -6,7 +6,7 @@ directory, call ``send()`` repeatedly.  The class handles session
 resumption, token accounting, permission enforcement via
 ``can_use_tool``, and automatic context-window rotation.
 
-Internally uses ``ClaudeSDKClient`` to keep a **single persistent
+Internally uses ``ClaudeSDKClient`` (from ``claude_agent_sdk``) to keep a **single persistent
 subprocess** across all turns — no process-per-query overhead.
 
 On the **first turn** of each generation the user message sent to
@@ -218,7 +218,7 @@ class Telephone:
 
     The class is deliberately free of any Delegate-specific concepts
     (teams, agents, mailbox, tasks).  It only depends on
-    ``claude_code_sdk``.
+    ``claude_agent_sdk``.
 
     Args:
         preamble: Static role instructions prepended to the user
@@ -246,6 +246,10 @@ class Telephone:
             ``"bypassPermissions"``.
         disallowed_tools: Tool patterns to deny at the SDK level
             (complementary to ``can_use_tool``).
+        sandbox_enabled: Enable OS-level bash sandboxing (macOS
+            Seatbelt / Linux bubblewrap).  When ``True``, bash
+            commands are restricted to ``cwd`` + ``add_dirs`` at the
+            kernel level — defense-in-depth beyond ``can_use_tool``.
     """
 
     DEFAULT_ROTATION_PROMPT = (
@@ -276,6 +280,7 @@ class Telephone:
         add_dirs: list[str | Path] | None = None,
         permission_mode: str = "bypassPermissions",
         disallowed_tools: list[str] | None = None,
+        sandbox_enabled: bool = False,
     ):
         # Stable identity
         self.id: str = uuid.uuid4().hex
@@ -290,6 +295,7 @@ class Telephone:
         self.permission_mode = permission_mode
         self.add_dirs = [Path(p).resolve() for p in (add_dirs or [])]
         self.disallowed_tools = list(disallowed_tools or [])
+        self.sandbox_enabled = sandbox_enabled
 
         # Permission configuration
         self._allowed_write_paths: list[Path] | None = (
@@ -548,14 +554,14 @@ class Telephone:
                 pass
             self._stale_client = None
 
-        from claude_code_sdk import ClaudeSDKClient
+        from claude_agent_sdk import ClaudeSDKClient
 
         options = self._build_options()
         self._client = ClaudeSDKClient(options)
         await self._client.connect()
 
     def _build_options(self) -> Any:
-        """Assemble ``ClaudeCodeOptions`` for the client.
+        """Assemble ``ClaudeAgentOptions`` for the client.
 
         Never sets ``system_prompt`` — we rely on Claude Code's own
         system prompt for tool-use instructions.  Our preamble and
@@ -565,7 +571,7 @@ class Telephone:
         keeps a single persistent subprocess that maintains
         conversation state across ``query()`` calls.
         """
-        from claude_code_sdk import ClaudeCodeOptions
+        from claude_agent_sdk import ClaudeAgentOptions
 
         kw: dict[str, Any] = {
             "cwd": str(self.cwd),
@@ -586,7 +592,15 @@ class Telephone:
         if guard is not None:
             kw["can_use_tool"] = guard
 
-        return ClaudeCodeOptions(**kw)
+        # OS-level sandbox for bash commands
+        if self.sandbox_enabled:
+            kw["sandbox"] = {
+                "enabled": True,
+                "autoAllowBashIfSandboxed": True,
+                "allowUnsandboxedCommands": False,
+            }
+
+        return ClaudeAgentOptions(**kw)
 
     def _make_guard(self):
         """Build a ``can_use_tool`` callback for path/command enforcement.

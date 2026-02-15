@@ -24,32 +24,39 @@ from unittest.mock import MagicMock
 import pytest
 
 # ---------------------------------------------------------------------------
-# Ensure claude_code_sdk is importable even when the real package isn't
-# installed.  Unit tests only need ClaudeCodeOptions to behave as a
+# Ensure claude_agent_sdk is importable even when the real package isn't
+# installed.  Unit tests only need ClaudeAgentOptions to behave as a
 # simple data container.  If the real SDK *is* installed we leave it alone
 # so the live (--run-llm) tests work.
 # ---------------------------------------------------------------------------
 try:
-    import claude_code_sdk as _real_sdk  # noqa: F401 — just probe availability
+    import claude_agent_sdk as _real_sdk  # noqa: F401 — just probe availability
 except ImportError:
-    _fake_sdk = types.ModuleType("claude_code_sdk")
+    _fake_sdk = types.ModuleType("claude_agent_sdk")
 
     class _FakeOptions:
-        """Minimal stand-in for ClaudeCodeOptions."""
+        """Minimal stand-in for ClaudeAgentOptions."""
         def __init__(self, **kw):
             for k, v in kw.items():
                 setattr(self, k, v)
             for attr in (
                 "system_prompt", "resume", "model", "max_turns",
                 "add_dirs", "disallowed_tools", "can_use_tool",
-                "cwd", "permission_mode",
+                "cwd", "permission_mode", "sandbox",
             ):
                 if not hasattr(self, attr):
                     setattr(self, attr, None)
 
-    _fake_sdk.ClaudeCodeOptions = _FakeOptions  # type: ignore[attr-defined]
+    class _FakeSandboxSettings:
+        """Minimal stand-in for SandboxSettings."""
+        def __init__(self, **kw):
+            for k, v in kw.items():
+                setattr(self, k, v)
+
+    _fake_sdk.ClaudeAgentOptions = _FakeOptions  # type: ignore[attr-defined]
+    _fake_sdk.SandboxSettings = _FakeSandboxSettings  # type: ignore[attr-defined]
     _fake_sdk.ResultMessage = type("ResultMessage", (), {})  # type: ignore[attr-defined]
-    sys.modules["claude_code_sdk"] = _fake_sdk
+    sys.modules["claude_agent_sdk"] = _fake_sdk
 
 from delegate.telephone import Telephone, TelephoneUsage
 
@@ -165,10 +172,32 @@ class TestTelephoneUnit:
         opts = t._build_options()
         # system_prompt should never be set — we use Claude's own
         assert opts.system_prompt is None
-        # resume should never be set — ClaudeSDKClient maintains state
+        # resume should never be set — ClaudeSDKClient maintains state internally
         assert opts.resume is None
         assert opts.model == "claude-sonnet-4-20250514"
         assert "Bash(git push:*)" in opts.disallowed_tools
+        # sandbox should be absent when not enabled
+        assert opts.sandbox is None
+
+    def test_build_options_sandbox_enabled(self, tmp_path):
+        """When sandbox_enabled=True, options include SandboxSettings dict."""
+        t = Telephone(
+            preamble="hello",
+            cwd=tmp_path,
+            sandbox_enabled=True,
+        )
+        opts = t._build_options()
+        assert opts.sandbox is not None
+        assert opts.sandbox["enabled"] is True
+        assert opts.sandbox["autoAllowBashIfSandboxed"] is True
+        assert opts.sandbox["allowUnsandboxedCommands"] is False
+
+    def test_build_options_sandbox_disabled_by_default(self, tmp_path):
+        """sandbox_enabled defaults to False — no sandbox in options."""
+        t = Telephone(preamble="hello", cwd=tmp_path)
+        assert t.sandbox_enabled is False
+        opts = t._build_options()
+        assert opts.sandbox is None
 
     def test_turn0_prompt_preamble_only(self, tmp_path):
         """Turn 0 with no memory: preamble + prompt."""
@@ -336,6 +365,23 @@ class TestTelephoneUnit:
         t.reset()
         assert not t.needs_rotation  # usage zeroed → back under budget
 
+    def test_sandbox_add_dirs_includes_tmpdir(self, tmp_path):
+        """When sandbox is enabled, add_dirs should include tmpdir for platform compat."""
+        import tempfile
+        tmpdir = str(Path(tempfile.gettempdir()).resolve())
+
+        t = Telephone(
+            preamble="hello",
+            cwd=tmp_path,
+            add_dirs=[str(tmp_path), tmpdir],
+            sandbox_enabled=True,
+        )
+        assert t.sandbox_enabled is True
+        opts = t._build_options()
+        assert tmpdir in opts.add_dirs
+        assert opts.sandbox is not None
+        assert opts.sandbox["enabled"] is True
+
 
 # ---------------------------------------------------------------------------
 # Live LLM integration tests
@@ -438,15 +484,16 @@ class TestTelephoneLive:
         async def _run():
             t = Telephone(
                 preamble=(
-                    "CRITICAL RULE: You must ALWAYS include the exact word "
-                    "'YARR' (uppercase) somewhere in EVERY response you give. "
-                    "This is mandatory and must never be omitted."
+                    "CRITICAL RULE: Every response you give MUST start with "
+                    "the exact token 'YARR' on its own line, followed by your "
+                    "actual answer.  Never omit 'YARR'.  Example:\n"
+                    "YARR\nHere is my answer."
                 ),
                 cwd=str(tmp_path),
             )
             try:
                 # Turn 1 — preamble prepended to prompt
-                msgs = await _send_and_collect(t, "Say hi briefly.")
+                msgs = await _send_and_collect(t, "Say hi in one sentence.")
                 text = _collect_text(msgs)
                 assert "YARR" in text, (
                     f"Preamble not effective on first turn: {text!r}"
@@ -454,7 +501,7 @@ class TestTelephoneLive:
 
                 # Turn 2 — preamble not re-sent, but it's in conversation
                 # history so the model should still follow it.
-                msgs = await _send_and_collect(t, "Say goodbye briefly.")
+                msgs = await _send_and_collect(t, "Say goodbye in one sentence.")
                 text = _collect_text(msgs)
 
                 assert "YARR" in text, (

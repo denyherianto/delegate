@@ -4,7 +4,7 @@ The sim-boss replaces the human boss during automated eval runs.
 It watches the boss's inbox for messages from the manager, then responds
 based strictly on the benchmark task spec (no volunteering extra info).
 
-Uses claude_code_sdk.query() for one-shot LLM calls with a standardized prompt.
+Uses claude_agent_sdk.query() for one-shot LLM calls with a standardized prompt.
 
 Usage:
     # Respond to a single message
@@ -42,14 +42,14 @@ def _build_prompt(task_spec: str, message: str) -> str:
 async def _query_llm(prompt: str, llm_query=None) -> str:
     """Call the LLM and return the text response.
 
-    *llm_query* can be injected for testing. If None, uses claude_code_sdk.query.
+    *llm_query* can be injected for testing. If None, uses claude_agent_sdk.query.
     """
     if llm_query is not None:
         return await llm_query(prompt)
 
-    from claude_code_sdk import query, ClaudeCodeOptions
+    from claude_agent_sdk import query, ClaudeAgentOptions
 
-    options = ClaudeCodeOptions(
+    options = ClaudeAgentOptions(
         system_prompt="You are a simulated boss for automated evaluation runs.",
         max_turns=1,
     )

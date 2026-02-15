@@ -34,7 +34,7 @@ def _deliver_msg(tmp_team, to_agent, body="Hello", sender="manager"):
 
 @dataclass
 class _FakeResultMsg:
-    """Mimics a claude_code_sdk ResultMessage."""
+    """Mimics a claude_agent_sdk ResultMessage."""
     total_cost_usd: float = 0.01
     usage: dict | None = None
 
