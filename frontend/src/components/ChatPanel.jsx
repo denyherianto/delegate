@@ -126,7 +126,7 @@ function CollapsibleMessage({ html, messageId, isBoss }) {
     const observer = new ResizeObserver(checkOverflow);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [html]);
+  }, [html, activeTab.value]);
 
   const toggle = useCallback(() => {
     const next = new Set(expandedMessages.value);
@@ -185,7 +185,7 @@ function CollapsibleEventMessage({ html, messageId }) {
     const observer = new ResizeObserver(checkOverflow);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [html]);
+  }, [html, activeTab.value]);
 
   const toggle = useCallback(() => {
     const next = new Set(expandedMessages.value);
