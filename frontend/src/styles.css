@@ -2169,7 +2169,7 @@ select option:hover {
   justify-content: center;
   background: none;
   border: none;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
@@ -2302,7 +2302,7 @@ select option:hover {
   flex-shrink: 0;
   background: none;
   border: none;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 20px;
   line-height: 1;
