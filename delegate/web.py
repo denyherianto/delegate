@@ -606,10 +606,37 @@ async def _lifespan(app: FastAPI):
             _daemon_loop(hc_home, interval, max_concurrent, token_budget, exchange=exchange)
         )
 
+    # Always do a one-shot frontend build if frontend/ exists and node is available
+    frontend_dir = _find_frontend_dir()
+    if frontend_dir:
+        node = shutil.which("node")
+        if node:
+            # Ensure node_modules are installed
+            if not (frontend_dir / "node_modules").is_dir():
+                npm = shutil.which("npm")
+                if npm:
+                    logger.info("Installing frontend dependencies...")
+                    subprocess.run([npm, "install"], cwd=str(frontend_dir), check=True)
+
+            build_js = str(frontend_dir / "build.js")
+            logger.info("Building frontend assets...")
+            try:
+                subprocess.run(
+                    [node, build_js],
+                    cwd=str(frontend_dir),
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                logger.info("Frontend build complete")
+            except subprocess.CalledProcessError as e:
+                logger.warning("Frontend build failed: %s", e.stderr or e.stdout or str(e))
+
     # Auto-start frontend watcher only in dev mode (delegate start --dev)
     dev_mode = os.environ.get("DELEGATE_DEV", "").lower() in ("1", "true", "yes")
     if dev_mode:
-        frontend_dir = _find_frontend_dir()
+        if frontend_dir is None:
+            frontend_dir = _find_frontend_dir()
         if frontend_dir:
             esbuild_proc = _start_esbuild_watch(frontend_dir)
 
