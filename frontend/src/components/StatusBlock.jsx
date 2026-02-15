@@ -1,10 +1,9 @@
 import { useState, useEffect } from "preact/hooks";
 import { currentTeam, openPanel } from "../state.js";
 import * as api from "../api.js";
-import { cap } from "../utils.js";
 
 /**
- * Renders /status command output - system status summary.
+ * Renders /status command output - task-focused status summary.
  * This component is fully client-side and fetches data from existing endpoints.
  * @param {Object} props
  * @param {Object|null} props.result - Cached result data, or null to fetch live
@@ -19,28 +18,34 @@ export function StatusBlock({ result }) {
     const fetchStatus = async () => {
       try {
         const team = currentTeam.value;
-        const [agentsData, tasksData] = await Promise.all([
-          api.fetchAgents(team),
-          api.fetchTasks(team),
-        ]);
+        const tasksData = await api.fetchTasks(team);
 
-        // Build status summary
-        const agents = agentsData.map(a => ({
-          name: a.name,
-          status: a.status || 'idle',
-          current_task: a.current_task_id || null,
-          last_turn: a.last_turn_at || null,
-        }));
+        // Compute "today" and "this week" start times in UTC
+        const now = new Date();
+        const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const dayOfWeek = now.getUTCDay(); // 0=Sunday, 1=Monday, ...
+        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday -> 6, Monday -> 0, Tuesday -> 1, etc.
+        const weekStart = new Date(todayStart.getTime() - daysToMonday * 24 * 60 * 60 * 1000);
 
-        const taskCounts = {
-          todo: tasksData.filter(t => t.status === 'todo').length,
-          in_progress: tasksData.filter(t => t.status === 'in_progress').length,
-          in_review: tasksData.filter(t => t.status === 'in_review').length,
-          in_approval: tasksData.filter(t => t.status === 'in_approval').length,
-          total: tasksData.filter(t => t.status !== 'done' && t.status !== 'cancelled').length,
+        // Count done tasks
+        const doneTasks = tasksData.filter(t => t.status === 'done' && t.completed_at);
+        const doneToday = doneTasks.filter(t => new Date(t.completed_at) >= todayStart).length;
+        const doneThisWeek = doneTasks.filter(t => new Date(t.completed_at) >= weekStart).length;
+
+        // Count pending tasks (non-done, non-cancelled)
+        const pending = tasksData.filter(t => t.status !== 'done' && t.status !== 'cancelled').length;
+
+        // Build per-status task ID arrays
+        const statuses = {
+          in_progress: tasksData.filter(t => t.status === 'in_progress').map(t => t.id),
+          in_review: tasksData.filter(t => t.status === 'in_review').map(t => t.id),
+          in_approval: tasksData.filter(t => t.status === 'in_approval').map(t => t.id),
+          merge_failed: tasksData.filter(t => t.status === 'merge_failed').map(t => t.id),
+          rejected: tasksData.filter(t => t.status === 'rejected').map(t => t.id),
+          todo: tasksData.filter(t => t.status === 'todo').map(t => t.id),
         };
 
-        setData({ agents, taskCounts });
+        setData({ doneToday, doneThisWeek, pending, statuses });
         setLoading(false);
       } catch (err) {
         console.error('Failed to fetch status:', err);
@@ -55,7 +60,7 @@ export function StatusBlock({ result }) {
   if (loading) {
     return (
       <div class="status-block loading">
-        <div class="status-header">System Status</div>
+        <div class="status-header">Status</div>
         <div class="status-body">Loading...</div>
       </div>
     );
@@ -64,87 +69,68 @@ export function StatusBlock({ result }) {
   if (data?.error) {
     return (
       <div class="status-block error">
-        <div class="status-header">System Status</div>
+        <div class="status-header">Status</div>
         <div class="status-body">Error: {data.error}</div>
       </div>
     );
   }
 
-  const { agents = [], taskCounts = {} } = data || {};
-
-  const formatLastTurn = (timestamp) => {
-    if (!timestamp) return 'never';
-    const diff = Date.now() - new Date(timestamp).getTime();
-    const minutes = Math.floor(diff / 60000);
-    if (minutes < 1) return 'just now';
-    if (minutes === 1) return '1m ago';
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours === 1) return '1h ago';
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-  };
-
-  const handleAgentClick = (e, agentName) => {
-    e.preventDefault();
-    openPanel('agent', agentName);
-  };
+  const { doneToday = 0, doneThisWeek = 0, pending = 0, statuses = {} } = data || {};
 
   const handleTaskClick = (e, taskId) => {
     e.preventDefault();
     openPanel('task', taskId);
   };
 
+  const formatTaskId = (id) => `T${String(id).padStart(4, '0')}`;
+
+  const statusLabels = {
+    in_progress: 'In Progress',
+    in_review: 'In Review',
+    in_approval: 'In Approval',
+    merge_failed: 'Merge Failed',
+    rejected: 'Rejected',
+    todo: 'Todo',
+  };
+
+  const statusOrder = ['in_progress', 'in_review', 'in_approval', 'merge_failed', 'rejected', 'todo'];
+
   return (
     <div class="status-block">
-      <div class="status-header">System Status</div>
+      <div class="status-header">Status</div>
       <div class="status-body">
-        <div class="status-section">
-          <div class="status-section-title">Agents</div>
-          {agents.map(a => (
-            <div key={a.name} class="status-agent-row">
-              <a
-                href="#"
-                class="status-agent-name"
-                onClick={(e) => handleAgentClick(e, a.name)}
-              >
-                {cap(a.name)}
-              </a>
-              <span class={`status-badge status-${a.status}`}>
-                {a.status}
-              </span>
-              {a.current_task && (
-                <a
-                  href="#"
-                  class="status-task-link"
-                  onClick={(e) => handleTaskClick(e, a.current_task)}
-                >
-                  T{String(a.current_task).padStart(4, '0')}
-                </a>
-              )}
-              <span class="status-last-turn">{formatLastTurn(a.last_turn)}</span>
-            </div>
-          ))}
+        <div class="status-done-line">
+          Done: {doneToday} today, {doneThisWeek} this week
         </div>
-
-        <div class="status-section">
-          <div class="status-section-title">Tasks</div>
-          <div class="status-task-counts">
-            {taskCounts.in_progress > 0 && (
-              <span class="status-count">{taskCounts.in_progress} in_progress</span>
-            )}
-            {taskCounts.in_review > 0 && (
-              <span class="status-count">{taskCounts.in_review} in_review</span>
-            )}
-            {taskCounts.in_approval > 0 && (
-              <span class="status-count">{taskCounts.in_approval} in_approval</span>
-            )}
-            {taskCounts.todo > 0 && (
-              <span class="status-count">{taskCounts.todo} todo</span>
-            )}
-          </div>
-          <div class="status-total">{taskCounts.total} total open</div>
+        <div class="status-pending-line">
+          Pending: {pending} total
+        </div>
+        <div class="status-breakdown">
+          {statusOrder.map(status => {
+            const taskIds = statuses[status] || [];
+            if (taskIds.length === 0) return null;
+            return (
+              <div key={status} class="status-breakdown-row">
+                <span class="status-breakdown-label">{statusLabels[status]}:</span>
+                <span class="status-breakdown-count">{taskIds.length}</span>
+                <span class="status-breakdown-tasks">
+                  (
+                  {taskIds.map((id, idx) => (
+                    <>
+                      {idx > 0 && ', '}
+                      <a
+                        href="#"
+                        onClick={(e) => handleTaskClick(e, id)}
+                      >
+                        {formatTaskId(id)}
+                      </a>
+                    </>
+                  ))}
+                  )
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

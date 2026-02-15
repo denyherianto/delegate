@@ -757,24 +757,34 @@ export function ChatPanel() {
         }
       } else if (cmd.name === 'status') {
         // Status is client-side, build result from API calls
-        const [agentsData, tasksData] = await Promise.all([
-          api.fetchAgents(team),
-          api.fetchTasks(team),
-        ]);
-        const agents = agentsData.map(a => ({
-          name: a.name,
-          status: a.status || 'idle',
-          current_task: a.current_task_id || null,
-          last_turn: a.last_turn_at || null,
-        }));
-        const taskCounts = {
-          todo: tasksData.filter(t => t.status === 'todo').length,
-          in_progress: tasksData.filter(t => t.status === 'in_progress').length,
-          in_review: tasksData.filter(t => t.status === 'in_review').length,
-          in_approval: tasksData.filter(t => t.status === 'in_approval').length,
-          total: tasksData.filter(t => t.status !== 'done' && t.status !== 'cancelled').length,
+        const tasksData = await api.fetchTasks(team);
+
+        // Compute "today" and "this week" start times in UTC
+        const now = new Date();
+        const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+        const dayOfWeek = now.getUTCDay(); // 0=Sunday, 1=Monday, ...
+        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday -> 6, Monday -> 0, Tuesday -> 1, etc.
+        const weekStart = new Date(todayStart.getTime() - daysToMonday * 24 * 60 * 60 * 1000);
+
+        // Count done tasks
+        const doneTasks = tasksData.filter(t => t.status === 'done' && t.completed_at);
+        const doneToday = doneTasks.filter(t => new Date(t.completed_at) >= todayStart).length;
+        const doneThisWeek = doneTasks.filter(t => new Date(t.completed_at) >= weekStart).length;
+
+        // Count pending tasks (non-done, non-cancelled)
+        const pending = tasksData.filter(t => t.status !== 'done' && t.status !== 'cancelled').length;
+
+        // Build per-status task ID arrays
+        const statuses = {
+          in_progress: tasksData.filter(t => t.status === 'in_progress').map(t => t.id),
+          in_review: tasksData.filter(t => t.status === 'in_review').map(t => t.id),
+          in_approval: tasksData.filter(t => t.status === 'in_approval').map(t => t.id),
+          merge_failed: tasksData.filter(t => t.status === 'merge_failed').map(t => t.id),
+          rejected: tasksData.filter(t => t.status === 'rejected').map(t => t.id),
+          todo: tasksData.filter(t => t.status === 'todo').map(t => t.id),
         };
-        result = { agents, taskCounts };
+
+        result = { doneToday, doneThisWeek, pending, statuses };
       } else if (cmd.name === 'diff') {
         if (!cmd.args) {
           result = { error: 'Usage: /diff [task_id]', exit_code: -1 };

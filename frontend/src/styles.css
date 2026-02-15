@@ -2660,93 +2660,52 @@ select option:hover {
 .status-body {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
 }
 
-.status-section {
+.status-done-line,
+.status-pending-line {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.status-breakdown {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin-top: 8px;
 }
 
-.status-section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-heading);
-  margin-bottom: 4px;
-}
-
-.status-agent-row {
+.status-breakdown-row {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 0;
+  align-items: baseline;
+  gap: 8px;
   font-size: 13px;
 }
 
-.status-agent-name {
-  min-width: 80px;
-  color: var(--text-primary);
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.status-agent-name:hover {
-  color: var(--accent);
-}
-
-.status-badge {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
+.status-breakdown-label {
   font-weight: 600;
-  text-transform: lowercase;
+  color: var(--text-heading);
+  min-width: 100px;
 }
 
-.status-badge.status-idle {
-  background: var(--status-done-bg);
-  color: var(--semantic-gray);
+.status-breakdown-count {
+  color: var(--text-secondary);
+  min-width: 20px;
 }
 
-.status-badge.status-working {
-  background: var(--status-in-progress-bg);
-  color: #b0b0b0;
+.status-breakdown-tasks {
+  color: var(--text-primary);
 }
 
-.status-task-link {
+.status-breakdown-tasks a {
   color: var(--accent);
   text-decoration: none;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
 }
 
-.status-task-link:hover {
+.status-breakdown-tasks a:hover {
   text-decoration: underline;
-}
-
-.status-last-turn {
-  margin-left: auto;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.status-task-counts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 8px 0;
-}
-
-.status-count {
-  font-size: 13px;
-  color: var(--text-primary);
-}
-
-.status-total {
-  margin-top: 4px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-heading);
 }
 
 /* Cost block */
