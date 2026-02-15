@@ -7,17 +7,24 @@ messages.  Each call:
    share the same ``task_id`` as the first message.
 2. Marks the selected messages as *seen*.
 3. Resolves the task (if any) and all repo worktree paths.
-4. Builds the user message with bidirectional conversation history,
-   task context, and the selected messages.
-5. Calls ``claude_code_sdk.query()`` — streaming tool summaries to the
+4. Builds a user message (task context + conversation history + new
+   messages) via ``Prompt``.
+5. Sends the user message through the agent's ``Telephone`` — the
+   persistent Claude subprocess — streaming tool summaries to the
    in-memory ring buffer, SSE subscribers, and the worklog.
 6. Marks ALL selected messages as *processed*.
-7. Optionally runs a reflection follow-up (1-in-10 coin flip).
-8. Finalises the session: writes worklog, saves context, ends session.
+7. Optionally runs a reflection follow-up (1-in-10 coin flip) on the
+   **same** Telephone (so the model has full conversation context).
+8. Finalises the DB session: writes worklog, ends session.
 
-All agents are "always online" — there is no PID tracking or subprocess
-management.  The daemon owns the event loop and dispatches turns as
-asyncio tasks with a semaphore for concurrency control.
+``TelephoneExchange`` holds one ``Telephone`` per (team, agent) pair,
+persisting across turns.  The daemon creates a single exchange at
+startup and passes it to every ``run_turn()`` call.
+
+DB session semantics are **unchanged**: ``start_session()`` /
+``end_session()`` bracket each ``run_turn()`` call one-to-one, writing
+a row to the ``sessions`` table.  The ``Telephone`` subprocess
+lifetime is independent of DB sessions.
 """
 
 import logging
@@ -31,9 +38,6 @@ from delegate.logging_setup import log_caller
 
 from delegate.agent import (
     AgentLogger,
-    build_system_prompt,
-    build_user_message,
-    build_reflection_message,
     _agent_dir,
     _read_state,
     _next_worklog_number,
@@ -49,6 +53,7 @@ from delegate.mailbox import (
     mark_processed_batch,
     Message,
 )
+from delegate.prompt import Prompt
 from delegate.task import format_task_id
 from delegate.activity import broadcast as broadcast_activity, broadcast_turn_event
 
@@ -79,6 +84,43 @@ REFLECTION_PROBABILITY = 0.1
 
 # In-memory turn counter per (team, agent) (module-level; single-process safe)
 _turn_counts: dict[tuple[str, str], int] = {}
+
+
+# ---------------------------------------------------------------------------
+# TelephoneExchange — registry of persistent agent conversations
+# ---------------------------------------------------------------------------
+
+class TelephoneExchange:
+    """Registry of persistent ``Telephone`` instances, one per (team, agent).
+
+    Created once by the daemon and passed to every ``run_turn()`` call.
+    ``close_all()`` is called during graceful shutdown to clean up all
+    agent subprocesses.
+    """
+
+    def __init__(self) -> None:
+        self._telephones: dict[tuple[str, str], Any] = {}  # -> Telephone
+
+    def get(self, team: str, agent: str) -> Any | None:
+        """Return the Telephone for (team, agent), or None."""
+        return self._telephones.get((team, agent))
+
+    def put(self, team: str, agent: str, tel: Any) -> None:
+        """Register a Telephone for (team, agent)."""
+        self._telephones[(team, agent)] = tel
+
+    def remove(self, team: str, agent: str) -> Any | None:
+        """Remove and return the Telephone for (team, agent), or None."""
+        return self._telephones.pop((team, agent), None)
+
+    async def close_all(self) -> None:
+        """Disconnect all Telephones (subprocess cleanup)."""
+        for tel in self._telephones.values():
+            try:
+                await tel.close()
+            except Exception:
+                pass
+        self._telephones.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +337,104 @@ def _extract_tool_summary(block: Any) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Telephone creation helper
+# ---------------------------------------------------------------------------
+
+def _create_telephone(
+    hc_home: Path,
+    team: str,
+    agent: str,
+    *,
+    preamble: str,
+    model: str | None = None,
+    ad: Path | None = None,
+) -> Any:
+    """Create a new Telephone for an agent.
+
+    Uses the team home as ``cwd`` (per design: all agents get
+    ``team_dir`` as their working directory).
+
+    The ``on_rotation`` callback writes the rotation summary
+    to the agent's ``context.md``.
+    """
+    from delegate.telephone import Telephone
+    from delegate.paths import team_dir
+
+    if ad is None:
+        ad = _agent_dir(hc_home, team, agent)
+
+    def _on_rotation(memory: str | None) -> None:
+        if memory:
+            (ad / "context.md").write_text(memory)
+
+    return Telephone(
+        preamble=preamble,
+        cwd=team_dir(hc_home, team),
+        model=model,
+        add_dirs=[str(hc_home)],
+        disallowed_tools=DISALLOWED_TOOLS,
+        on_rotation=_on_rotation,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Inner helpers: stream turn messages through a Telephone or legacy query
+# ---------------------------------------------------------------------------
+
+async def _stream_telephone(
+    tel: Any,
+    prompt: str,
+    alog: AgentLogger,
+    turn_tokens: TurnTokens,
+    turn_tools: list[str],
+    worklog_lines: list[str],
+    *,
+    agent: str,
+    team: str,
+    task_label: str,
+    current_task_id: int | None,
+) -> None:
+    """Send a prompt through a Telephone, process each message."""
+    async for msg in tel.send(prompt):
+        _process_turn_messages(
+            msg, alog, turn_tokens, turn_tools, worklog_lines,
+            agent=agent, task_label=task_label,
+        )
+        if hasattr(msg, "content"):
+            for block in msg.content:
+                tool_name, detail = _extract_tool_summary(block)
+                if tool_name:
+                    broadcast_activity(agent, team, tool_name, detail, task_id=current_task_id)
+
+
+async def _stream_legacy(
+    sdk_query: Any,
+    prompt: str,
+    options: Any,
+    alog: AgentLogger,
+    turn_tokens: TurnTokens,
+    turn_tools: list[str],
+    worklog_lines: list[str],
+    *,
+    agent: str,
+    team: str,
+    task_label: str,
+    current_task_id: int | None,
+) -> None:
+    """Send a prompt via legacy sdk_query, process each message."""
+    async for msg in sdk_query(prompt=prompt, options=options):
+        _process_turn_messages(
+            msg, alog, turn_tokens, turn_tools, worklog_lines,
+            agent=agent, task_label=task_label,
+        )
+        if hasattr(msg, "content"):
+            for block in msg.content:
+                tool_name, detail = _extract_tool_summary(block)
+                if tool_name:
+                    broadcast_activity(agent, team, tool_name, detail, task_id=current_task_id)
+
+
+# ---------------------------------------------------------------------------
 # Core: run a single turn for one agent
 # ---------------------------------------------------------------------------
 
@@ -303,6 +443,7 @@ async def run_turn(
     team: str,
     agent: str,
     *,
+    exchange: TelephoneExchange | None = None,
     sdk_query: Any = None,
     sdk_options_class: Any = None,
 ) -> TurnResult:
@@ -314,7 +455,23 @@ async def run_turn(
     ring buffer / SSE), then marks every selected message as processed.
 
     If the 1-in-10 reflection coin-flip lands, a second (reflection)
-    turn is appended within the same session.
+    turn is appended **on the same Telephone** so the model has full
+    conversation context from the main turn.
+
+    **Two execution modes:**
+
+    * **Telephone mode** (``exchange`` provided) — the normal daemon
+      path.  A persistent ``Telephone`` is reused across turns; the
+      preamble is rebuilt each turn and the telephone is rotated if it
+      changed.
+
+    * **Legacy mode** (``sdk_query`` + ``sdk_options_class`` provided)
+      — used by existing tests that inject a mock SDK query function.
+      No persistent subprocess.  Will be removed once tests are
+      migrated.
+
+    DB session semantics are unchanged: ``start_session()`` /
+    ``end_session()`` bracket each ``run_turn()`` call one-to-one.
 
     Returns a ``TurnResult`` with token usage and cost.
     """
@@ -324,16 +481,22 @@ async def run_turn(
         update_session_tokens,
         update_session_task,
     )
+    from delegate.agent import build_system_prompt, build_user_message, build_reflection_message
 
-    # --- SDK setup ---
-    if sdk_query is None or sdk_options_class is None:
+    # Determine execution mode
+    use_telephone = exchange is not None
+    use_legacy = sdk_query is not None or sdk_options_class is not None
+
+    # Validate: at least one mode must be available
+    if not use_telephone and not use_legacy:
         try:
             from claude_code_sdk import (
                 query as default_query,
                 ClaudeCodeOptions as DefaultOptions,
             )
-            sdk_query = sdk_query or default_query
-            sdk_options_class = sdk_options_class or DefaultOptions
+            sdk_query = default_query
+            sdk_options_class = DefaultOptions
+            use_legacy = True
         except ImportError:
             raise RuntimeError(
                 "claude_code_sdk is required for agent turns "
@@ -405,7 +568,7 @@ async def run_turn(
     primary_sender = batch[0].sender
     broadcast_turn_event('turn_started', agent, team=team, task_id=current_task_id, sender=primary_sender)
 
-    # --- Start session ---
+    # --- Start DB session (1:1 with run_turn) ---
     session_id = start_session(hc_home, team, agent, task_id=current_task_id)
     result.session_id = session_id
 
@@ -417,27 +580,27 @@ async def run_turn(
         session_id=session_id,
     )
 
-    # --- Build SDK options (stable system prompt) ---
-    def _build_options() -> Any:
-        sys_prompt = build_system_prompt(hc_home, team, agent)
-        kw: dict[str, Any] = dict(
-            system_prompt=sys_prompt,
-            cwd=str(workspace),
-            permission_mode="bypassPermissions",
-            add_dirs=[str(hc_home)],
-            disallowed_tools=DISALLOWED_TOOLS,
-        )
-        if model:
-            kw["model"] = model
-        if max_turns:
-            kw["max_turns"] = max_turns
-        return sdk_options_class(**kw)
+    # --- Build prompts ---
+    prompt_builder = Prompt(hc_home, team, agent)
 
-    options = _build_options()
+    if use_telephone:
+        preamble = prompt_builder.build_preamble()
+        # Get or create Telephone; rotate if preamble changed
+        tel = exchange.get(team, agent)
+        if tel is not None and tel.preamble != preamble:
+            logger.info("Preamble changed for %s/%s — rotating telephone", team, agent)
+            await tel.rotate()
+            tel.preamble = preamble
+        if tel is None:
+            tel = _create_telephone(
+                hc_home, team, agent,
+                preamble=preamble,
+                model=model,
+                ad=ad,
+            )
+            exchange.put(team, agent, tel)
 
-    # --- Build user message (task context + history + messages) ---
-    user_msg = build_user_message(
-        hc_home, team, agent,
+    user_msg = prompt_builder.build_user_message(
         messages=batch,
         current_task=current_task,
         workspace_paths=workspace_paths or None,
@@ -454,37 +617,50 @@ async def run_turn(
 
     alog.turn_start(1, user_msg)
 
-    # --- Main turn: execute SDK query ---
+    # --- Main turn ---
     turn = TurnTokens()
     turn_tools: list[str] = []
     error_occurred = False
 
+    stream_kw = dict(
+        alog=alog,
+        turn_tokens=turn,
+        turn_tools=turn_tools,
+        worklog_lines=worklog_lines,
+        agent=agent,
+        team=team,
+        task_label=task_label,
+        current_task_id=current_task_id,
+    )
+
     try:
         try:
-            async for msg in sdk_query(prompt=user_msg, options=options):
-                # Standard processing: tokens, worklog, tool list
-                _process_turn_messages(
-                    msg, alog, turn, turn_tools, worklog_lines,
-                    agent=agent, task_label=task_label,
+            if use_telephone:
+                await _stream_telephone(tel, user_msg, **stream_kw)
+            else:
+                # Legacy path: build options the old way
+                sys_prompt = build_system_prompt(hc_home, team, agent)
+                kw: dict[str, Any] = dict(
+                    system_prompt=sys_prompt,
+                    cwd=str(workspace),
+                    permission_mode="bypassPermissions",
+                    add_dirs=[str(hc_home)],
+                    disallowed_tools=DISALLOWED_TOOLS,
                 )
-
-                # Stream tool summaries to activity ring buffer + SSE
-                if hasattr(msg, "content"):
-                    for block in msg.content:
-                        tool_name, detail = _extract_tool_summary(block)
-                        if tool_name:
-                            broadcast_activity(agent, team, tool_name, detail, task_id=current_task_id)
+                if model:
+                    kw["model"] = model
+                if max_turns:
+                    kw["max_turns"] = max_turns
+                options = sdk_options_class(**kw)
+                await _stream_legacy(sdk_query, user_msg, options, **stream_kw)
 
         except Exception as exc:
             alog.session_error(exc)
             result.error = str(exc)
             result.turns = 1
             error_occurred = True
-            # Still mark messages as processed so they don't replay forever
             _mark_batch_processed(hc_home, team, batch)
-            # Don't raise - let the finally block run and then return
     finally:
-        # Always end the session, even if cancelled or errored
         try:
             end_session(
                 hc_home, team, session_id,
@@ -496,10 +672,9 @@ async def run_turn(
         except Exception:
             logger.exception("Failed to end session")
 
-    # Early return if there was an error
+    # Early return on error
     if error_occurred:
         _write_worklog(ad, worklog_lines)
-        # Broadcast turn_ended even on error
         broadcast_turn_event('turn_ended', agent, team=team, task_id=current_task_id, sender=primary_sender)
         log_caller.reset(_prev_caller)
         return result
@@ -525,10 +700,9 @@ async def run_turn(
         cache_write_tokens=turn.cache_write,
     )
 
-    # Mark ALL messages in the batch as processed
     _mark_batch_processed(hc_home, team, batch)
 
-    # Re-check task association (may have been assigned during the turn)
+    # Re-check task association
     if current_task_id is None:
         try:
             from delegate.task import list_tasks as _list_tasks
@@ -551,27 +725,50 @@ async def run_turn(
     )
     turn_num = 1
 
-    # Increment in-memory turn counter (keyed by team+agent)
     _tc_key = (team, agent)
     _turn_counts[_tc_key] = _turn_counts.get(_tc_key, 0) + 1
 
     try:
         if random.random() < REFLECTION_PROBABILITY:
             turn_num = 2
-            ref_msg = build_reflection_message(hc_home, team, agent)
+            ref_msg = prompt_builder.build_reflection_message()
             worklog_lines.append(f"\n## Turn 2 (reflection)\n{ref_msg}")
             alog.turn_start(2, ref_msg)
 
             ref = TurnTokens()
             ref_tools: list[str] = []
 
+            ref_stream_kw = dict(
+                alog=alog,
+                turn_tokens=ref,
+                turn_tools=ref_tools,
+                worklog_lines=worklog_lines,
+                agent=agent,
+                team=team,
+                task_label=task_label,
+                current_task_id=current_task_id,
+            )
+
             try:
-                ref_options = _build_options()  # rebuild for fresh system prompt
-                async for msg in sdk_query(prompt=ref_msg, options=ref_options):
-                    _process_turn_messages(
-                        msg, alog, ref, ref_tools, worklog_lines,
-                        agent=agent, task_label=task_label,
+                if use_telephone:
+                    # Reflection on the same Telephone — model has full
+                    # conversation context from the main turn.
+                    await _stream_telephone(tel, ref_msg, **ref_stream_kw)
+                else:
+                    ref_prompt = build_system_prompt(hc_home, team, agent)
+                    ref_kw: dict[str, Any] = dict(
+                        system_prompt=ref_prompt,
+                        cwd=str(workspace),
+                        permission_mode="bypassPermissions",
+                        add_dirs=[str(hc_home)],
+                        disallowed_tools=DISALLOWED_TOOLS,
                     )
+                    if model:
+                        ref_kw["model"] = model
+                    if max_turns:
+                        ref_kw["max_turns"] = max_turns
+                    ref_options = sdk_options_class(**ref_kw)
+                    await _stream_legacy(sdk_query, ref_msg, ref_options, **ref_stream_kw)
 
                 total.input += ref.input
                 total.output += ref.output
@@ -590,12 +787,10 @@ async def run_turn(
                     tool_calls=ref_tools or None,
                 )
 
-                # DO NOT mark mail during reflection — no inbox message was acted on
                 alog.info("Reflection turn completed")
             except Exception as exc:
                 alog.error("Reflection turn failed: %s", exc)
     finally:
-        # --- Finalize session (always runs) ---
         result.tokens_in = total.input
         result.tokens_out = total.output
         result.cache_read = total.cache_read
@@ -603,8 +798,6 @@ async def run_turn(
         result.cost_usd = total.cost_usd
         result.turns = turn_num
 
-        # Update session with final totals (already called end_session in the first finally block)
-        # This updates the session that was already ended with the final token counts
         try:
             update_session_tokens(
                 hc_home, team, session_id,
@@ -617,7 +810,6 @@ async def run_turn(
         except Exception:
             logger.exception("Failed to update session tokens")
 
-        # Log session summary
         alog.session_end_log(
             turns=turn_num,
             tokens_in=total.input,
@@ -625,21 +817,19 @@ async def run_turn(
             cost_usd=total.cost_usd,
         )
 
-        # Write worklog
         _write_worklog(ad, worklog_lines)
 
-        # Save context.md for next session
-        total_tokens = total.input + total.output
-        (ad / "context.md").write_text(
-            f"Last session: {datetime.now(timezone.utc).isoformat()}\n"
-            f"Turns: {turn_num}\n"
-            f"Tokens: {total_tokens}\n"
-        )
+        # context.md: in telephone mode, on_rotation writes it.
+        # In legacy mode, write a basic summary as before.
+        if not use_telephone:
+            total_tokens = total.input + total.output
+            (ad / "context.md").write_text(
+                f"Last session: {datetime.now(timezone.utc).isoformat()}\n"
+                f"Turns: {turn_num}\n"
+                f"Tokens: {total_tokens}\n"
+            )
 
-        # --- Broadcast turn_ended event ---
         broadcast_turn_event('turn_ended', agent, team=team, task_id=current_task_id, sender=primary_sender)
-
-        # Restore logging caller context
         log_caller.reset(_prev_caller)
 
     return result

@@ -418,6 +418,7 @@ async def _daemon_loop(
     interval: float,
     max_concurrent: int,
     default_token_budget: int | None,
+    exchange: "TelephoneExchange | None" = None,
 ) -> None:
     """Route messages, dispatch agent turns, and process merges (all teams).
 
@@ -425,6 +426,10 @@ async def _daemon_loop(
     the daemon dispatches ``run_turn()`` as asyncio tasks when an agent
     has unread mail.  A semaphore enforces *max_concurrent* across all
     teams.
+
+    When *exchange* is provided, persistent ``Telephone`` subprocesses
+    are reused across turns (the normal production path).  When ``None``,
+    each turn falls back to a one-shot ``sdk_query()`` call.
     """
     from delegate.runtime import run_turn, list_ai_agents
     from delegate.merge import merge_once
@@ -441,7 +446,7 @@ async def _daemon_loop(
         """Dispatch and run one turn, then remove from in_flight."""
         async with sem:
             try:
-                result = await run_turn(hc_home, team, agent)
+                result = await run_turn(hc_home, team, agent, exchange=exchange)
                 if result.error:
                     logger.warning(
                         "Turn error | agent=%s | team=%s | error=%s",
@@ -576,6 +581,8 @@ async def _lifespan(app: FastAPI):
     In a pip-installed deployment there is no ``frontend/`` and the watcher
     is silently skipped — the pre-built assets in ``delegate/static/`` are used.
     """
+    from delegate.runtime import TelephoneExchange
+
     hc_home = app.state.hc_home
     enable = os.environ.get("DELEGATE_DAEMON", "").lower() in ("1", "true", "yes")
 
@@ -585,6 +592,7 @@ async def _lifespan(app: FastAPI):
 
     task = None
     esbuild_proc: subprocess.Popen | None = None
+    exchange: TelephoneExchange | None = None
 
     if enable:
         interval = float(os.environ.get("DELEGATE_INTERVAL", "1.0"))
@@ -592,8 +600,10 @@ async def _lifespan(app: FastAPI):
         budget_str = os.environ.get("DELEGATE_TOKEN_BUDGET")
         token_budget = int(budget_str) if budget_str else None
 
+        exchange = TelephoneExchange()
+
         task = asyncio.create_task(
-            _daemon_loop(hc_home, interval, max_concurrent, token_budget)
+            _daemon_loop(hc_home, interval, max_concurrent, token_budget, exchange=exchange)
         )
 
     # Auto-start frontend watcher only in dev mode (delegate start --dev)
@@ -672,6 +682,17 @@ async def _lifespan(app: FastAPI):
                     len([t for t in _active_agent_tasks if not t.done()])
                 )
             _active_agent_tasks.clear()
+
+        # Close all persistent Telephone subprocesses
+        if exchange is not None:
+            logger.info("Closing all Telephone conversations...")
+            try:
+                await asyncio.wait_for(exchange.close_all(), timeout=10.0)
+                logger.info("All Telephone conversations closed")
+            except asyncio.TimeoutError:
+                logger.warning("Timeout closing Telephone conversations")
+            except Exception:
+                logger.exception("Error closing Telephone conversations")
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Bounded-context persistent session for the Claude Code SDK.
+"""Bounded-context persistent conversation for the Claude Code SDK.
 
 Standalone utility — no knowledge of Delegate's domain model (teams,
 agents, tasks, worktrees).  Hand it a preamble and a working
@@ -36,25 +36,25 @@ instructions — is never overridden.
 
 Usage::
 
-    session = Session(
+    tel = Telephone(
         preamble="You are a senior Python engineer working on Acme.",
         cwd="/path/to/workdir",
         allowed_write_paths=["/path/to/workdir"],
     )
 
-    async for msg in session.send("Fix the bug in main.py"):
+    async for msg in tel.send("Fix the bug in main.py"):
         print(msg)
 
-    # Later — session is automatically resumed (same subprocess).
+    # Later — conversation is automatically resumed (same subprocess).
     # If context is full, send() auto-rotates transparently.
-    async for msg in session.send("Now add tests"):
+    async for msg in tel.send("Now add tests"):
         print(msg)
 
-    await session.close()   # clean up the subprocess
+    await tel.close()   # clean up the subprocess
 
     # Or use as an async context manager:
-    async with Session(preamble="...", cwd="...") as s:
-        async for msg in s.send("Hello"):
+    async with Telephone(preamble="...", cwd="...") as t:
+        async for msg in t.send("Hello"):
             print(msg)
 """
 
@@ -78,8 +78,8 @@ _UNSET = object()
 # ---------------------------------------------------------------------------
 
 @dataclass
-class SessionUsage:
-    """Cumulative token usage for a session."""
+class TelephoneUsage:
+    """Cumulative token usage for a telephone conversation."""
 
     input_tokens: int = 0
     output_tokens: int = 0
@@ -89,11 +89,11 @@ class SessionUsage:
 
 
 # ---------------------------------------------------------------------------
-# Session
+# Telephone
 # ---------------------------------------------------------------------------
 
-class Session:
-    """Bounded-context persistent session for a Claude Code agent.
+class Telephone:
+    """Bounded-context persistent conversation with a Claude Code agent.
 
     Internally wraps ``ClaudeSDKClient``, keeping a **single
     persistent subprocess** alive across all turns.  ``send()``
@@ -216,7 +216,7 @@ class Session:
         self._effective_write_paths: list[Path] | None = (
             list(self._allowed_write_paths) if self._allowed_write_paths is not None else None
         )
-        self.usage = SessionUsage()
+        self.usage = TelephoneUsage()
         self.turns: int = 0
         self.created_at: float = time.time()
         self.generation: int = 0  # increments on each rotation
@@ -270,7 +270,7 @@ class Session:
         self._client = None
         self._stale_client = None
 
-    async def __aenter__(self) -> "Session":
+    async def __aenter__(self) -> "Telephone":
         return self
 
     async def __aexit__(self, *exc: Any) -> bool:
@@ -358,9 +358,9 @@ class Session:
         self.turns += 1
 
     async def rotate(self, summary_prompt: str | None = _UNSET) -> str | None:
-        """Rotate the session — summarise, update memory, reset.
+        """Rotate the conversation — summarise, update memory, reset.
 
-        If the session is active and a summary prompt is available
+        If the conversation is active and a summary prompt is available
         (defaults to ``self.rotation_prompt``), it is sent to the
         current session and the model's text response becomes the
         new ``memory``.  The ``on_rotation`` callback is then invoked
@@ -372,7 +372,7 @@ class Session:
         Args:
             summary_prompt: Override the rotation prompt for this call.
                 Pass ``None`` to skip summarisation.  Omit to use the
-                session's ``rotation_prompt``.
+                telephone's ``rotation_prompt``.
 
         Returns:
             The summary text (new memory), or ``None``.
@@ -397,7 +397,7 @@ class Session:
             summary = "\n".join(parts).strip() or None
 
         logger.info(
-            "Session %s rotating (gen %d → %d, %d turns, %d input tokens)",
+            "Telephone %s rotating (gen %d → %d, %d turns, %d input tokens)",
             self.id[:8], self.generation, self.generation + 1,
             self.turns, self.usage.input_tokens,
         )
@@ -420,14 +420,14 @@ class Session:
         fresh client, or when ``close()`` is called.
 
         **Does not clear ``memory``** — it persists across generations.
-        The caller can set ``session.memory = ""`` explicitly if
+        The caller can set ``telephone.memory = ""`` explicitly if
         needed.
         """
         if self._client is not None:
             self._stale_client = self._client
             self._client = None
         self.id = uuid.uuid4().hex
-        self.usage = SessionUsage()
+        self.usage = TelephoneUsage()
         self.turns = 0
         self.created_at = time.time()
         self.generation += 1
@@ -510,7 +510,7 @@ class Session:
 
         # Capture *self* so the guard reads _effective_write_paths
         # dynamically — it may change between turns.
-        session = self
+        telephone = self
         _bash_deny = self._denied_bash_patterns
 
         async def _guard(
@@ -519,7 +519,7 @@ class Session:
             _context: Any,
         ):
             # --- Write-path isolation ---
-            _write_paths = session._effective_write_paths
+            _write_paths = telephone._effective_write_paths
             if _write_paths is not None and tool_name in ("Edit", "Write"):
                 file_path = tool_input.get("file_path", "")
                 if file_path:
