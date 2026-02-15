@@ -360,8 +360,7 @@ def _validate_review_gate(hc_home: Path, team: str, task: dict) -> None:
 
     Raises ``ValueError`` if:
     1. The worktree has uncommitted changes.
-    2. The branch has no new commits after ``base_sha``.
-    3. The worktree has a different branch checked out than expected.
+    2. The worktree has a different branch checked out than expected.
     """
     import subprocess
     from delegate.paths import task_worktree_dir
@@ -399,27 +398,7 @@ def _validate_review_gate(hc_home: Path, team: str, task: dict) -> None:
         except subprocess.TimeoutExpired:
             pass  # Skip validation if git is slow
 
-        # Check 2: at least one commit after base_sha
-        base_sha = base_sha_dict.get(repo_name, "")
-        if base_sha:
-            try:
-                result = subprocess.run(
-                    ["git", "log", f"{base_sha}..HEAD", "--oneline"],
-                    cwd=wt_str,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-                if result.returncode == 0 and not result.stdout.strip():
-                    raise ValueError(
-                        f"Cannot move {format_task_id(task_id)} to in_review: "
-                        f"branch for {repo_name} has no commits beyond base. "
-                        f"Please make at least one commit before submitting for review."
-                    )
-            except subprocess.TimeoutExpired:
-                pass
-
-        # Check 3: worktree has the correct branch checked out
+        # Check 2: worktree has the correct branch checked out
         if branch:
             try:
                 result = subprocess.run(
@@ -1056,7 +1035,7 @@ def main():
     p_create.add_argument("--description", default="")
     p_create.add_argument("--project", default="")
     p_create.add_argument("--priority", default="medium", choices=VALID_PRIORITIES)
-    p_create.add_argument("--repo", default="", help="Registered repo name for this task")
+    p_create.add_argument("--repo", required=True, help="Registered repo name for this task")
     p_create.add_argument("--tags", nargs="*", default=[], help="Free-form labels for the task")
 
     # list

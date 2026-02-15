@@ -129,6 +129,38 @@ class TestMergeTask:
         )
         assert "Add feature.py" in log.stdout
 
+    def test_zero_commit_merge(self, hc_home, tmp_path):
+        """Zero-commit branch (e.g., spec-only task) should merge successfully as no-op."""
+        repo = _setup_git_repo(tmp_path)
+
+        # Create a branch but don't add any commits to it
+        subprocess.run(["git", "checkout", "-b", "alice/T0001"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "checkout", "main"], cwd=str(repo), capture_output=True, check=True)
+
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch="alice/T0001", merging=True)
+        update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
+
+        # Get main tip before merge
+        main_before = subprocess.run(
+            ["git", "rev-parse", "main"],
+            cwd=str(repo), capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
+        assert result.success is True
+
+        updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
+        assert updated["status"] == "done"
+
+        # Main should be unchanged (no-op merge)
+        main_after = subprocess.run(
+            ["git", "rev-parse", "main"],
+            cwd=str(repo), capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert main_after == main_before
+
     def test_rebase_conflict(self, hc_home, tmp_path):
         """True content conflict → rebase fails, squash-reapply also fails → SQUASH_CONFLICT."""
         repo = _setup_git_repo(tmp_path)

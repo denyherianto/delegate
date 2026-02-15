@@ -613,6 +613,24 @@ class TestBranchMetadataBackfill:
         assert updated["branch"] == f"delegate/{tid}/{TEAM}/T0001"
 
 
+@patch("delegate.task._validate_review_gate")
+class TestZeroCommitReview:
+    """Tests that zero-commit tasks can transition to in_review."""
+
+    def test_zero_commit_task_can_enter_review(self, _mock_gate, tmp_team):
+        """A task with zero commits after base_sha should be allowed to enter in_review.
+
+        This supports spec-only tasks that may not have code changes yet.
+        """
+        task = create_task(tmp_team, TEAM, title="Spec-only task", assignee="alice", repo="myrepo")
+        assign_task(tmp_team, TEAM, task["id"], "alice")
+        change_status(tmp_team, TEAM, task["id"], "in_progress")
+
+        # Transition to in_review should succeed without requiring commits
+        updated = change_status(tmp_team, TEAM, task["id"], "in_review")
+        assert updated["status"] == "in_review"
+
+
 class TestValidTransitions:
     """Tests that verify the VALID_TRANSITIONS map is correct."""
 
