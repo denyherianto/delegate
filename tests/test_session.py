@@ -98,7 +98,7 @@ class TestSessionUnit:
         assert s.id is not None and len(s.id) == 32  # uuid hex
         assert s.preamble == "hello"
         assert s.memory == ""
-        assert s._sdk_session_id is None
+        assert s._client is None
         assert s.turns == 0
         assert s.generation == 0
         assert s.is_active is False
@@ -125,11 +125,12 @@ class TestSessionUnit:
         """reset() zeroes conversation state but preserves memory."""
         s = Session(preamble="hello", cwd=tmp_path, memory="important context")
         old_id = s.id
-        s._sdk_session_id = "fake-id"
+        s._client = MagicMock()  # simulate a connected client
         s.usage.input_tokens = 50_000
         s.turns = 10
         s.reset()
-        assert s._sdk_session_id is None
+        assert s._client is None  # moved to _stale_client
+        assert s._stale_client is not None  # queued for cleanup
         assert s.turns == 0
         assert s.usage.input_tokens == 0
         assert s.id != old_id  # new UUID
@@ -152,28 +153,21 @@ class TestSessionUnit:
         s.allowed_write_paths = None
         assert s.allowed_write_paths is None
 
-    def test_build_options_fresh(self, tmp_path):
-        """First turn: no system_prompt, no resume."""
+    def test_build_options(self, tmp_path):
+        """Options: no system_prompt, no resume (client handles state)."""
         s = Session(
             preamble="my preamble",
             cwd=tmp_path,
             model="claude-sonnet-4-20250514",
             disallowed_tools=["Bash(git push:*)"],
         )
-        opts = s._build_options(tmp_path, None)
+        opts = s._build_options()
         # system_prompt should never be set — we use Claude's own
         assert opts.system_prompt is None
+        # resume should never be set — ClaudeSDKClient maintains state
         assert opts.resume is None
         assert opts.model == "claude-sonnet-4-20250514"
         assert "Bash(git push:*)" in opts.disallowed_tools
-
-    def test_build_options_resume(self, tmp_path):
-        """Subsequent turns: resume set, still no system_prompt."""
-        s = Session(preamble="my preamble", cwd=tmp_path)
-        s._sdk_session_id = "abc-123"
-        opts = s._build_options(tmp_path, None)
-        assert opts.resume == "abc-123"
-        assert opts.system_prompt is None
 
     def test_turn0_prompt_preamble_only(self, tmp_path):
         """Turn 0 with no memory: preamble + prompt."""
@@ -206,17 +200,16 @@ class TestSessionUnit:
     def test_guard_unrestricted(self, tmp_path):
         """No guard when there are no restrictions."""
         s = Session(preamble="hello", cwd=tmp_path)
-        assert s._make_guard(None) is None
+        assert s._make_guard() is None
 
     def test_guard_denies_write_outside(self, tmp_path):
         """Guard denies writes outside allowed paths."""
-        allowed = [tmp_path / "safe"]
         s = Session(
             preamble="hello",
             cwd=tmp_path,
             allowed_write_paths=[str(tmp_path / "safe")],
         )
-        guard = s._make_guard(allowed)
+        guard = s._make_guard()
         assert guard is not None
 
         # Write inside — allowed
@@ -229,9 +222,12 @@ class TestSessionUnit:
 
     def test_guard_allows_multiple_paths(self, tmp_path):
         """Guard allows writes in any of the allowed paths."""
-        paths = [tmp_path / "repo-a", tmp_path / "repo-b"]
-        s = Session(preamble="hello", cwd=tmp_path)
-        guard = s._make_guard(paths)
+        s = Session(
+            preamble="hello",
+            cwd=tmp_path,
+            allowed_write_paths=[str(tmp_path / "repo-a"), str(tmp_path / "repo-b")],
+        )
+        guard = s._make_guard()
 
         r1 = asyncio.run(guard("Edit", {"file_path": str(tmp_path / "repo-a" / "x")}, None))
         assert r1["behavior"] == "allow"
@@ -249,7 +245,7 @@ class TestSessionUnit:
             cwd=tmp_path,
             denied_bash_patterns=["git rebase", "git push"],
         )
-        guard = s._make_guard(None)
+        guard = s._make_guard()
         assert guard is not None
 
         ok = asyncio.run(guard("Bash", {"command": "git status"}, None))
@@ -263,13 +259,13 @@ class TestSessionUnit:
 
     def test_guard_read_always_allowed(self, tmp_path):
         """Read/Grep/Glob are never blocked by the write guard."""
-        paths = [tmp_path / "only-here"]
         s = Session(
             preamble="hello",
             cwd=tmp_path,
+            allowed_write_paths=[str(tmp_path / "only-here")],
             denied_bash_patterns=["rm -rf"],
         )
-        guard = s._make_guard(paths)
+        guard = s._make_guard()
 
         for tool in ("Read", "Grep", "Glob"):
             r = asyncio.run(guard(tool, {"file_path": "/anywhere/file.py"}, None))
@@ -331,44 +327,46 @@ class TestSessionLive:
     """
 
     def test_basic_send(self, tmp_path):
-        """A single send() returns messages and sets SDK session id."""
+        """A single send() returns messages and tracks state."""
         async def _run():
             s = Session(
                 preamble=SIMPLE_PREAMBLE,
                 cwd=str(tmp_path),
             )
-            initial_id = s.id  # UUID exists before first send
-            msgs = await _send_and_collect(s, "What is 2 + 2? Answer the number only.")
-            text = _collect_text(msgs)
+            try:
+                initial_id = s.id  # UUID exists before first send
+                msgs = await _send_and_collect(s, "What is 2 + 2? Answer the number only.")
+                text = _collect_text(msgs)
 
-            assert s.id == initial_id  # id unchanged
-            assert s._sdk_session_id is not None
-            assert s.turns == 1
-            assert s.is_active
-            assert "4" in text
+                assert s.id == initial_id  # id unchanged
+                assert s.turns == 1
+                assert s.is_active
+                assert "4" in text
+            finally:
+                await s.close()
 
         asyncio.run(_run())
 
     def test_resume_preserves_context(self, tmp_path):
-        """Second send() resumes and Claude remembers the first turn."""
+        """Second send() reuses the subprocess and Claude remembers the first turn."""
         async def _run():
             s = Session(
                 preamble=SIMPLE_PREAMBLE,
                 cwd=str(tmp_path),
             )
+            try:
+                # Turn 1: establish a fact
+                await _send_and_collect(s, "Remember: the secret word is 'banana'.")
+                assert s.is_active
 
-            # Turn 1: establish a fact
-            await _send_and_collect(s, "Remember: the secret word is 'banana'.")
-            first_sdk_id = s._sdk_session_id
-            assert first_sdk_id is not None
+                # Turn 2: ask for the fact — same subprocess, no re-spawn
+                msgs = await _send_and_collect(s, "What is the secret word?")
+                text = _collect_text(msgs)
 
-            # Turn 2: ask for the fact — should resume
-            msgs = await _send_and_collect(s, "What is the secret word?")
-            text = _collect_text(msgs)
-
-            assert s._sdk_session_id == first_sdk_id
-            assert s.turns == 2
-            assert "banana" in text.lower()
+                assert s.turns == 2
+                assert "banana" in text.lower()
+            finally:
+                await s.close()
 
         asyncio.run(_run())
 
@@ -379,33 +377,33 @@ class TestSessionLive:
                 preamble=SIMPLE_PREAMBLE,
                 cwd=str(tmp_path),
             )
+            try:
+                await _send_and_collect(s, "Say hello three times.")
+                input_after_1 = s.usage.input_tokens
+                output_after_1 = s.usage.output_tokens
+                usd_after_1 = s.usage.cost_usd
+                cache_read_tokens_after_1 = s.usage.cache_read_tokens
+                cache_write_tokens_after_1 = s.usage.cache_write_tokens
+                assert input_after_1 > 0, "input_tokens should be > 0"
+                assert output_after_1 > 0, "output_tokens should be > 0"
+                assert isinstance(usd_after_1, (int, float))
 
-            await _send_and_collect(s, "Say hello.")
-            input_after_1 = s.usage.input_tokens
-            output_after_1 = s.usage.output_tokens
-            usd_after_1 = s.usage.cost_usd
-            cache_read_tokens_after_1 = s.usage.cache_read_tokens
-            cache_write_tokens_after_1 = s.usage.cache_write_tokens
-            assert input_after_1 > 0, "input_tokens should be > 0"
-            assert output_after_1 > 0, "output_tokens should be > 0"
-            assert isinstance(usd_after_1, (int, float))
+                await _send_and_collect(s, "Say hello.")
+                input_after_2 = s.usage.input_tokens
+                output_after_2 = s.usage.output_tokens
+                cache_read_tokens_after_2 = s.usage.cache_read_tokens
+                cache_write_tokens_after_2 = s.usage.cache_write_tokens
+                usd_after_2 = s.usage.cost_usd
 
-            await _send_and_collect(s, "Say hello.")
-            input_after_2 = s.usage.input_tokens
-            output_after_2 = s.usage.output_tokens
-            cache_read_tokens_after_2 = s.usage.cache_read_tokens
-            cache_write_tokens_after_2 = s.usage.cache_write_tokens
-            usd_after_2 = s.usage.cost_usd
-
-            # If input_tokens is cumulative (full context replay), it
-            # should be >= the first turn's value.
-            assert input_after_2 > input_after_1, (
-                f"Expected input_tokens to grow: {input_after_1} -> {input_after_2}"
-            )
-            assert output_after_2 > output_after_1, "output_tokens should be > 0"
-            assert cache_read_tokens_after_2 > cache_read_tokens_after_1, "cache_read_tokens should be > 0"
-            assert cache_write_tokens_after_2 > cache_write_tokens_after_1, "cache_write_tokens should be > 0"
-            assert usd_after_2 > usd_after_1, "cost_usd should be > 0"
+                assert input_after_2 > input_after_1, (
+                    f"Expected input_tokens to grow: {input_after_1} -> {input_after_2}"
+                )
+                assert output_after_2 > output_after_1, "output_tokens should be > 0"
+                assert cache_read_tokens_after_2 > cache_read_tokens_after_1, "cache_read_tokens should be > 0"
+                assert cache_write_tokens_after_2 > cache_write_tokens_after_1, "cache_write_tokens should be > 0"
+                assert usd_after_2 > usd_after_1, "cost_usd should be > 0"
+            finally:
+                await s.close()
 
         asyncio.run(_run())
 
@@ -420,22 +418,24 @@ class TestSessionLive:
                 ),
                 cwd=str(tmp_path),
             )
+            try:
+                # Turn 1 — preamble prepended to prompt
+                msgs = await _send_and_collect(s, "Say hi briefly.")
+                text = _collect_text(msgs)
+                assert "YARR" in text, (
+                    f"Preamble not effective on first turn: {text!r}"
+                )
 
-            # Turn 1 — preamble prepended to prompt
-            msgs = await _send_and_collect(s, "Say hi briefly.")
-            text = _collect_text(msgs)
-            assert "YARR" in text, (
-                f"Preamble not effective on first turn: {text!r}"
-            )
+                # Turn 2 — preamble not re-sent, but it's in conversation
+                # history so the model should still follow it.
+                msgs = await _send_and_collect(s, "Say goodbye briefly.")
+                text = _collect_text(msgs)
 
-            # Turn 2 — preamble not re-sent, but it's in conversation
-            # history so the model should still follow it.
-            msgs = await _send_and_collect(s, "Say goodbye briefly.")
-            text = _collect_text(msgs)
-
-            assert "YARR" in text, (
-                f"Preamble not effective on resume: {text!r}"
-            )
+                assert "YARR" in text, (
+                    f"Preamble not effective on resume: {text!r}"
+                )
+            finally:
+                await s.close()
 
         asyncio.run(_run())
 
@@ -447,48 +447,51 @@ class TestSessionLive:
                 cwd=str(tmp_path),
                 memory="IMPORTANT FACT: The project codename is 'Phoenix'.",
             )
+            try:
+                msgs = await _send_and_collect(
+                    s, "What is the project codename? Answer the name only."
+                )
+                text = _collect_text(msgs)
 
-            msgs = await _send_and_collect(
-                s, "What is the project codename? Answer the name only."
-            )
-            text = _collect_text(msgs)
-
-            assert "phoenix" in text.lower(), (
-                f"Memory not visible on turn 0: {text!r}"
-            )
+                assert "phoenix" in text.lower(), (
+                    f"Memory not visible on turn 0: {text!r}"
+                )
+            finally:
+                await s.close()
 
         asyncio.run(_run())
 
     def test_rotation_resets(self, tmp_path):
-        """After reset(), SDK session is cleared and next send starts fresh."""
+        """After reset(), a new subprocess starts and Claude forgets."""
         async def _run():
             s = Session(
                 preamble=SIMPLE_PREAMBLE,
                 cwd=str(tmp_path),
             )
+            try:
+                await _send_and_collect(s, "Remember: the password is 'alpha'.")
+                assert s.is_active
+                old_id = s.id
 
-            await _send_and_collect(s, "Remember: the password is 'alpha'.")
-            assert s._sdk_session_id is not None
-            old_id = s.id
+                # Rotate without summary — queues old client for cleanup
+                s.reset()
+                assert not s.is_active  # client moved to stale
+                assert s.turns == 0
+                assert s.id != old_id  # new generation
+                assert s.generation == 1
 
-            # Rotate without summary
-            s.reset()
-            assert s._sdk_session_id is None
-            assert s.turns == 0
-            assert s.id != old_id  # new generation
-            assert s.generation == 1
+                # Fresh session (new subprocess) — Claude should NOT remember
+                msgs = await _send_and_collect(
+                    s,
+                    "What is the password? If you don't know, say 'unknown'.",
+                )
+                text = _collect_text(msgs)
 
-            # Fresh session — Claude should NOT remember
-            msgs = await _send_and_collect(
-                s,
-                "What is the password? If you don't know, say 'unknown'.",
-            )
-            text = _collect_text(msgs)
-
-            # After reset, Claude should not know the password
-            assert "alpha" not in text.lower(), (
-                f"Claude remembered across reset: {text!r}"
-            )
+                assert "alpha" not in text.lower(), (
+                    f"Claude remembered across reset: {text!r}"
+                )
+            finally:
+                await s.close()
 
         asyncio.run(_run())
 
@@ -501,21 +504,23 @@ class TestSessionLive:
                 cwd=str(tmp_path),
                 on_rotation=lambda mem: received.append(mem),
             )
+            try:
+                await _send_and_collect(s, "The project name is 'Phoenix'.")
+                old_id = s.id
 
-            await _send_and_collect(s, "The project name is 'Phoenix'.")
-            old_id = s.id
+                summary = await s.rotate("Summarise what you know in one sentence.")
+                assert summary is not None
+                assert len(summary) > 0
+                assert s.memory == summary  # memory updated
+                assert not s.is_active  # reset after rotation
+                assert s.turns == 0
+                assert s.id != old_id  # new generation
+                assert s.generation == 1
 
-            summary = await s.rotate("Summarise what you know in one sentence.")
-            assert summary is not None
-            assert len(summary) > 0
-            assert s.memory == summary  # memory updated
-            assert s._sdk_session_id is None  # reset after rotation
-            assert s.turns == 0
-            assert s.id != old_id  # new generation
-            assert s.generation == 1
-
-            assert len(received) == 1
-            assert received[0] == s.memory
+                assert len(received) == 1
+                assert received[0] == s.memory
+            finally:
+                await s.close()
 
         asyncio.run(_run())
 
@@ -533,12 +538,14 @@ class TestSessionLive:
                 cwd=str(safe),
                 allowed_write_paths=[str(safe)],
             )
-
-            # Ask the agent to write inside the allowed path — should work
-            await _send_and_collect(
-                s,
-                f"Create a file at {safe}/test.txt with content 'hello'.",
-            )
-            assert (safe / "test.txt").exists(), "Write inside allowed path should work"
+            try:
+                # Ask the agent to write inside the allowed path — should work
+                await _send_and_collect(
+                    s,
+                    f"Create a file at {safe}/test.txt with content 'hello'.",
+                )
+                assert (safe / "test.txt").exists(), "Write inside allowed path should work"
+            finally:
+                await s.close()
 
         asyncio.run(_run())

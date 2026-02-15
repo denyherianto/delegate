@@ -6,6 +6,9 @@ directory, call ``send()`` repeatedly.  The class handles session
 resumption, token accounting, permission enforcement via
 ``can_use_tool``, and automatic context-window rotation.
 
+Internally uses ``ClaudeSDKClient`` to keep a **single persistent
+subprocess** across all turns — no process-per-query overhead.
+
 On the **first turn** of each generation the user message sent to
 the SDK is::
 
@@ -15,15 +18,16 @@ the SDK is::
 
     {prompt}
 
-On subsequent (resumed) turns only the raw ``prompt`` is sent — the
-preamble and memory are already in the conversation history.
+On subsequent turns only the raw ``prompt`` is sent — the
+preamble and memory are already in the conversation history
+maintained by the subprocess.
 
 When the context window fills up, the session **auto-rotates**:
 
 1. Ask the model to summarise its state (``rotation_prompt``).
 2. Store the summary as the new ``memory``.
 3. Call ``on_rotation(memory)`` so the caller can persist it.
-4. Reset conversation state (SDK session, turns, tokens).
+4. Disconnect the old subprocess and reset conversation state.
 5. The next ``send()`` starts a fresh generation with the preamble
    and the updated memory.
 
@@ -41,18 +45,17 @@ Usage::
     async for msg in session.send("Fix the bug in main.py"):
         print(msg)
 
-    # Later — session is automatically resumed.
+    # Later — session is automatically resumed (same subprocess).
     # If context is full, send() auto-rotates transparently.
     async for msg in session.send("Now add tests"):
         print(msg)
 
-    # Restart with prior memory (loaded from context.md):
-    session = Session(
-        preamble="You are a senior Python engineer working on Acme.",
-        memory=Path("context.md").read_text(),
-        cwd="/path/to/workdir",
-        on_rotation=lambda mem: Path("context.md").write_text(mem or ""),
-    )
+    await session.close()   # clean up the subprocess
+
+    # Or use as an async context manager:
+    async with Session(preamble="...", cwd="...") as s:
+        async for msg in s.send("Hello"):
+            print(msg)
 """
 
 from __future__ import annotations
@@ -60,7 +63,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable
 
@@ -92,12 +95,14 @@ class SessionUsage:
 class Session:
     """Bounded-context persistent session for a Claude Code agent.
 
-    Each ``send()`` call either starts a new conversation or resumes
-    the previous one via the SDK's ``resume`` parameter.  Token usage
-    is tracked; when it exceeds ``max_context_tokens`` the session
-    auto-rotates — asking the model to summarise, replacing
-    ``memory`` with the summary, and starting a fresh conversation —
-    all transparently within ``send()``.
+    Internally wraps ``ClaudeSDKClient``, keeping a **single
+    persistent subprocess** alive across all turns.  ``send()``
+    lazily connects on first call; subsequent calls reuse the same
+    process.  Token usage is tracked; when it exceeds
+    ``max_context_tokens`` the session auto-rotates — asking the
+    model to summarise, replacing ``memory`` with the summary,
+    disconnecting the subprocess, and starting a fresh one — all
+    transparently within ``send()``.
 
     **Preamble vs Memory**
 
@@ -206,8 +211,11 @@ class Session:
         )
         self._denied_bash_patterns: list[str] = list(denied_bash_patterns or [])
 
-        # Mutable session state (reset on rotation)
-        self._sdk_session_id: str | None = None
+        self._client: Any = None  # ClaudeSDKClient instance
+        self._stale_client: Any = None  # queued for disconnect on next send
+        self._effective_write_paths: list[Path] | None = (
+            list(self._allowed_write_paths) if self._allowed_write_paths is not None else None
+        )
         self.usage = SessionUsage()
         self.turns: int = 0
         self.created_at: float = time.time()
@@ -219,8 +227,8 @@ class Session:
 
     @property
     def is_active(self) -> bool:
-        """Whether a resumable SDK session exists."""
-        return self._sdk_session_id is not None
+        """Whether a connected SDK client (subprocess) exists."""
+        return self._client is not None
 
     @property
     def needs_rotation(self) -> bool:
@@ -239,6 +247,35 @@ class Session:
             if paths is not None
             else None
         )
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    async def start(self) -> None:
+        """Explicitly connect the SDK client (spawns subprocess).
+
+        Optional — ``send()`` connects lazily on the first call.
+        """
+        await self._ensure_client()
+
+    async def close(self) -> None:
+        """Disconnect the SDK client and release the subprocess."""
+        for client in (self._client, self._stale_client):
+            if client is not None:
+                try:
+                    await client.disconnect()
+                except Exception:
+                    pass
+        self._client = None
+        self._stale_client = None
+
+    async def __aenter__(self) -> "Session":
+        return self
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        await self.close()
+        return False
 
     # ------------------------------------------------------------------
     # Core API
@@ -272,8 +309,8 @@ class Session:
 
         On the first turn of each generation the full composite
         message (``preamble + memory + prompt``) is sent.  On
-        subsequent (resumed) turns only ``prompt`` is sent — the
-        rest is already in the conversation history.
+        subsequent turns only ``prompt`` is sent — the rest is
+        already in the subprocess's conversation history.
 
         If the context window is full (``needs_rotation``), the session
         automatically rotates before processing the prompt.
@@ -292,16 +329,15 @@ class Session:
         if self.needs_rotation:
             await self.rotate()
 
-        from claude_code_sdk import query as sdk_query
-
+        # Update effective write paths for this turn's guard callback.
         if allowed_write_paths is _UNSET:
-            effective_write_paths = self._allowed_write_paths
+            self._effective_write_paths = self._allowed_write_paths
         elif allowed_write_paths is None:
-            effective_write_paths = None
+            self._effective_write_paths = None
         else:
-            effective_write_paths = [Path(p).resolve() for p in allowed_write_paths]
+            self._effective_write_paths = [Path(p).resolve() for p in allowed_write_paths]
 
-        options = self._build_options(self.cwd, effective_write_paths)
+        await self._ensure_client()
 
         # On the first turn of each generation, include preamble + memory.
         effective_prompt = (
@@ -310,21 +346,12 @@ class Session:
             else prompt
         )
 
-        # The SDK requires an AsyncIterable[dict] prompt (streaming mode)
-        # when can_use_tool is set.  Wrap the string in a one-shot
-        # generator yielding the correct message dict.
-        prompt_arg: Any = effective_prompt
-        if getattr(options, "can_use_tool", None) is not None:
+        # ClaudeSDKClient.query() accepts plain strings — no need for
+        # the AsyncIterable wrapper that the old query() function required
+        # when can_use_tool was set.
+        await self._client.query(effective_prompt)
 
-            async def _as_stream():
-                yield {
-                    "type": "user",
-                    "message": {"role": "user", "content": effective_prompt},
-                }
-
-            prompt_arg = _as_stream()
-
-        async for msg in sdk_query(prompt=prompt_arg, options=options):
+        async for msg in self._client.receive_response():
             self._track_message(msg)
             yield msg
 
@@ -353,7 +380,7 @@ class Session:
         prompt = self.rotation_prompt if summary_prompt is _UNSET else summary_prompt
         summary: str | None = None
 
-        if prompt and self._sdk_session_id:
+        if prompt and self._client is not None:
             parts: list[str] = []
             # Temporarily disable rotation to avoid infinite recursion:
             # this is a summary turn, not a real user turn.
@@ -388,12 +415,18 @@ class Session:
     def reset(self) -> None:
         """Hard reset — discard conversation state and mint new id.
 
+        The current client (subprocess) is queued for cleanup —
+        it will be disconnected when the next ``send()`` connects a
+        fresh client, or when ``close()`` is called.
+
         **Does not clear ``memory``** — it persists across generations.
         The caller can set ``session.memory = ""`` explicitly if
         needed.
         """
+        if self._client is not None:
+            self._stale_client = self._client
+            self._client = None
         self.id = uuid.uuid4().hex
-        self._sdk_session_id = None
         self.usage = SessionUsage()
         self.turns = 0
         self.created_at = time.time()
@@ -403,23 +436,46 @@ class Session:
     # Internals
     # ------------------------------------------------------------------
 
-    def _build_options(self, cwd: Path, write_paths: list[Path] | None) -> Any:
-        """Assemble ``ClaudeCodeOptions`` for the current turn.
+    async def _ensure_client(self) -> None:
+        """Lazily connect a ``ClaudeSDKClient``, creating one if needed.
+
+        Also cleans up any stale client left over from a prior
+        ``reset()``.
+        """
+        if self._client is not None:
+            return
+
+        # Disconnect the old subprocess from a previous generation.
+        if self._stale_client is not None:
+            try:
+                await self._stale_client.disconnect()
+            except Exception:
+                pass
+            self._stale_client = None
+
+        from claude_code_sdk import ClaudeSDKClient
+
+        options = self._build_options()
+        self._client = ClaudeSDKClient(options)
+        await self._client.connect()
+
+    def _build_options(self) -> Any:
+        """Assemble ``ClaudeCodeOptions`` for the client.
 
         Never sets ``system_prompt`` — we rely on Claude Code's own
         system prompt for tool-use instructions.  Our preamble and
         memory are prepended to the user message in ``send()`` instead.
+
+        No ``resume`` parameter is needed — the ``ClaudeSDKClient``
+        keeps a single persistent subprocess that maintains
+        conversation state across ``query()`` calls.
         """
         from claude_code_sdk import ClaudeCodeOptions
 
         kw: dict[str, Any] = {
-            "cwd": str(cwd),
+            "cwd": str(self.cwd),
             "permission_mode": self.permission_mode,
         }
-
-        # Resume existing session if we have one.
-        if self._sdk_session_id:
-            kw["resume"] = self._sdk_session_id
 
         if self.model:
             kw["model"] = self.model
@@ -431,25 +487,30 @@ class Session:
             kw["disallowed_tools"] = list(self.disallowed_tools)
 
         # Permission enforcement callback
-        guard = self._make_guard(write_paths)
+        guard = self._make_guard()
         if guard is not None:
             kw["can_use_tool"] = guard
 
         return ClaudeCodeOptions(**kw)
 
-    def _make_guard(self, write_paths: list[Path] | None):
+    def _make_guard(self):
         """Build a ``can_use_tool`` callback for path/command enforcement.
 
         Returns ``None`` if there are no restrictions to enforce.
+
+        The guard reads ``self._effective_write_paths`` at each
+        invocation so that per-turn ``allowed_write_paths`` overrides
+        in ``send()`` take effect without reconnecting the client.
         """
-        has_write_restriction = write_paths is not None
+        has_write_restriction = self._allowed_write_paths is not None
         has_bash_restriction = bool(self._denied_bash_patterns)
 
         if not has_write_restriction and not has_bash_restriction:
             return None
 
-        # Capture in closure — these may differ per-turn.
-        _write_paths = write_paths
+        # Capture *self* so the guard reads _effective_write_paths
+        # dynamically — it may change between turns.
+        session = self
         _bash_deny = self._denied_bash_patterns
 
         async def _guard(
@@ -458,6 +519,7 @@ class Session:
             _context: Any,
         ):
             # --- Write-path isolation ---
+            _write_paths = session._effective_write_paths
             if _write_paths is not None and tool_name in ("Edit", "Write"):
                 file_path = tool_input.get("file_path", "")
                 if file_path:
@@ -499,12 +561,9 @@ class Session:
         if not isinstance(msg, ResultMessage):
             return
 
-        self._sdk_session_id = msg.session_id
-
         u = msg.usage or {}
 
-        # based on live experiments, looks like all four of the below fields
-        # are NOT cumulative, so we can just add them to the existing values.
+        # token counts are NOT cumulative, so we can just add them to the existing values.
         if u.get("input_tokens") is not None:
             self.usage.input_tokens += u.get("input_tokens")
         else:
@@ -525,8 +584,10 @@ class Session:
         else:
             logger.warning("No cache creation tokens found in usage")
 
+        # cost is cumulative, so we can just set the value.
         if msg.total_cost_usd is not None:
-            self.usage.cost_usd += msg.total_cost_usd
+            assert msg.total_cost_usd >= self.usage.cost_usd, "cost should be non-decreasing"
+            self.usage.cost_usd = msg.total_cost_usd
         else:
             logger.warning("No cost found in usage")
 
