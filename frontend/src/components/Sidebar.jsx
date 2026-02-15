@@ -197,6 +197,9 @@ function AgentsWidget({ collapsed }) {
           const active = agentsWithStatus.filter(a => a.status !== "idle");
           const idle = agentsWithStatus.filter(a => a.status === "idle");
 
+          // Skip this team if nobody is active
+          if (active.length === 0) return null;
+
           // Sort active: working first, then waiting, alpha within
           active.sort((a, b) => {
             const order = { working: 0, waiting: 1 };
@@ -278,7 +281,7 @@ function AgentsWidget({ collapsed }) {
                 );
               })}
               {idle.map(({ agent: a }) => {
-                const dotClass = getAgentDotClass(a, allTasks, (statsMap[a.team] || {})[a.name]);
+                const dotClass = "dot-offline";
                 return (
                   <div
                     key={a.name}
