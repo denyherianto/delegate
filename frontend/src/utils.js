@@ -276,10 +276,10 @@ export function displayFilePath(path) {
 
 export function linkifyFilePaths(html) {
   // Match:
-  //  1. Delegate-relative paths: teams/…, shared/…, agents/…, worktrees/…
-  //  2. Absolute paths: /path/to/file.ext  (must end with .ext)
+  //  1. Delegate-relative paths: teams/…, shared/…, agents/…, worktrees/… (no extension required)
+  //  2. Absolute paths with extensions, optionally followed by more path segments
   return html.replace(/(^[^<]+|>[^<]*)/g, match =>
-    match.replace(/(?:\b(?:teams|shared|agents|worktrees)\/[\w\-\.\/]+\.[\w]+|\/[\w\-\.\/]+\.[\w]+)/g, path => {
+    match.replace(/(?:\b(?:teams|shared|agents|worktrees)\/[\w\-\.\/]+\w|\/[\w\-\.\/]+\.[\w]+(?:\/[\w\-\.\/]*\w)*\/?)/g, path => {
       const display = displayFilePath(path);
       return '<span class="file-link copyable" data-file-path="' + esc(path) + '">' + esc(display) + copyBtnHtml(path) + "</span>";
     })
