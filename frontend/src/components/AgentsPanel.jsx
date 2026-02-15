@@ -1,10 +1,9 @@
 import { useState, useMemo, useEffect, useCallback } from "preact/hooks";
 import { currentTeam, teams, tasks, agents, agentStatsMap, activeTab, openPanel, agentActivityLog } from "../state.js";
 import {
-  cap, esc, fmtTokensShort, fmtCost, fmtDuration, fmtRelativeTime, taskIdStr,
-  roleBadgeMap, getAgentDotClass, getAgentDotTooltip,
+  cap, fmtTokensShort, fmtRelativeTime, taskIdStr,
+  roleBadgeMap, getAgentDotClass,
 } from "../utils.js";
-import { CopyBtn } from "./CopyBtn.jsx";
 import { fetchAgentsCrossTeam } from "../api.js";
 import { PillSelect } from "./PillSelect.jsx";
 
@@ -18,11 +17,6 @@ export function AgentsPanel() {
   const [selectedTeam, setSelectedTeam] = useState("all");
   const [crossTeamAgents, setCrossTeamAgents] = useState([]);
   const [collapsedTeams, setCollapsedTeams] = useState({});
-
-  // Don't reset selectedTeam when currentTeam changes - keep user's choice
-  // useEffect(() => {
-  //   setSelectedTeam(team);
-  // }, [team]);
 
   // Fetch cross-team agents when "All teams" is selected
   useEffect(() => {
