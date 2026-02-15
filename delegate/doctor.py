@@ -89,7 +89,16 @@ def check_api_key() -> CheckResult:
     return CheckResult(
         "API Key",
         False,
-        "No Anthropic API key found. Set ANTHROPIC_API_KEY or authenticate with `claude login`.",
+        "No Anthropic API key found.\n"
+        "\n"
+        "    Option 1: Set the ANTHROPIC_API_KEY environment variable:\n"
+        "              export ANTHROPIC_API_KEY=sk-ant-...\n"
+        "\n"
+        "    Option 2: Pass an env file when starting:\n"
+        "              delegate start --env-file /path/to/.env\n"
+        "\n"
+        "    Option 3: Log in with the Claude CLI:\n"
+        "              claude login",
     )
 
 

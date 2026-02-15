@@ -17,6 +17,8 @@
 
 Delegate creates a persistent team of AI agents on your local machine. Describe what you want in plain English — Delegate breaks it into tasks, assigns them to agents, manages code reviews between them, and merges the result. You watch it all happen in a real-time web UI, or check in later. The team remembers your codebase across tasks.
 
+> **Note:** Delegate currently works with **local git repositories** — agents commit directly to branches on your machine. Support for remote repositories (GitHub, GitLab), external tools (Slack, Linear), and CI/CD integrations is on the roadmap.
+
 <!-- TODO: Replace with an actual screenshot or demo GIF
 <p align="center">
   <img src="docs/screenshot.png" alt="Delegate UI" width="800">
@@ -31,8 +33,7 @@ Most AI coding tools give you **one agent, one task, then it's gone**. Delegate 
 
 ```bash
 pip install delegate-ai
-cd your-project
-delegate start --env-file .env    # needs ANTHROPIC_API_KEY in .env
+delegate start # needs ANTHROPIC_API_KEY in ENV or claude code login
 ```
 
 That's it. Delegate will:
@@ -192,6 +193,18 @@ npm install
 npx playwright install
 npx playwright test
 ```
+
+## Roadmap
+
+Delegate is under active development. Here's what's coming:
+
+- **Sandboxing & permissions** — run agents in containers with fine-grained filesystem and network access controls, so you can safely let them operate on production repos.
+- **More powerful workflows** — conditional transitions, parallel stages, human-in-the-loop checkpoints, and webhook triggers.
+- **External tool integrations** — GitHub (PRs, issues), Slack (notifications, commands), Linear (task sync), and CI/CD pipelines (GitHub Actions, etc.).
+- **Remote repositories** — push to and pull from remote Git hosts, not just local repos.
+- **Exportable team templates** — package a team's configuration (agents, workflows, charter, repo settings) as a shareable template so others can spin up an identical setup in one command.
+
+If any of these are particularly important to you, open an issue — it helps prioritize.
 
 ## About
 
