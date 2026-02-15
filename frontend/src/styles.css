@@ -303,7 +303,6 @@ body {
 
 /* Scrollable container for agent list */
 .sb-agents-scroll {
-  max-height: 400px;
   overflow-y: auto;
 }
 
