@@ -140,7 +140,7 @@ function App() {
         return;
       }
       if (e.key === "?") { helpOverlayOpen.value = !helpOverlayOpen.value; return; }
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey) && activeTab.value === "chat") {
         e.preventDefault();
         teamSwitcherOpen.value = !teamSwitcherOpen.value;
         return;
