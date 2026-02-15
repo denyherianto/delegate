@@ -765,10 +765,16 @@ export function TaskSidePanel() {
 
   const [task, setTask] = useState(null);
   const [stats, setStats] = useState(null);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(() => {
+    const saved = _tabState.get(id);
+    return saved ? saved.activeTab : "overview";
+  });
   // Track which tabs have been visited — only mount a tab's component
   // after the user first navigates to it (lazy rendering).
-  const [visitedTabs, setVisitedTabs] = useState({ overview: true });
+  const [visitedTabs, setVisitedTabs] = useState(() => {
+    const saved = _tabState.get(id);
+    return saved ? saved.visitedTabs : { overview: true };
+  });
   const [diffRaw, setDiffRaw] = useState(null);
   const [diffLoaded, setDiffLoaded] = useState(false);
   const [mergePreviewRaw, setMergePreviewRaw] = useState("");
