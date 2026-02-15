@@ -1321,26 +1321,26 @@ select option:hover {
   flex-shrink: 0;
 }
 
-/* Stats (inline on line 1) */
+/* Stats (inline on line 1 of agent rows) */
 .agent-stats {
   display: flex;
   gap: 14px;
   align-items: baseline;
   flex-shrink: 0;
 }
-.agent-stat {
+.agent-row .agent-stat {
   display: flex;
   align-items: baseline;
   gap: 3px;
   white-space: nowrap;
 }
-.agent-stat-value {
+.agent-row .agent-stat-value {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
-.agent-stat-label {
+.agent-row .agent-stat-label {
   font-size: 10px;
   color: var(--text-muted);
 }
@@ -1397,6 +1397,9 @@ select option:hover {
 
 /* Agent stats grid (for detail panel) */
 .agent-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.agent-stats-grid .agent-stat { background: var(--bg-surface); border-radius: 4px; padding: 10px 14px; }
+.agent-stats-grid .agent-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 4px; }
+.agent-stats-grid .agent-stat-value { font-size: 14px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 
 /* ── Agents page team filter ── */
 .agents-team-filter-wrap {
