@@ -43,7 +43,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -1290,6 +1290,153 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             manager_name, human_name, team, last_seen or "none",
         )
         return {"status": "sent"}
+
+    # --- File upload endpoints ---
+
+    @app.post("/teams/{team}/uploads")
+    async def upload_files(team: str, files: list[UploadFile]):
+        """Upload one or more files to team uploads directory.
+
+        Args:
+            team: Team name
+            files: List of uploaded files (multipart/form-data)
+
+        Returns:
+            JSON with list of uploaded file metadata
+
+        Raises:
+            400: Invalid file type or file too large
+            413: Payload too large
+        """
+        from fastapi import UploadFile
+        from datetime import datetime, timezone
+        from delegate.uploads import (
+            validate_file,
+            validate_file_size,
+            store_upload,
+            MAX_TOTAL_SIZE,
+        )
+
+        # Check total size
+        total_size = 0
+        file_data = []
+
+        for file in files:
+            content = await file.read()
+            size = len(content)
+            total_size += size
+
+            if total_size > MAX_TOTAL_SIZE:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Total upload size exceeds limit: {MAX_TOTAL_SIZE} bytes",
+                )
+
+            file_data.append((file.filename or "unnamed", content, size))
+
+        # Validate and store each file
+        uploaded = []
+        uploads_dir = _team_dir(hc_home, team) / "uploads"
+        now = datetime.now(timezone.utc)
+        year = now.strftime("%Y")
+        month = now.strftime("%m")
+
+        for filename, content, size in file_data:
+            # Validate size
+            size_valid, size_error = validate_file_size(size)
+            if not size_valid:
+                raise HTTPException(status_code=400, detail=size_error)
+
+            # Validate file type
+            is_valid, mime_type, error_msg = validate_file(content, filename)
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=error_msg)
+
+            # Store file
+            try:
+                final_filename, final_path = store_upload(
+                    content, filename, uploads_dir, year, month
+                )
+            except IOError as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
+            # Build response
+            stored_path = f"uploads/{year}/{month}/{final_filename}"
+            url = f"/teams/{team}/uploads/{year}/{month}/{final_filename}"
+
+            uploaded.append({
+                "original_name": filename,
+                "stored_path": stored_path,
+                "url": url,
+                "size_bytes": size,
+                "mime_type": mime_type,
+            })
+
+        return {"uploaded": uploaded}
+
+    @app.get("/teams/{team}/uploads/{year}/{month}/{filename}")
+    def serve_file(team: str, year: str, month: str, filename: str):
+        """Serve an uploaded file with appropriate headers.
+
+        Args:
+            team: Team name
+            year: Year subdirectory (e.g., "2026")
+            month: Month subdirectory (e.g., "02")
+            filename: Filename to serve
+
+        Returns:
+            File content with appropriate headers
+
+        Raises:
+            403: Path traversal attempt
+            404: File not found
+        """
+        from delegate.uploads import safe_path
+
+        uploads_dir = _team_dir(hc_home, team) / "uploads"
+        user_path = f"{year}/{month}/{filename}"
+
+        # Validate path (prevent traversal)
+        file_path = safe_path(uploads_dir, user_path)
+        if file_path is None:
+            raise HTTPException(status_code=403, detail="Invalid path")
+
+        if not file_path.is_file():
+            raise HTTPException(status_code=404, detail="File not found")
+
+        # Detect MIME type
+        mime_type, _ = mimetypes.guess_type(filename)
+        if mime_type is None:
+            mime_type = "application/octet-stream"
+
+        # Determine Content-Disposition
+        # SVG: force download (XSS prevention)
+        # Images/PDF: inline (show in browser)
+        # Others: attachment (download)
+        if filename.lower().endswith(".svg"):
+            content_disposition = f'attachment; filename="{filename}"'
+        elif mime_type.startswith("image/") or mime_type == "application/pdf":
+            content_disposition = "inline"
+        else:
+            content_disposition = f'attachment; filename="{filename}"'
+
+        # Read file content
+        with file_path.open("rb") as f:
+            content = f.read()
+
+        # Build response with security headers
+        headers = {
+            "Content-Type": mime_type,
+            "Content-Disposition": content_disposition,
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "public, max-age=86400",
+        }
+
+        # SVG: add CSP header
+        if filename.lower().endswith(".svg"):
+            headers["Content-Security-Policy"] = "default-src 'none'"
+
+        return Response(content=content, headers=headers, media_type=mime_type)
 
     @app.get("/teams/{team}/cost-summary")
     def get_cost_summary(team: str):
