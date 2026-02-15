@@ -596,8 +596,8 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
   const [posting, setPosting] = useState(false);
   const [showingAll, setShowingAll] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const human = humanName.value || "human";
-  const agentNames = knownAgentNames.value || [];
+  const human = humanName.peek() || "human";
+  const agentNames = knownAgentNames.peek() || [];
 
   // Transform raw activity data into timeline format
   const transformActivity = useCallback((activity) => {
@@ -992,7 +992,7 @@ export function TaskSidePanel() {
   const TABS = ["overview", "changes", "merge", "activity"];
   const TAB_LABELS = { overview: "Overview", changes: "Changes", merge: "Merge Preview", activity: "Activity" };
 
-  const stack = panelStack.value;
+  const stack = panelStack.peek();
   const hasPrev = stack.length > 1;
   const prev = hasPrev ? stack[stack.length - 2] : null;
 
@@ -1012,7 +1012,7 @@ export function TaskSidePanel() {
               {taskIdStr(id)}
               <CopyBtn text={taskIdStr(id)} />
             </span>
-            {taskTeamFilter.value === "all" && t && t.team && (
+            {taskTeamFilter.peek() === "all" && t && t.team && (
               <span class="task-team-name">{cap(t.team)}</span>
             )}
             <span class="task-panel-header-status">
