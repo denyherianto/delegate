@@ -3494,3 +3494,61 @@ select option:hover {
   font-weight: 500;
 }
 
+/* ── File preview ── */
+/* File preview - image */
+.file-preview {
+  display: inline-block;
+  margin: 4px 0;
+}
+
+.file-preview-image {
+  display: block;
+}
+
+.file-preview-img {
+  max-width: 400px;
+  max-height: 300px;
+  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  cursor: pointer;
+}
+
+.file-preview-img:hover {
+  opacity: 0.9;
+}
+
+.file-preview-name {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* File preview - download link */
+.file-preview-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.file-preview-link:hover {
+  background: var(--bg-hover);
+}
+
+.file-preview-icon {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+

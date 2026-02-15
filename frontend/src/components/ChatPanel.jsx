@@ -11,7 +11,7 @@ import * as api from "../api.js";
 import {
   cap, esc, fmtTimestamp, renderMarkdown,
   linkifyTaskRefs, linkifyFilePaths, agentifyRefs, msgStatusIcon, taskIdStr,
-  handleCopyClick, toApiPath,
+  handleCopyClick, toApiPath, renderFileReferences,
 } from "../utils.js";
 import { playMsgSound } from "../audio.js";
 import { showToast } from "../toast.js";
@@ -1341,7 +1341,7 @@ export function ChatPanel() {
       <div class="chat-log" ref={logRef}>
         {filteredMsgs.map((m, i) => {
           if (m.type === "event") {
-            const eventHtml = agentifyRefs(linkifyFilePaths(linkifyTaskRefs(esc(m.content))), agNames);
+            const eventHtml = renderFileReferences(agentifyRefs(linkifyFilePaths(linkifyTaskRefs(esc(m.content))), agNames), team);
             return (
               <div key={m.id || i} class="msg-event">
                 <CollapsibleEventMessage html={eventHtml} messageId={m.id || `event-${i}`} />
@@ -1354,7 +1354,7 @@ export function ChatPanel() {
             const parsed = parseCommand(m.content);
             return <CommandMessage key={m.id || i} message={m} parsed={parsed} />;
           }
-          const contentHtml = linkifyFilePaths(linkifyTaskRefs(renderMarkdown(m.content)));
+          const contentHtml = renderFileReferences(linkifyFilePaths(linkifyTaskRefs(renderMarkdown(m.content))), team);
           const senderLower = m.sender.toLowerCase();
           const human = (humanName.value || "human").toLowerCase();
           const isHuman = senderLower === human;

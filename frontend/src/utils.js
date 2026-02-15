@@ -390,3 +390,55 @@ export function msgStatusIcon(m) {
   if (m.delivered_at) return '<span class="msg-status msg-delivered" title="Delivered"></span>';
   return '';
 }
+
+// ── File icon helper ──
+function getFileIcon(ext) {
+  const icons = {
+    pdf: 'PDF',
+    md: 'MD',
+    txt: 'TXT',
+    csv: 'CSV',
+    json: 'JSON',
+    yaml: 'YAML',
+    yml: 'YAML',
+    zip: 'ZIP',
+    html: 'HTML',
+    css: 'CSS',
+    js: 'JS',
+    py: 'PY',
+    svg: 'SVG',
+  };
+  return icons[ext] || ext.toUpperCase();
+}
+
+// ── File reference rendering ──
+export function renderFileReferences(html, team) {
+  // Match [file:path/to/file.ext] tokens
+  // Replace with appropriate HTML based on file type
+
+  const fileRefPattern = /\[file:([\w/._-]+)\]/g;
+
+  return html.replace(fileRefPattern, (match, filePath) => {
+    const ext = filePath.split('.').pop().toLowerCase();
+    const fileName = filePath.split('/').pop();
+    const url = `/teams/${team}/${filePath}`;
+
+    const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+
+    if (imageExts.includes(ext)) {
+      // Render inline image thumbnail
+      return `<div class="file-preview file-preview-image">
+        <a href="${url}" target="_blank" rel="noopener">
+          <img src="${url}" alt="${esc(fileName)}" class="file-preview-img" loading="lazy" />
+        </a>
+        <span class="file-preview-name">${esc(fileName)}</span>
+      </div>`;
+    } else {
+      // Render download link (including SVG for security)
+      return `<a href="${url}" class="file-preview file-preview-link" download="${esc(fileName)}">
+        <span class="file-preview-icon">${getFileIcon(ext)}</span>
+        <span class="file-preview-name">${esc(fileName)}</span>
+      </a>`;
+    }
+  });
+}
