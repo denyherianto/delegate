@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from "preact/hooks";
-import { currentTeam, teams, tasks, agents, agentStatsMap, activeTab, openPanel } from "../state.js";
+import { currentTeam, teams, tasks, agents, agentStatsMap, activeTab, openPanel, agentActivityLog } from "../state.js";
 import {
   cap, esc, fmtTokensShort, fmtCost, fmtDuration, fmtRelativeTime, taskIdStr,
   roleBadgeMap, getAgentDotClass, getAgentDotTooltip,
@@ -15,13 +15,14 @@ export function AgentsPanel() {
   const allTasks = tasks.value;
   const statsMap = agentStatsMap.value;
 
-  const [selectedTeam, setSelectedTeam] = useState(team);
+  const [selectedTeam, setSelectedTeam] = useState("all");
   const [crossTeamAgents, setCrossTeamAgents] = useState([]);
+  const [collapsedTeams, setCollapsedTeams] = useState({});
 
-  // Reset selectedTeam when currentTeam changes
-  useEffect(() => {
-    setSelectedTeam(team);
-  }, [team]);
+  // Don't reset selectedTeam when currentTeam changes - keep user's choice
+  // useEffect(() => {
+  //   setSelectedTeam(team);
+  // }, [team]);
 
   // Fetch cross-team agents when "All teams" is selected
   useEffect(() => {
@@ -36,6 +37,7 @@ export function AgentsPanel() {
 
   // Determine which agents to show
   const displayAgents = selectedTeam === "all" ? crossTeamAgents : allAgents;
+  const activityLog = agentActivityLog.value || [];
 
   // Group agents by team if showing all teams
   const agentsByTeam = useMemo(() => {
@@ -63,70 +65,111 @@ export function AgentsPanel() {
     return { inProgressTasks: ipTasks, doneTodayByAgent: dtByAgent };
   }, [allTasks]);
 
-  // Render agent card (extracted to avoid duplication)
-  const renderAgentCard = (a, showTeamBadge = false) => {
+  // Render agent row (row-based layout)
+  const renderAgentRow = (a) => {
     const stats = (statsMap[a.team] || {})[a.name] || {};
-    const currentTask = inProgressTasks.find(t => t.assignee === a.name);
+    const currentTask = inProgressTasks.find(t => t.assignee === a.name && t.team === a.team);
     const roleBadge = roleBadgeMap[a.role] || cap(a.role || "worker");
     const doneToday = doneTodayByAgent[a.name] || 0;
 
+    // Count assigned tasks (non-done, non-cancelled)
+    const assignedCount = allTasks.filter(t =>
+      t.assignee === a.name &&
+      t.team === a.team &&
+      t.status !== "done" &&
+      t.status !== "cancelled"
+    ).length;
+
     const sidebarDot = getAgentDotClass(a, allTasks, stats);
-    const dotClass = "agent-card-" + sidebarDot;
-    const dotTooltip = getAgentDotTooltip(sidebarDot, a, allTasks);
-    const statusLabel = sidebarDot === "dot-offline" ? "Offline" : (currentTask ? sidebarDot.replace("dot-", "") : "Idle");
+    const dotClass = "agent-dot agent-" + sidebarDot;
 
-    const taskLink = currentTask ? (
-      <span
-        class="agent-card-task-link"
-        onClick={(e) => { e.stopPropagation(); openPanel("task", currentTask.id); }}
-      >
-        {taskIdStr(currentTask.id)}
-      </span>
-    ) : (
-      <span class="agent-card-idle-label">{statusLabel}</span>
-    );
-
-    let activityText = "Offline";
-    if (a.pid && currentTask) activityText = "Working on " + currentTask.title;
-    else if (a.pid) activityText = "Idle";
-    else if (a.unread_inbox > 0) activityText = a.unread_inbox + " message" + (a.unread_inbox !== 1 ? "s" : "") + " waiting";
-
-    let lastActivity = "";
-    const agentTasks = allTasks.filter(t => t.assignee === a.name).sort((x, y) => (y.updated_at || "").localeCompare(x.updated_at || ""));
-    if (agentTasks.length > 0 && agentTasks[0].updated_at) {
-      lastActivity = "Last active " + fmtRelativeTime(agentTasks[0].updated_at);
+    // Last seen: use last_active_at or most recent task updated_at
+    let lastSeen = "never";
+    if (a.last_active_at) {
+      lastSeen = fmtRelativeTime(a.last_active_at);
+    } else {
+      const agentTasks = allTasks.filter(t => t.assignee === a.name && t.team === a.team)
+        .sort((x, y) => (y.updated_at || "").localeCompare(x.updated_at || ""));
+      if (agentTasks.length > 0 && agentTasks[0].updated_at) {
+        lastSeen = fmtRelativeTime(agentTasks[0].updated_at);
+      }
     }
 
     const totalTokens = (stats.total_tokens_in || 0) + (stats.total_tokens_out || 0);
     const cost = stats.total_cost_usd != null ? "$" + Number(stats.total_cost_usd).toFixed(2) : "$0.00";
-    const agentTime = fmtDuration(stats.agent_time_seconds);
+
+    // Get latest activity for line 2
+    const latestActivity = activityLog.find(log => log.agent === a.name);
+    const showLine2 = a.pid && (currentTask || latestActivity);
 
     return (
       <div
         key={a.name}
-        class="agent-card-rich"
+        class="agent-row"
         onClick={() => { openPanel("agent", a.name); }}
       >
-        <div class="agent-card-row1">
-          <span class={"agent-card-dot " + dotClass} title={dotTooltip}></span>
-          <span class="agent-card-name copyable">{cap(a.name)}<CopyBtn text={a.name} /></span>
-          <span class={"agent-card-role badge-role-" + (a.role || "worker")}>{roleBadge}</span>
-          {showTeamBadge && a.team && <span class="agent-card-team-badge">{a.team}</span>}
-          <span class="agent-card-task-col">{taskLink}</span>
+        {/* Line 1: dot | name | role | spacer | last-seen | stats */}
+        <div class="agent-row-line1">
+          <span class={dotClass}></span>
+          <span class="agent-name">{a.name}</span>
+          <span class={"agent-role badge-role-" + (a.role || "worker")}>{roleBadge}</span>
+          <span class="agent-spacer"></span>
+          <span class="agent-last-seen">{lastSeen}</span>
+          <span class="agent-stats">
+            <span class="agent-stat">
+              <span class="agent-stat-value">{assignedCount}</span>
+              <span class="agent-stat-label"> assigned</span>
+            </span>
+            <span class="agent-stat">
+              <span class="agent-stat-value">{doneToday}</span>
+              <span class="agent-stat-label"> done</span>
+            </span>
+            <span class="agent-stat">
+              <span class="agent-stat-value">{fmtTokensShort(totalTokens)}</span>
+              <span class="agent-stat-label"> tok</span>
+            </span>
+            <span class="agent-stat">
+              <span class="agent-stat-value">{cost}</span>
+              <span class="agent-stat-label"> cost</span>
+            </span>
+          </span>
         </div>
-        <div class="agent-card-row2">
-          <span class="agent-card-activity">{activityText}</span>
-          {lastActivity && <span class="agent-card-last-active">{lastActivity}</span>}
-        </div>
-        <div class="agent-card-row3">
-          <span class="agent-card-stat"><span class="agent-card-stat-value">{doneToday}</span><span class="agent-card-stat-label">done today</span></span>
-          <span class="agent-card-stat"><span class="agent-card-stat-value">{fmtTokensShort(totalTokens)}</span><span class="agent-card-stat-label">tokens</span></span>
-          <span class="agent-card-stat"><span class="agent-card-stat-value">{cost}</span><span class="agent-card-stat-label">cost</span></span>
-          <span class="agent-card-stat"><span class="agent-card-stat-value">{agentTime}</span><span class="agent-card-stat-label">uptime</span></span>
-        </div>
+
+        {/* Line 2: task + tool call (only for active agents) */}
+        {showLine2 && (
+          <div class="agent-row-line2">
+            {currentTask ? (
+              <>
+                <span
+                  class="agent-task-id"
+                  onClick={(e) => { e.stopPropagation(); openPanel("task", currentTask.id); }}
+                >
+                  {taskIdStr(currentTask.id)}
+                </span>
+                <span class="agent-task-title">{currentTask.title}</span>
+              </>
+            ) : (
+              <span class="agent-task-title" style="color: var(--text-muted);">
+                {a.role === "manager" ? "Managing tasks" : "In turn"}
+              </span>
+            )}
+            {latestActivity && (
+              <>
+                <span class="agent-tool-sep">|</span>
+                <span class="agent-tool-call">
+                  {latestActivity.tool}: {latestActivity.detail || ""}
+                </span>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   };
+
+  const toggleTeam = useCallback((teamName) => {
+    setCollapsedTeams(prev => ({ ...prev, [teamName]: !prev[teamName] }));
+  }, []);
 
   return (
     <div class={`panel${activeTab.value === "agents" ? " active" : ""}`}>
@@ -148,16 +191,33 @@ export function AgentsPanel() {
 
       {/* Agent list */}
       {selectedTeam === "all" && agentsByTeam ? (
-        // Group-by-team view
-        Object.keys(agentsByTeam).sort().map(teamName => (
-          <div key={teamName} class="agents-team-group">
-            <div class="agents-team-group-header">{teamName}</div>
-            {agentsByTeam[teamName].map(a => renderAgentCard(a, true))}
-          </div>
-        ))
+        // Group-by-team view with collapsible headers
+        Object.keys(agentsByTeam).sort().map(teamName => {
+          const teamAgents = agentsByTeam[teamName];
+          const isCollapsed = collapsedTeams[teamName];
+          return (
+            <div key={teamName} class="agent-team-group">
+              <div
+                class="agent-team-header"
+                onClick={() => toggleTeam(teamName)}
+              >
+                <span class="agent-team-toggle">{isCollapsed ? "▸" : "▾"}</span>
+                <span class="agent-team-name">{teamName}</span>
+                <span class="agent-team-count">{teamAgents.length}</span>
+              </div>
+              {!isCollapsed && (
+                <div class="agent-list">
+                  {teamAgents.map(a => renderAgentRow(a))}
+                </div>
+              )}
+            </div>
+          );
+        })
       ) : (
         // Single team view
-        displayAgents.map(a => renderAgentCard(a, true))
+        <div class="agent-list">
+          {displayAgents.map(a => renderAgentRow(a))}
+        </div>
       )}
     </div>
   );

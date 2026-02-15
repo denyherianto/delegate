@@ -1227,28 +1227,77 @@ select option:hover {
 /* ================================================================
    Agents panel
    ================================================================ */
-.agent-card, .agent-card-rich {
-  background: var(--bg-surface);
+
+/* Team group (collapsible) */
+.agent-team-group {
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
-  padding: 12px;
-  margin-bottom: 6px;
-  cursor: pointer;
-  transition: background 100ms, border-color 100ms;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  overflow: hidden;
+  margin-bottom: 12px;
 }
-.agent-card:hover, .agent-card-rich:hover { background: var(--bg-hover); border-color: var(--border-default); }
+.agent-team-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  cursor: pointer;
+  user-select: none;
+  transition: background 100ms;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.agent-team-header:hover { background: var(--bg-hover); }
+.agent-team-toggle { font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+.agent-team-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.agent-team-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--bg-active);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
 
-.agent-card-row1 { display: flex; align-items: center; gap: 8px; }
-.agent-card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.agent-card-dot-active  { background: var(--dot-active); }
-.agent-card-dot-stale   { background: var(--dot-stale); }
-.agent-card-dot-stuck   { background: var(--dot-stuck); }
-.agent-card-dot-offline { background: var(--dot-offline); }
-.agent-card-name { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-weight: 400; font-size: 12px; color: var(--text-primary); }
-.agent-card-role {
+/* Agent list container */
+.agent-list { display: flex; flex-direction: column; gap: 1px; }
+
+/* Agent row */
+.agent-row {
+  cursor: pointer;
+  border-radius: 0 4px 4px 0;
+  transition: background 100ms;
+  border-left: 1px solid transparent;
+  padding: 8px 12px;
+}
+.agent-row:hover { background: var(--bg-hover); }
+
+/* Line 1: dot | name | role | spacer | last-seen | stats */
+.agent-row-line1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Dot */
+.agent-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.agent-dot-active  { background: var(--dot-active); }
+.agent-dot-stale   { background: var(--dot-stale); }
+.agent-dot-stuck   { background: var(--dot-stuck); }
+.agent-dot-offline { background: var(--dot-offline); }
+
+/* Name */
+.agent-name {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  min-width: 80px;
+}
+
+/* Role badge */
+.agent-role {
   display: inline-block;
   font-size: 10px;
   font-weight: 500;
@@ -1258,48 +1307,96 @@ select option:hover {
   line-height: 1.4;
   background: var(--bg-active);
   color: var(--text-secondary);
+  flex-shrink: 0;
 }
-.agent-card-task-col { margin-left: auto; flex-shrink: 0; }
-.agent-card-task-link {
+
+/* Spacer to push stats right */
+.agent-spacer { flex: 1; }
+
+/* Last seen (on line 1, before stats) */
+.agent-last-seen {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Stats (inline on line 1) */
+.agent-stats {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  flex-shrink: 0;
+}
+.agent-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  white-space: nowrap;
+}
+.agent-stat-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.agent-stat-label {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* Line 2 (only for active agents): task ID + description + latest tool call */
+.agent-row-line2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 17px; /* 7px dot + 10px gap */
+  margin-top: 3px;
+  min-width: 0;
+}
+
+.agent-task-id {
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   font-size: 11px;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: text-decoration 100ms;
+  flex-shrink: 0;
 }
-.agent-card-task-link:hover { text-decoration: underline; }
-.agent-card-idle-label { font-size: 11px; color: var(--text-muted); }
+.agent-task-id:hover { text-decoration: underline; }
 
-.agent-card-row2 { display: flex; align-items: center; gap: 8px; padding-left: 15px; }
-.agent-card-activity { font-size: 12px; color: var(--text-secondary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-card-last-active { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
-
-.agent-card-row3 {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-left: 15px;
-  padding-top: 4px;
-  border-top: 1px solid var(--border-subtle);
-  margin-top: 2px;
+.agent-task-title {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
-.agent-card-stat { display: flex; align-items: baseline; gap: 4px; }
-.agent-card-stat-value { font-size: 12px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
-.agent-card-stat-label { font-size: 10px; color: var(--text-muted); }
 
-.agent-name { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-weight: 400; min-width: 120px; color: var(--text-primary); font-size: 12px; }
+.agent-tool-sep {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.agent-tool-call {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+/* Old styles kept for agent detail panel and sidebar */
 .agent-status { font-size: 12px; color: var(--text-muted); }
 .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 8px; }
 .dot-active { background: var(--dot-active); }
 .dot-idle { background: var(--dot-offline); }
 
-/* Agent stats grid */
+/* Agent stats grid (for detail panel) */
 .agent-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.agent-stat { background: var(--bg-surface); border-radius: 4px; padding: 10px 14px; }
-.agent-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 4px; }
-.agent-stat-value { font-size: 14px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
-
-@media (max-width: 600px) { .agent-card-row3 { flex-wrap: wrap; gap: 8px; } }
 
 /* ── Agents page team filter ── */
 .agents-team-filter-wrap {
