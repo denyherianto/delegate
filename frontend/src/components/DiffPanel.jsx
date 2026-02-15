@@ -111,40 +111,32 @@ function AgentView({ agentName }) {
     }
   }, [tab, team, agentName]);
 
-  const renderInbox = (msgs) => {
+  const renderMessages = (msgs) => {
     if (!msgs || !msgs.length) return <div class="diff-empty">No messages</div>;
-    return msgs.map((m, i) => (
-      <div key={i} class={"agent-msg" + (m.processed_at ? "" : " unread")}>
-        <div class="agent-msg-header">
-          <span class="agent-msg-sender">{cap(m.sender)}</span>
-          {m.task_id != null && (
-            <>
-              <span class="msg-task-sep">|</span>
-              <span class="msg-task-badge">{taskIdStr(m.task_id)}</span>
-            </>
-          )}
-          <span class="agent-msg-time" dangerouslySetInnerHTML={{ __html: fmtTimestamp(m.time) + " " + msgStatusIcon(m) }} />
-        </div>
-        <div class="agent-msg-body collapsed" onClick={(e) => e.target.classList.toggle("collapsed")}>
-          {m.body}
-        </div>
-      </div>
-    ));
-  };
+    return msgs.map((m, i) => {
+      const isIncoming = m.direction === "in";
+      const unprocessed = isIncoming && !m.processed_at;
+      const arrow = isIncoming ? "&larr;" : "&rarr;";
 
-  const renderOutbox = (msgs) => {
-    if (!msgs || !msgs.length) return <div class="diff-empty">No messages</div>;
-    return msgs.map((m, i) => (
-      <div key={i} class="agent-msg">
-        <div class="agent-msg-header">
-          <span class="agent-msg-sender">&rarr; {cap(m.recipient)}</span>
-          <span class="agent-msg-time" dangerouslySetInnerHTML={{ __html: fmtTimestamp(m.time) + " " + msgStatusIcon(m) }} />
+      return (
+        <div key={i} class={"agent-msg" + (unprocessed ? " unread" : "")}>
+          <div class="agent-msg-header">
+            <span class="agent-msg-direction" dangerouslySetInnerHTML={{ __html: arrow }} />
+            <span class="agent-msg-sender">{cap(m.counterparty)}</span>
+            {m.task_id != null && (
+              <>
+                <span class="msg-task-sep">|</span>
+                <span class="msg-task-badge">{taskIdStr(m.task_id)}</span>
+              </>
+            )}
+            <span class="agent-msg-time" dangerouslySetInnerHTML={{ __html: fmtTimestamp(m.time) + " " + msgStatusIcon(m) }} />
+          </div>
+          <div class="agent-msg-body collapsed" onClick={(e) => e.target.classList.toggle("collapsed")}>
+            {m.body}
+          </div>
         </div>
-        <div class="agent-msg-body collapsed" onClick={(e) => e.target.classList.toggle("collapsed")}>
-          {m.body}
-        </div>
-      </div>
-    ));
+      );
+    });
   };
 
   const renderLogs = (data) => {
@@ -262,7 +254,7 @@ function AgentView({ agentName }) {
     );
   };
 
-  const TABS = ["activity", "inbox", "outbox", "logs", "reflections", "journal", "stats"];
+  const TABS = ["activity", "messages", "logs", "reflections", "journal", "stats"];
   const data = tabData[tab];
 
   return (
@@ -278,8 +270,7 @@ function AgentView({ agentName }) {
       <div class="diff-panel-body">
         {tab === "activity" ? renderActivity()
           : data === undefined ? <div class="diff-empty">Loading...</div>
-          : tab === "inbox" ? renderInbox(data)
-          : tab === "outbox" ? renderOutbox(data)
+          : tab === "messages" ? renderMessages(data)
           : tab === "logs" ? renderLogs(data)
           : tab === "reflections" ? renderReflections(data)
           : tab === "journal" ? renderJournal(data)

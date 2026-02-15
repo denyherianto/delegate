@@ -2038,6 +2038,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 "sender": m.sender,
                 "time": m.time,
                 "body": m.body,
+                "task_id": m.task_id,
                 "delivered_at": m.delivered_at,
                 "seen_at": m.seen_at,
                 "processed_at": m.processed_at,
@@ -2057,6 +2058,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 "recipient": m.recipient,
                 "time": m.time,
                 "body": m.body,
+                "task_id": m.task_id,
                 "delivered_at": m.delivered_at,
                 "seen_at": m.seen_at,
                 "processed_at": m.processed_at,
@@ -2065,6 +2067,49 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         ]
         result.sort(key=lambda x: x["time"], reverse=True)
         return result[:100]
+
+    @app.get("/teams/{team}/agents/{name}/messages")
+    def get_agent_messages(team: str, name: str):
+        """Return unified inbox + outbox messages in chronological order."""
+        inbox_msgs = _read_inbox(hc_home, team, name, unread_only=False)
+        outbox_msgs = _read_outbox(hc_home, team, name, pending_only=False)
+
+        # Convert inbox messages to unified format
+        inbox_result = [
+            {
+                "id": m.id,
+                "direction": "in",
+                "counterparty": m.sender,
+                "time": m.time,
+                "body": m.body,
+                "task_id": m.task_id,
+                "delivered_at": m.delivered_at,
+                "seen_at": m.seen_at,
+                "processed_at": m.processed_at,
+            }
+            for m in inbox_msgs
+        ]
+
+        # Convert outbox messages to unified format
+        outbox_result = [
+            {
+                "id": m.id,
+                "direction": "out",
+                "counterparty": m.recipient,
+                "time": m.time,
+                "body": m.body,
+                "task_id": m.task_id,
+                "delivered_at": m.delivered_at,
+                "seen_at": m.seen_at,
+                "processed_at": m.processed_at,
+            }
+            for m in outbox_msgs
+        ]
+
+        # Merge and sort by time (newest first)
+        all_msgs = inbox_result + outbox_result
+        all_msgs.sort(key=lambda x: x["time"], reverse=True)
+        return all_msgs[:100]
 
     @app.get("/teams/{team}/agents/{name}/logs")
     def get_agent_logs(team: str, name: str):
