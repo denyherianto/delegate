@@ -30,6 +30,12 @@ import { parseCommand, filterCommands, COMMANDS } from "../commands.js";
 function CommandMessage({ message, parsed }) {
   const [hasError, setHasError] = useState(false);
 
+  // Detect diff command errors
+  useEffect(() => {
+    if (parsed?.name === 'diff' && message.result?.error) {
+      setHasError(true);
+    }
+  }, [parsed, message.result]);
 
   // For shell commands, include duration in header
   const isShell = parsed?.name === 'shell';
@@ -51,6 +57,12 @@ function CommandMessage({ message, parsed }) {
       {parsed?.name === 'status' && <StatusBlock result={message.result} />}
       {parsed?.name === 'diff' && !message.result?.error && (
         <DiffCommandBlock result={message.result} />
+      )}
+      {parsed?.name === 'diff' && message.result?.error && (
+        <div class="shell-output-stderr">
+          <div class="shell-output-stderr-label">Error:</div>
+          <pre>{message.result.error}</pre>
+        </div>
       )}
       {parsed?.name === 'cost' && <CostBlock result={message.result} />}
     </div>
