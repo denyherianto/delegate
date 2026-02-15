@@ -299,7 +299,7 @@ def _capture_conflict_hunks(
     """Capture human-readable conflict context when both rebase and squash fail.
 
     Identifies the specific files where the feature branch and main diverge
-    on the same lines, and extracts both sides of the conflicting hunks.
+    on the same lines.
 
     Returns a formatted string suitable for embedding in a notification
     message to the manager/delegate.
@@ -326,32 +326,6 @@ def _capture_conflict_hunks(
     parts = [f"Conflicting files ({len(overlap)}):"]
     for f in overlap[:10]:  # cap at 10 to keep message reasonable
         parts.append(f"  - {f}")
-
-        # Show the diff hunk from main's side for this file
-        main_hunk = _run_git(
-            ["diff", f"{mb_ref}..main", "--", f],
-            cwd=repo_dir,
-        )
-        # Show the diff hunk from the branch side for this file
-        branch_hunk = _run_git(
-            ["diff", f"{mb_ref}..{branch}", "--", f],
-            cwd=repo_dir,
-        )
-
-        if main_hunk.returncode == 0 and main_hunk.stdout.strip():
-            # Truncate to keep message manageable
-            hunk_lines = main_hunk.stdout.strip().splitlines()
-            preview = "\n".join(hunk_lines[:30])
-            if len(hunk_lines) > 30:
-                preview += f"\n    ... ({len(hunk_lines) - 30} more lines)"
-            parts.append(f"    MAIN changes:\n{_indent(preview, 6)}")
-
-        if branch_hunk.returncode == 0 and branch_hunk.stdout.strip():
-            hunk_lines = branch_hunk.stdout.strip().splitlines()
-            preview = "\n".join(hunk_lines[:30])
-            if len(hunk_lines) > 30:
-                preview += f"\n    ... ({len(hunk_lines) - 30} more lines)"
-            parts.append(f"    BRANCH changes:\n{_indent(preview, 6)}")
 
     if len(overlap) > 10:
         parts.append(f"  ... and {len(overlap) - 10} more files")
