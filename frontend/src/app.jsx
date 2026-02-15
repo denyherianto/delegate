@@ -159,37 +159,83 @@ function App() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
-  // ── Bootstrap: fetch config + teams, set initial team from localStorage ──
+  // ── Bootstrap: single request for config + teams + initial team data ──
+  const bootstrapTeamRef = useRef(null);  // team whose data was pre-loaded
+
   useEffect(() => {
-    (async () => {
+    const lastTeam = localStorage.getItem("delegate-last-team");
+
+    // Fallback: individual fetches (used when /bootstrap isn't available)
+    const _fallbackInit = async () => {
       try {
-        const cfg = await api.fetchConfig();
+        const cfg = await api.fetchConfig().catch(() => ({}));
         if (cfg.human_name) humanName.value = cfg.human_name;
-        else if (cfg.boss_name) humanName.value = cfg.boss_name;
         if (cfg.hc_home) hcHome.value = cfg.hc_home;
       } catch (e) { }
       try {
-        const teamList = await api.fetchTeams();
+        const teamList = await api.fetchTeams().catch(() => []);
         teams.value = teamList;
-
-        // Extract team names for comparison (handle both objects and strings)
-        const teamNames = teamList.map(t => typeof t === "object" ? t.name : t);
-
-        // Set currentTeam from localStorage or default to first team
-        if (teamNames.length > 0 && !currentTeam.value) {
-          const lastTeam = localStorage.getItem("delegate-last-team");
-          const targetTeam = lastTeam && teamNames.includes(lastTeam) ? lastTeam : teamNames[0];
-          currentTeam.value = targetTeam;
-          // syncFromUrl already ran and set activeTab from URL — don't change URL here
-        } else if (teamNames.length > 0 && !teamNames.includes(currentTeam.value)) {
-          // currentTeam is invalid — fix it (no URL change needed)
-          currentTeam.value = teamNames[0];
+        const names = teamList.map(t => typeof t === "object" ? t.name : t);
+        if (names.length > 0 && !currentTeam.value) {
+          currentTeam.value = (lastTeam && names.includes(lastTeam)) ? lastTeam : names[0];
         }
       } catch (e) { }
+    };
+
+    (async () => {
+      // Try the single-request bootstrap first
+      let boot = null;
+      try {
+        boot = await api.fetchBootstrap(lastTeam);
+      } catch (e) {
+        // /bootstrap failed or returned non-JSON — fall back to individual fetches
+        console.warn("Bootstrap failed, using fallback:", e.message || e);
+      }
+
+      if (!boot) {
+        await _fallbackInit();
+        return;
+      }
+
+      // Apply config
+      const cfg = boot.config || {};
+      if (cfg.human_name) humanName.value = cfg.human_name;
+      else if (cfg.boss_name) humanName.value = cfg.boss_name;
+      if (cfg.hc_home) hcHome.value = cfg.hc_home;
+
+      // Apply teams
+      teams.value = boot.teams || [];
+      const teamNames = (boot.teams || []).map(t => typeof t === "object" ? t.name : t);
+
+      // Apply initial team data before setting currentTeam — this avoids
+      // the team-switch useSignalEffect from re-fetching the same data.
+      const initial = boot.initial_team;
+      if (initial && boot.initial_data) {
+        const d = boot.initial_data;
+        bootstrapTeamRef.current = initial;  // mark so team-switch effect skips fetch
+        batch(() => {
+          tasks.value = d.tasks || [];
+          agents.value = d.agents || [];
+          agentStatsMap.value = d.agent_stats || {};
+          knownAgentNames.value = (d.agents || []).map(a => a.name);
+        });
+        // Set manager name from bootstrap data
+        const mgr = (d.agents || []).find(a => a.role === "manager");
+        _pt.managerName[initial] = mgr?.name ?? null;
+      }
+
+      // Now set currentTeam — triggers the team-switch effect
+      if (teamNames.length > 0 && !currentTeam.value) {
+        currentTeam.value = initial || teamNames[0];
+      } else if (teamNames.length > 0 && !teamNames.includes(currentTeam.value)) {
+        currentTeam.value = teamNames[0];
+      }
     })();
   }, []);
 
   // ── Polling loop (reads currentTeam.value and taskTeamFilter dynamically each cycle) ──
+  // NOTE: Does NOT run immediately on mount — bootstrap already loaded initial data.
+  // The first poll fires after 2 seconds, giving the UI time to become interactive.
   useEffect(() => {
     let active = true;
     const poll = async () => {
@@ -230,12 +276,12 @@ function App() {
             allTeamsAgents.value = allAgentData;
           });
 
-          // Prefetch task panel data for recent tasks (once per session)
+          // Prefetch task panel data for recent tasks (once per session, deferred)
           if (!hasPrefetched.current && taskData.length > 0) {
             hasPrefetched.current = true;
             const recentTaskIds = taskData.slice(0, 50).map(t => t.id);
-            // Fire and forget — don't await
-            prefetchTaskPanelData(recentTaskIds).catch(() => {});
+            // Defer prefetch by 5s so it doesn't compete with interactive requests
+            setTimeout(() => prefetchTaskPanelData(recentTaskIds).catch(() => {}), 5000);
           }
         }
       } catch (e) {
@@ -243,7 +289,7 @@ function App() {
       }
     };
 
-    poll();
+    // Start polling after delay — initial data comes from /bootstrap
     const interval = setInterval(poll, 2000);
     return () => { active = false; clearInterval(interval); };
   }, []);
@@ -259,6 +305,25 @@ function App() {
 
     // Persist last-selected team to localStorage
     localStorage.setItem("delegate-last-team", t);
+
+    // If this team was pre-loaded by /bootstrap, skip the fetch — data is
+    // already in the signals.  Only do lightweight housekeeping.
+    if (t === bootstrapTeamRef.current) {
+      bootstrapTeamRef.current = null;  // consume — only skip once
+      _syncSignalsNow(t);
+      fetchWorkflows(t);
+
+      // Send welcome greeting if first visit or after meaningful absence
+      const now = Date.now();
+      const lastGreeted = getLastGreeted();
+      const lastGreetedTime = lastGreeted ? new Date(lastGreeted).getTime() : null;
+      const shouldGreet = !lastGreetedTime || (now - lastGreetedTime) >= GREETING_THRESHOLD;
+      if (shouldGreet) {
+        api.greetTeam(t, getLastSeen()).catch(() => {});
+        updateLastGreeted();
+      }
+      return;
+    }
 
     // Clear stale data from previous team
     batch(() => {

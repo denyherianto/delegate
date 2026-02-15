@@ -711,6 +711,93 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             "hc_home": str(hc_home),
         }
 
+    # --- Bootstrap endpoint (all initial data in one call) ---
+
+    def _get_teams_list():
+        """Shared teams-list logic for /teams and /bootstrap."""
+        from delegate.db import get_connection
+        from delegate.config import get_human_members
+
+        conn = get_connection(hc_home)
+        try:
+            teams_rows = conn.execute(
+                "SELECT name, team_id, created_at FROM teams ORDER BY created_at ASC"
+            ).fetchall()
+            human_names = {m["name"] for m in get_human_members(hc_home)}
+            result = []
+            for row in teams_rows:
+                team_name = row["name"]
+                agent_count = len(_list_team_agents(hc_home, team_name))
+                task_count = conn.execute(
+                    "SELECT COUNT(*) FROM tasks WHERE team = ?",
+                    (team_name,)
+                ).fetchone()[0]
+                human_count = 0
+                team_agents_dir = _agents_dir(hc_home, team_name)
+                if team_agents_dir.is_dir():
+                    for d in team_agents_dir.iterdir():
+                        if d.is_dir() and d.name in human_names:
+                            human_count += 1
+                result.append({
+                    "name": team_name,
+                    "team_id": row["team_id"],
+                    "created_at": row["created_at"],
+                    "agent_count": agent_count,
+                    "task_count": task_count,
+                    "human_count": human_count,
+                })
+            return result
+        finally:
+            conn.close()
+
+    @app.get("/bootstrap")
+    def bootstrap(team: str | None = None):
+        """Return config + teams + first team's data in one request.
+
+        Eliminates the waterfall of sequential fetches on initial page load.
+        The frontend calls this once instead of /config → /teams → /tasks + /agents + /messages + /stats.
+        """
+        human = get_default_human(hc_home)
+        team_list = _get_teams_list()
+
+        # Determine which team to load initial data for
+        team_names = [t["name"] for t in team_list]
+        initial_team = None
+        if team and team in team_names:
+            initial_team = team
+        elif team_names:
+            initial_team = team_names[0]
+
+        result = {
+            "config": {
+                "boss_name": human,
+                "human_name": human,
+                "hc_home": str(hc_home),
+            },
+            "teams": team_list,
+            "initial_team": initial_team,
+        }
+
+        if initial_team:
+            agents_data = _list_team_agents(hc_home, initial_team)
+            agent_stats = {}
+            for a in agents_data:
+                try:
+                    s = _get_agent_stats(hc_home, initial_team, a["name"])
+                    if s:
+                        agent_stats[a["name"]] = s
+                except Exception:
+                    pass
+
+            result["initial_data"] = {
+                "tasks": _list_tasks(hc_home, initial_team),
+                "agents": agents_data,
+                "agent_stats": agent_stats,
+                "messages": _get_messages(hc_home, initial_team, limit=100),
+            }
+
+        return result
+
     # --- Team endpoints ---
 
     @app.get("/teams")
@@ -719,54 +806,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
         Returns: List of team objects with name, team_id, created_at, agent_count, task_count
         """
-        from delegate.db import get_connection
-
-        conn = get_connection(hc_home)
-        try:
-            # Get teams from the teams table
-            teams_rows = conn.execute(
-                "SELECT name, team_id, created_at FROM teams ORDER BY created_at ASC"
-            ).fetchall()
-
-            # Build set of human member names for fast lookup
-            from delegate.config import get_human_members
-            human_names = {m["name"] for m in get_human_members(hc_home)}
-
-            result = []
-            for row in teams_rows:
-                team_name = row["name"]
-                team_id = row["team_id"]
-                created_at = row["created_at"]
-
-                # Count agents for this team
-                agent_count = len(_list_team_agents(hc_home, team_name))
-
-                # Count tasks for this team from DB
-                task_count = conn.execute(
-                    "SELECT COUNT(*) FROM tasks WHERE team = ?",
-                    (team_name,)
-                ).fetchone()[0]
-
-                # Count humans that have a directory in this team's agents dir
-                human_count = 0
-                team_agents_dir = _agents_dir(hc_home, team_name)
-                if team_agents_dir.is_dir():
-                    for d in team_agents_dir.iterdir():
-                        if d.is_dir() and d.name in human_names:
-                            human_count += 1
-
-                result.append({
-                    "name": team_name,
-                    "team_id": team_id,
-                    "created_at": created_at,
-                    "agent_count": agent_count,
-                    "task_count": task_count,
-                    "human_count": human_count,
-                })
-
-            return result
-        finally:
-            conn.close()
+        return _get_teams_list()
 
     # --- Workflow endpoints (team-scoped) ---
 

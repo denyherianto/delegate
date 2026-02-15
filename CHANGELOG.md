@@ -2,6 +2,21 @@
 
 All notable changes to Delegate are documented here.
 
+## 0.2.3 — 2026-02-15
+
+### Added
+- **`/bootstrap` endpoint** — single API call returns config, teams, and initial team data (tasks, agents, stats, messages), replacing the 5+ request waterfall on app load.
+- **Self-hosted fonts** — Inter and JetBrains Mono served from the bundle via `@fontsource`, eliminating external Google Fonts requests and FOUT.
+
+### Changed
+- App startup refactored to use `/bootstrap` — first meaningful paint no longer blocked by sequential API calls.
+- Polling loop no longer fires immediately on mount; defers to the interval timer so it doesn't race with bootstrap data.
+- Task panel prefetch deferred by 5 seconds to avoid competing with initial render.
+
+### Fixed
+- **UI hang on server restart** — `fetchBootstrap` catch block now falls back to individual API calls when the endpoint is unavailable (e.g., old server still running), instead of silently swallowing the error and leaving the app blank.
+- **`greet_team` crash** — `Message` dataclass accessed via dict syntax (`m["sender"]`) instead of attribute access (`m.sender`); fixed to use dot notation.
+
 ## 0.2.2 — 2026-02-15
 
 ### Added

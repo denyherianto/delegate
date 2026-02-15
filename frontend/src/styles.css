@@ -1,3 +1,10 @@
+/* Self-hosted fonts — latin only (bundled by esbuild, no Google Fonts dependency) */
+@import '@fontsource/inter/latin-400.css';
+@import '@fontsource/inter/latin-500.css';
+@import '@fontsource/inter/latin-600.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/latin-500.css';
+
 /* diff2html styles (bundled by esbuild) */
 @import 'diff2html/bundles/css/diff2html.min.css';
 

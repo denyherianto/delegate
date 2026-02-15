@@ -8,6 +8,12 @@ export async function fetchConfig() {
   return r.ok ? r.json() : {};
 }
 
+export async function fetchBootstrap(team = null) {
+  const qs = team ? `?team=${encodeURIComponent(team)}` : "";
+  const r = await fetch(`/bootstrap${qs}`);
+  return r.ok ? r.json() : null;
+}
+
 export async function fetchTeams() {
   const r = await fetch("/teams");
   if (!r.ok) return [];
