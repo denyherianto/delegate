@@ -74,9 +74,20 @@ export function stripEmojis(text) {
 }
 
 // ── Markdown ──
+const _mdCache = new Map();
+const _MD_CACHE_MAX = 200;
+
 export function renderMarkdown(text) {
   if (!text) return "";
-  return DOMPurify.sanitize(marked.parse(stripEmojis(text)));
+  if (_mdCache.has(text)) return _mdCache.get(text);
+  const html = DOMPurify.sanitize(marked.parse(stripEmojis(text)));
+  if (_mdCache.size >= _MD_CACHE_MAX) {
+    // Evict oldest entry
+    const firstKey = _mdCache.keys().next().value;
+    _mdCache.delete(firstKey);
+  }
+  _mdCache.set(text, html);
+  return html;
 }
 
 // ── Formatting ──

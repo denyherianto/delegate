@@ -638,23 +638,28 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
   }, [activityRaw, transformActivity]);
 
   // Pre-compute comment HTML to avoid re-running markdown+linkification on every render
-  const timelineWithHtml = useMemo(() => {
+  // Step 1: Parse markdown (only depends on timeline)
+  const timelineWithBaseHtml = useMemo(() => {
     if (!timeline) return null;
     return timeline.map((e) => {
       if (e.type === "comment") {
-        const commentHtml = agentifyRefs(
-          linkifyFilePaths(
-            linkifyTaskRefs(
-              renderMarkdown(e.body)
-            )
-          ),
-          agentNames
-        );
-        return { ...e, commentHtml };
+        const baseHtml = linkifyFilePaths(linkifyTaskRefs(renderMarkdown(e.body)));
+        return { ...e, baseHtml };
       }
       return e;
     });
-  }, [timeline, agentNames]);
+  }, [timeline]);
+
+  // Step 2: Apply agent links (depends on baseHtml + agentNames)
+  const timelineWithHtml = useMemo(() => {
+    if (!timelineWithBaseHtml) return null;
+    return timelineWithBaseHtml.map((e) => {
+      if (e.baseHtml) {
+        return { ...e, commentHtml: agentifyRefs(e.baseHtml, agentNames) };
+      }
+      return e;
+    });
+  }, [timelineWithBaseHtml, agentNames]);
 
   const handleLoadMore = async () => {
     if (loadingMore) return;

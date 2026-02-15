@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks";
+import { memo } from "preact/compat";
 import {
   currentTeam, messages, agents, activeTab,
   chatFilterDirection, openPanel,
@@ -106,6 +107,15 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
 
   return <div ref={externalRef} class={cls} style={style} onClick={handler} dangerouslySetInnerHTML={{ __html: html }} />;
 }
+
+// ── Memoized message content rendering ──
+const MemoizedMessageContent = memo(function MemoizedMessageContent({ content, team, messageId, isBoss }) {
+  const html = useMemo(
+    () => renderFileReferences(linkifyFilePaths(linkifyTaskRefs(renderMarkdown(content))), team),
+    [content, team]
+  );
+  return <CollapsibleMessage html={html} messageId={messageId} isBoss={isBoss} />;
+});
 
 // ── Collapsible long message ──
 const COLLAPSE_THRESHOLD = 90; // ~4 lines at 14px * 1.6 line-height = 89.6px
@@ -1435,7 +1445,6 @@ export function ChatPanel() {
             const parsed = parseCommand(m.content);
             return <CommandMessage key={m.id || i} message={m} parsed={parsed} />;
           }
-          const contentHtml = renderFileReferences(linkifyFilePaths(linkifyTaskRefs(renderMarkdown(m.content))), team);
           const senderLower = m.sender.toLowerCase();
           const human = (humanName.value || "human").toLowerCase();
           const isHuman = senderLower === human;
@@ -1469,7 +1478,7 @@ export function ChatPanel() {
                   <span class="msg-time" dangerouslySetInnerHTML={{ __html: fmtTimestamp(m.timestamp) }} />
                   <span class="msg-checkmark" dangerouslySetInnerHTML={{ __html: msgStatusIcon(m) }} />
                 </div>
-                <CollapsibleMessage html={contentHtml} messageId={m.id} isBoss={isBoss} />
+                <MemoizedMessageContent content={m.content} team={team} messageId={m.id} isBoss={isBoss} />
               </div>
             </div>
           );

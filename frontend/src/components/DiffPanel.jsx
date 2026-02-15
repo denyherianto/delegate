@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "preact/hooks";
+import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks";
 import {
   currentTeam, diffPanelMode, diffPanelTarget, tasks,
   panelStack, pushPanel, closeAllPanels, popPanel,
@@ -344,6 +344,11 @@ function FileView({ filePath }) {
   const htmlExts = ["html", "htm"];
   const isHtml = htmlExts.includes(ext);
 
+  const mdHtml = useMemo(
+    () => (ext === "md" || ext === "markdown") && fileData?.content ? renderMarkdown(fileData.content) : null,
+    [fileData?.content, ext]
+  );
+
   return (
     <>
       <div class="file-viewer-header">
@@ -359,8 +364,8 @@ function FileView({ filePath }) {
               </div>
           : fileData.is_binary
             ? <div class="diff-empty">Binary file ({fileData.size} bytes)</div>
-          : (ext === "md" || ext === "markdown")
-            ? <div class="file-viewer-content md-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(fileData.content) }} />
+          : mdHtml
+            ? <div class="file-viewer-content md-content" dangerouslySetInnerHTML={{ __html: mdHtml }} />
           : isHtml && fileData.content
             ? <div class="file-viewer-html-container">
                 <div class="file-viewer-html-toolbar">
