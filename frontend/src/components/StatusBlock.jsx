@@ -114,7 +114,6 @@ export function StatusBlock({ result }) {
                 <span class="status-breakdown-label">{statusLabels[status]}:</span>
                 <span class="status-breakdown-count">{taskIds.length}</span>
                 <span class="status-breakdown-tasks">
-                  (
                   {taskIds.map((id, idx) => (
                     <>
                       {idx > 0 && ', '}
@@ -126,7 +125,6 @@ export function StatusBlock({ result }) {
                       </a>
                     </>
                   ))}
-                  )
                 </span>
               </div>
             );

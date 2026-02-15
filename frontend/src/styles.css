@@ -2810,7 +2810,7 @@ select option:hover {
 }
 
 .status-breakdown-tasks a {
-  color: var(--accent);
+  color: var(--text-secondary);
   text-decoration: none;
   font-family: 'JetBrains Mono', monospace;
 }
