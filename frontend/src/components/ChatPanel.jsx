@@ -279,21 +279,21 @@ function useSpeechRecognition(inputRef) {
   return { active, toggle, supported: supported.current };
 }
 
-// ── Bell/mute icon ──
-function BellIcon({ muted }) {
+// ── Speaker/mute icon ──
+function SpeakerIcon({ muted }) {
   if (muted) {
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4.5 6.5V6a3.5 3.5 0 017 0v.5c0 2 1 3 1 3H3.5s1-1 1-3z" />
-        <path d="M6.5 13a1.5 1.5 0 003 0" />
-        <line x1="2" y1="2" x2="14" y2="14" />
+        <path d="M3 5.5h2l3-3v11l-3-3H3a1 1 0 01-1-1v-3a1 1 0 011-1z" />
+        <line x1="11" y1="5" x2="15" y2="11" />
+        <line x1="15" y1="5" x2="11" y2="11" />
       </svg>
     );
   }
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4.5 6.5V6a3.5 3.5 0 017 0v.5c0 2 1 3 1 3H3.5s1-1 1-3z" />
-      <path d="M6.5 13a1.5 1.5 0 003 0" />
+      <path d="M3 5.5h2l3-3v11l-3-3H3a1 1 0 01-1-1v-3a1 1 0 011-1z" />
+      <path d="M11 5.5a3 3 0 010 5" />
     </svg>
   );
 }
@@ -1569,7 +1569,6 @@ export function ChatPanel() {
           </div>
         )}
         <div class="chat-input-toolbar">
-          <div class="chat-input-toolbar-spacer" />
           {!commandMode.value && (
             <button
               class="chat-tool-btn upload-btn"
@@ -1577,10 +1576,12 @@ export function ChatPanel() {
               title="Upload file"
             >
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 6.5a3.5 3.5 0 0 1-7 0V3a2 2 0 1 1 4 0v4.5a1 1 0 0 1-2 0V3.5" />
+                <line x1="8" y1="3" x2="8" y2="13" />
+                <line x1="3" y1="8" x2="13" y2="8" />
               </svg>
             </button>
           )}
+          <div class="chat-input-toolbar-spacer" />
           <input
             type="file"
             ref={fileInputRef}
@@ -1606,9 +1607,9 @@ export function ChatPanel() {
             <button
               class="chat-tool-btn"
               onClick={toggleMute}
-              title={muted ? "Unmute notifications" : "Mute notifications"}
+              title={muted ? "Unmute audio" : "Mute audio"}
             >
-              <BellIcon muted={muted} />
+              <SpeakerIcon muted={muted} />
             </button>
           )}
           <button
