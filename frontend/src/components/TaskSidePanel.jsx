@@ -70,6 +70,9 @@ function panelTitle(entry, allTasks) {
   return "";
 }
 
+// ── Module-level tab state (survives signal-driven remounts) ──
+const _tabState = new Map();  // taskId -> { activeTab, visitedTabs }
+
 // ── Event delegation for linked content ──
 // Uses onClick prop (not useEffect+addEventListener) to avoid broken
 // commit-phase hook scheduling with @preact/signals v2.
@@ -778,8 +781,12 @@ export function TaskSidePanel() {
   // Mark tab as visited when selected
   const switchTab = useCallback((tab) => {
     setActiveTab(tab);
-    setVisitedTabs(prev => prev[tab] ? prev : { ...prev, [tab]: true });
-  }, []);
+    setVisitedTabs(prev => {
+      const next = prev[tab] ? prev : { ...prev, [tab]: true };
+      _tabState.set(id, { activeTab: tab, visitedTabs: next });
+      return next;
+    });
+  }, [id]);
 
   // Load task data when panel opens — stale-while-revalidate.
   // If we have cached data for this task, show it immediately;
@@ -799,11 +806,15 @@ export function TaskSidePanel() {
     setActivityRaw(c.activityRaw ?? null);
     setActivityLoaded(!!c.activityRaw);
 
-    // Always open on overview tab (don't restore cached tab selection)
-    setActiveTab("overview");
-
-    // Only mark overview as initially visited (lazy-load other tabs)
-    setVisitedTabs({ overview: true });
+    // Restore tab state if we have it (survives signal-driven remounts)
+    const saved = _tabState.get(id);
+    if (saved) {
+      setActiveTab(saved.activeTab);
+      setVisitedTabs(saved.visitedTabs);
+    } else {
+      setActiveTab("overview");
+      setVisitedTabs({ overview: true });
+    }
 
     const cached = allTasks.find(t => t.id === id);
     if (cached) setTask(cached);
