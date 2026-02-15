@@ -60,6 +60,7 @@ from delegate.config import get_default_human
 from delegate.task import list_tasks as _list_tasks, get_task as _get_task, get_task_diff as _get_task_diff, get_task_merge_preview as _get_merge_preview, get_task_commit_diffs as _get_commit_diffs, update_task as _update_task, change_status as _change_status, VALID_STATUSES, format_task_id
 from delegate.chat import get_messages as _get_messages, get_task_stats as _get_task_stats, get_agent_stats as _get_agent_stats, get_team_agent_stats as _get_team_agent_stats, log_event as _log_event
 from delegate.mailbox import send as _send, read_inbox as _read_inbox, read_outbox as _read_outbox, count_unread as _count_unread
+from delegate.doctor import check_api_key
 logger = logging.getLogger(__name__)
 
 
@@ -223,8 +224,8 @@ def _build_first_run_greeting(
     if not has_api_key:
         lines.append("")
         lines.append(
-            "⚠️ No API key detected — set `ANTHROPIC_API_KEY` or use "
-            "`--env-file` to enable the AI agents."
+            "⚠️ No API key detected — set `ANTHROPIC_API_KEY`, run `claude login`, "
+            "or use `--env-file` to enable the AI agents."
         )
 
     return "\n".join(lines)
@@ -1282,7 +1283,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 if a.get("role") != "manager"
             ]
             has_repos = bool(list_repos(hc_home, team))
-            has_api_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+            has_api_key = check_api_key().passed
 
             greeting = _build_first_run_greeting(
                 hc_home, team, manager_name, human_name,
