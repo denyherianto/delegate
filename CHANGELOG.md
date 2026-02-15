@@ -5,11 +5,41 @@ All notable changes to Delegate are documented here.
 ## 0.2.5 — 2026-02-15
 
 ### Added
+- **Persistent agent conversations (Telephone)** — agents now maintain a single persistent Claude subprocess across turns via `ClaudeSDKClient`, eliminating process-per-turn overhead. Conversations auto-rotate when the context window fills, summarising state into memory for the next generation.
+- **Prompt class** — extracted prompt building from `agent.py` into a dedicated `Prompt` class with composable methods for charter, task context, message history, and reflection prompts.
 - **OS-level bash sandboxing** — agents run with macOS Seatbelt / Linux bubblewrap isolation via `claude-agent-sdk`. Bash commands are kernel-restricted to the delegate home directory and platform temp directory; writes outside are blocked at the OS level regardless of what the model attempts.
+- **Write-path enforcement per role** — managers can write anywhere under the team directory; engineers are restricted to their agent directory, task worktree(s), and the team `shared/` folder. Enforced via `can_use_tool` callback on every tool invocation.
 - **Migrated to `claude-agent-sdk`** — replaced `claude-code-sdk` (v0.0.25) with `claude-agent-sdk` (v0.1.36), which bundles the Claude Code CLI binary (no separate `npm install` required) and adds native `SandboxSettings` support.
+- **`/agent add` slash command** — spawn new agents from the chat UI without touching the CLI.
+- **Agents page redesign** — row layout grouped by teams, with unified Messages tab (merged inbox/outbox), contextual turn labels, and persistent activity logs with turn dividers.
+- **Task panel redesign** — improved hierarchy, metadata display, and virtualized diff rendering (plain HTML for comment-free lines) for better performance on large diffs.
+- **Scroll-to-bottom shortcut** — keyboard shortcut to jump to the latest message, plus a two-column help modal for discovering all shortcuts.
+- **Individual idle agents in sidebar** — sidebar now shows each idle agent individually instead of a count, with gray dots for idle teams.
+- **One-shot frontend build on `delegate start`** — ensures the frontend bundle is fresh on every daemon start, even without `--dev`.
 
 ### Changed
 - **Defense-in-depth permissioning** — three independent layers now enforce write isolation: (1) `can_use_tool` callback blocks Edit/Write tools outside allowed paths, (2) `disallowed_tools` hides dangerous git commands at the SDK level, (3) OS sandbox restricts all bash file writes at the kernel level.
+- **Consolidated token usage tracking** — replaced scattered `TurnTokens` / `_collect_tokens_from_message` implementations with a single `TelephoneUsage` class that handles extraction, arithmetic, and accumulation.
+- **`--repo` now required** on `delegate team add` — the manager charter is updated to reflect this. Review commit gate relaxed (no longer requires a commit before submitting for review).
+- **Agent name optional** in `/agent add` — omitting the name auto-generates one from the name pool.
+- **Merge conflict notifications simplified** — now show only the conflicting file list instead of verbose git output.
+- **Markdown rendering performance** — cached and memoized markdown-to-HTML conversion to avoid redundant re-parses on every render cycle.
+- **Chat toolbar icons** — updated to cleaner `+`, speaker, and header bell icons.
+- **Cmd+K team switcher disabled on non-chat pages** — prevents accidental team switches while browsing tasks or agents.
+
+### Fixed
+- **Task panel tabs snapping back to Overview** — signal subscription in render body caused full re-renders on every poll; refactored to use `tasks.peek()` and `effect()` for subscriptions, hardened tab state persistence.
+- **Task panel stuck on "Loading"** — `.peek()` used for signal reads that don't need reactivity, preventing unnecessary re-render cascades.
+- **Agent usage stats showing same numbers across teams** — fixed cross-team stat leakage.
+- **Uploaded files not viewable** — file viewer iframe path resolution fixed.
+- **Task page team flicker on approval** — eliminated a reactivity loop during approval transitions.
+- **Agent panel layout** — message header alignment and tab ordering fixed.
+- **File path regex** — now correctly matches directory paths (not just files).
+- **Sidebar Active Teams widget** — hides idle teams, uses gray dots for status.
+- **Toast and file viewer button colors** — close button and action button colors corrected.
+- **Status command styling** — removed green links and parentheses from `/status` output.
+- **Activity log lookup** — uses `findLast` for newest entry instead of first match.
+- **Welcome message** — removed spurious API key check that could show false warnings.
 
 ## 0.2.4 — 2026-02-15
 
