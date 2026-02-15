@@ -860,7 +860,7 @@ export function TaskSidePanel() {
         setActivityRaw([]);
       });
     })();
-  }, [id, allTasks]);
+  }, [id]);
 
   // Sync task from signal when SSE pushes updates
   useEffect(() => {
