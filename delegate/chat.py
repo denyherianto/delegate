@@ -310,6 +310,78 @@ def get_agent_stats(hc_home: Path, team: str, agent: str) -> dict:
     return stats
 
 
+_EMPTY_AGENT_STATS = {
+    "session_count": 0,
+    "agent_time_seconds": 0.0,
+    "total_tokens_in": 0,
+    "total_tokens_out": 0,
+    "total_cost_usd": 0.0,
+    "total_cache_read": 0,
+    "total_cache_write": 0,
+}
+
+
+def get_team_agent_stats(hc_home: Path, team: str, agent_names: list[str]) -> dict[str, dict]:
+    """Batch-fetch stats for all agents in a team with a single DB connection.
+
+    Returns {agent_name: stats_dict}.  Uses one GROUP BY query for session
+    aggregates and one list_tasks call for all agents, instead of N+1 queries.
+    """
+    from delegate.task import list_tasks
+
+    if not agent_names:
+        return {}
+
+    conn = get_connection(hc_home, team)
+    try:
+        # Single aggregate query for all agents at once
+        rows = conn.execute(
+            f"""SELECT agent,
+                COUNT(*) as session_count,
+                COALESCE(SUM(duration_seconds), 0.0) as agent_time_seconds,
+                COALESCE(SUM(tokens_in), 0) as total_tokens_in,
+                COALESCE(SUM(tokens_out), 0) as total_tokens_out,
+                COALESCE(SUM(cost_usd), 0.0) as total_cost_usd,
+                COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+                COALESCE(SUM(cache_write_tokens), 0) as total_cache_write
+            FROM sessions WHERE team = ?
+            GROUP BY agent""",
+            (team,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    session_map: dict[str, dict] = {}
+    for r in rows:
+        session_map[r["agent"]] = dict(r)
+
+    # Single list_tasks call for the whole team, group by assignee in Python
+    all_tasks = list_tasks(hc_home, team)
+    tasks_by_agent: dict[str, list[dict]] = {}
+    for t in all_tasks:
+        a = t.get("assignee")
+        if a:
+            tasks_by_agent.setdefault(a, []).append(t)
+
+    result: dict[str, dict] = {}
+    for name in agent_names:
+        stats = dict(session_map.get(name, _EMPTY_AGENT_STATS))
+        stats.pop("agent", None)  # remove the GROUP BY key
+
+        agent_tasks = tasks_by_agent.get(name, [])
+        tasks_done = sum(1 for t in agent_tasks if t.get("status") == "done")
+        tasks_in_review = sum(1 for t in agent_tasks if t.get("status") == "in_review")
+        avg_task_seconds = stats["agent_time_seconds"] / tasks_done if tasks_done > 0 else 0.0
+
+        stats["tasks_done"] = tasks_done
+        stats["tasks_in_review"] = tasks_in_review
+        stats["tasks_total"] = len(agent_tasks)
+        stats["avg_task_seconds"] = avg_task_seconds
+        result[name] = stats
+
+    return result
+
+
 def get_project_stats(hc_home: Path, team: str, project: str) -> dict:
     """Get aggregated stats for all tasks in a project."""
     from delegate.task import list_tasks

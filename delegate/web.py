@@ -58,7 +58,7 @@ from delegate.paths import (
 )
 from delegate.config import get_default_human
 from delegate.task import list_tasks as _list_tasks, get_task as _get_task, get_task_diff as _get_task_diff, get_task_merge_preview as _get_merge_preview, get_task_commit_diffs as _get_commit_diffs, update_task as _update_task, change_status as _change_status, VALID_STATUSES, format_task_id
-from delegate.chat import get_messages as _get_messages, get_task_stats as _get_task_stats, get_agent_stats as _get_agent_stats, log_event as _log_event
+from delegate.chat import get_messages as _get_messages, get_task_stats as _get_task_stats, get_agent_stats as _get_agent_stats, get_team_agent_stats as _get_team_agent_stats, log_event as _log_event
 from delegate.mailbox import send as _send, read_inbox as _read_inbox, read_outbox as _read_outbox, count_unread as _count_unread
 logger = logging.getLogger(__name__)
 
@@ -716,7 +716,11 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     # --- Bootstrap endpoint (all initial data in one call) ---
 
     def _get_teams_list():
-        """Shared teams-list logic for /teams and /bootstrap."""
+        """Shared teams-list logic for /teams and /bootstrap.
+
+        Uses cheap directory counts for agent/human counts instead of
+        loading full agent data (YAML, unread, last_active) per agent.
+        """
         from delegate.db import get_connection
         from delegate.config import get_human_members
 
@@ -726,26 +730,34 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 "SELECT name, team_id, created_at FROM teams ORDER BY created_at ASC"
             ).fetchall()
             human_names = {m["name"] for m in get_human_members(hc_home)}
+
+            # Batch task counts in one query
+            task_counts: dict[str, int] = {}
+            for r in conn.execute(
+                "SELECT team, COUNT(*) as cnt FROM tasks GROUP BY team"
+            ).fetchall():
+                task_counts[r["team"]] = r["cnt"]
+
             result = []
             for row in teams_rows:
                 team_name = row["name"]
-                agent_count = len(_list_team_agents(hc_home, team_name))
-                task_count = conn.execute(
-                    "SELECT COUNT(*) FROM tasks WHERE team = ?",
-                    (team_name,)
-                ).fetchone()[0]
+                # Cheap dir scan: count agent vs human dirs (no YAML/DB per agent)
+                agent_count = 0
                 human_count = 0
                 team_agents_dir = _agents_dir(hc_home, team_name)
                 if team_agents_dir.is_dir():
                     for d in team_agents_dir.iterdir():
-                        if d.is_dir() and d.name in human_names:
-                            human_count += 1
+                        if d.is_dir():
+                            if d.name in human_names:
+                                human_count += 1
+                            else:
+                                agent_count += 1
                 result.append({
                     "name": team_name,
                     "team_id": row["team_id"],
                     "created_at": row["created_at"],
                     "agent_count": agent_count,
-                    "task_count": task_count,
+                    "task_count": task_counts.get(team_name, 0),
                     "human_count": human_count,
                 })
             return result
@@ -782,20 +794,20 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
         if initial_team:
             agents_data = _list_team_agents(hc_home, initial_team)
-            agent_stats = {}
-            for a in agents_data:
-                try:
-                    s = _get_agent_stats(hc_home, initial_team, a["name"])
-                    if s:
-                        agent_stats[a["name"]] = s
-                except Exception:
-                    pass
+
+            # Batch agent stats: single GROUP BY query + single list_tasks
+            # instead of N separate connections
+            agent_names = [a["name"] for a in agents_data]
+            agent_stats = _get_team_agent_stats(hc_home, initial_team, agent_names)
+
+            tasks_data = _list_tasks(hc_home, initial_team)
+            messages_data = _get_messages(hc_home, initial_team, limit=100)
 
             result["initial_data"] = {
-                "tasks": _list_tasks(hc_home, initial_team),
+                "tasks": tasks_data,
                 "agents": agents_data,
                 "agent_stats": agent_stats,
-                "messages": _get_messages(hc_home, initial_team, limit=100),
+                "messages": messages_data,
             }
 
         return result
@@ -1620,9 +1632,13 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         """Get merge preview — scans all teams (legacy compat)."""
         for t in _list_teams(hc_home):
             try:
-                _get_task(hc_home, t, task_id)
+                task = _get_task(hc_home, t, task_id)
                 preview = _get_merge_preview(hc_home, t, task_id)
-                return preview
+                return {
+                    "task_id": task_id,
+                    "branch": task.get("branch", ""),
+                    "diff": preview,
+                }
             except FileNotFoundError:
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
@@ -2185,19 +2201,33 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     if _static_dir.is_dir():
         app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
+    # Cache-bust token: derived from content hash so browsers always fetch
+    # the latest bundle after a rebuild or package upgrade.
+    import hashlib as _hashlib
+    _cache_bust = ""
+    _app_js = _static_dir / "app.js"
+    if _app_js.is_file():
+        _hash = _hashlib.md5(_app_js.read_bytes()).hexdigest()[:8]
+        _cache_bust = f"?v={_hash}"
+
+    def _serve_index():
+        index_html = _static_dir / "index.html"
+        if not index_html.is_file():
+            return "Frontend not built. Run esbuild or npm run build."
+        html = index_html.read_text()
+        # Inject cache-bust query params for JS and CSS
+        if _cache_bust:
+            html = html.replace('"/static/app.js"', f'"/static/app.js{_cache_bust}"')
+            html = html.replace('"/static/styles.css"', f'"/static/styles.css{_cache_bust}"')
+        return html
+
     @app.get("/", response_class=HTMLResponse)
     def index():
-        index_html = _static_dir / "index.html"
-        if index_html.is_file():
-            return index_html.read_text()
-        return "Frontend not built. Run esbuild or npm run build."
+        return _serve_index()
 
     # Catch-all for SPA routing (must be last to not intercept API routes)
     @app.get("/{full_path:path}", response_class=HTMLResponse)
     def catch_all(full_path: str = ""):
-        index_html = _static_dir / "index.html"
-        if index_html.is_file():
-            return index_html.read_text()
-        return "Frontend not built. Run esbuild or npm run build."
+        return _serve_index()
 
     return app

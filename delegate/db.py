@@ -486,10 +486,16 @@ def ensure_schema(hc_home: Path, team: str = "") -> None:
 
     Note: team parameter is kept for backward compatibility but is no longer used.
     """
-    # Set up paths and version info
-    path = global_db_path(hc_home)
     key = str(hc_home)
     current_version = len(MIGRATIONS)
+
+    # Fast path: skip if schema already verified for this hc_home
+    with _schema_lock:
+        if _schema_verified.get(key) == current_version:
+            return
+
+    # Set up paths and version info
+    path = global_db_path(hc_home)
     path.parent.mkdir(parents=True, exist_ok=True)
 
     # Use isolation_level=None (autocommit) so Python's sqlite3 module

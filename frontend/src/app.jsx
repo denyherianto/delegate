@@ -478,17 +478,16 @@ function App() {
     }
   });
 
-  // ── SSE: one connection per team ──
-  // Also uses useSignalEffect so it auto-tracks teams.value.
+  // ── SSE: single global connection (avoids exhausting browser's 6-connection limit) ──
+  // Uses the /stream endpoint which delivers events for ALL teams with a `team` field.
+  // Each tab uses 1 connection instead of N (one per team).
   useSignalEffect(() => {
     const list = teams.value;              // ← auto-tracked
     if (!list || list.length === 0) return;
 
-    const connections = {};
-
+    // Ensure backing stores and manager names for all teams
     for (const teamObj of list) {
       const team = typeof teamObj === "object" ? teamObj.name : teamObj;
-      // Ensure backing store slots exist
       if (!_pt.activity[team])    _pt.activity[team]    = {};
       if (!_pt.activityLog[team]) _pt.activityLog[team] = [];
       if (!_pt.turnState[team])   _pt.turnState[team]   = {};
@@ -500,146 +499,141 @@ function App() {
           _pt.managerName[team] = mgr?.name ?? null;
         }).catch(() => { _pt.managerName[team] = null; });
       }
+    }
 
-      const es = new EventSource(`/teams/${team}/activity/stream`);
+    const es = new EventSource("/stream");
 
-      es.onmessage = (evt) => {
-        try {
-          const entry = JSON.parse(evt.data);
-          if (entry.type === "connected") return;
+    es.onmessage = (evt) => {
+      try {
+        const entry = JSON.parse(evt.data);
+        if (entry.type === "connected") return;
 
-          const isCurrent = (team === currentTeam.value);
+        const team = entry.team;
+        if (!team) return;  // skip events without team field
 
-          // ── turn_started ──
-          if (entry.type === "turn_started") {
-            // Track turn state for all agents
-            if (!_pt.turnState[team]) _pt.turnState[team] = {};
-            _pt.turnState[team][entry.agent] = {
-              inTurn: true,
-              taskId: entry.task_id ?? null,
-              sender: entry.sender ?? ""
-            };
+        const isCurrent = (team === currentTeam.value);
 
-            const mgrName = _pt.managerName[team];
-            if (mgrName && mgrName === entry.agent) {
-              _pt.managerCtx[team] = entry;
-              if (isCurrent) managerTurnContext.value = entry;
-            }
-
-            if (isCurrent) _syncSignals(team);
-            return;
-          }
-
-          // ── turn_ended ──
-          if (entry.type === "turn_ended") {
-            // Update turn state for all agents
-            if (_pt.turnState[team] && _pt.turnState[team][entry.agent]) {
-              _pt.turnState[team][entry.agent] = {
-                inTurn: false,
-                taskId: _pt.turnState[team][entry.agent].taskId
-              };
-            }
-
-            // Clear activity log entries for this agent
-            const log = _pt.activityLog[team];
-            if (log) {
-              _pt.activityLog[team] = log.filter(e => e.agent !== entry.agent);
-            }
-
-            const ctx = _pt.managerCtx[team];
-            if (ctx && ctx.agent === entry.agent) {
-              _pt.managerCtx[team] = null;
-              if (isCurrent) managerTurnContext.value = null;
-            }
-
-            if (isCurrent) _syncSignals(team);
-            return;
-          }
-
-          // ── task_update ──
-          if (entry.type === "task_update") {
-            if (isCurrent) {
-              const tid = entry.task_id;
-              const cur = tasks.value;
-              const idx = cur.findIndex(t => t.id === tid);
-              if (idx !== -1) {
-                const task = cur[idx];
-                const updated = { ...task };
-                if (entry.status !== undefined) updated.status = entry.status;
-                if (entry.assignee !== undefined) updated.assignee = entry.assignee;
-                const next = [...cur];
-                next[idx] = updated;
-                tasks.value = next;
-
-                // Fire toasts for task status changes
-                const human = humanName.value;
-
-                // Task assigned to human (in_approval or merge_failed)
-                if (entry.assignee && entry.assignee.toLowerCase() === human.toLowerCase() &&
-                    (entry.status === "in_approval" || entry.status === "merge_failed")) {
-                  const title = `T${String(tid).padStart(4, "0")} "${task.title}"`;
-                  const body = entry.status === "in_approval"
-                    ? "Needs your approval"
-                    : "Merge failed -- needs resolution";
-                  showActionToast({ title, body, taskId: tid, type: "info" });
-                }
-
-                // Task completed
-                if (entry.status === "done") {
-                  const title = `T${String(tid).padStart(4, "0")} "${task.title}"`;
-                  const body = "Merged successfully";
-                  showActionToast({ title, body, taskId: tid, type: "success" });
-                }
-              }
-            }
-            return;
-          }
-
-          // ── agent_activity ──
-          _pt.activity[team][entry.agent] = entry;
-
-          const log = _pt.activityLog[team];
-          if (log.length >= MAX_LOG_ENTRIES) log.splice(0, log.length - MAX_LOG_ENTRIES + 1);
-          log.push(entry);
+        // ── turn_started ──
+        if (entry.type === "turn_started") {
+          if (!_pt.turnState[team]) _pt.turnState[team] = {};
+          _pt.turnState[team][entry.agent] = {
+            inTurn: true,
+            taskId: entry.task_id ?? null,
+            sender: entry.sender ?? ""
+          };
 
           const mgrName = _pt.managerName[team];
-          if (mgrName && entry.agent === mgrName) {
-            const ctx = _pt.managerCtx[team];
-            if (ctx) {
-              _pt.managerCtx[team] = { ...ctx, timestamp: entry.timestamp };
-            } else {
-              _pt.managerCtx[team] = {
-                type: "turn_started",
-                agent: entry.agent,
-                team: team,
-                task_id: entry.task_id ?? null,
-                sender: "",
-                timestamp: entry.timestamp,
-              };
-            }
-          }
-
-          // Ensure turnState reflects active work when agent_activity events arrive
-          if (!_pt.turnState[team]) _pt.turnState[team] = {};
-          if (!_pt.turnState[team][entry.agent] || !_pt.turnState[team][entry.agent].inTurn) {
-            _pt.turnState[team][entry.agent] = {
-              inTurn: true,
-              taskId: entry.task_id ?? null,
-              sender: ""
-            };
+          if (mgrName && mgrName === entry.agent) {
+            _pt.managerCtx[team] = entry;
+            if (isCurrent) managerTurnContext.value = entry;
           }
 
           if (isCurrent) _syncSignals(team);
-        } catch (e) { /* ignore malformed events */ }
-      };
+          return;
+        }
 
-      es.onerror = () => {};
-      connections[team] = es;
-    }
+        // ── turn_ended ──
+        if (entry.type === "turn_ended") {
+          if (_pt.turnState[team] && _pt.turnState[team][entry.agent]) {
+            _pt.turnState[team][entry.agent] = {
+              inTurn: false,
+              taskId: _pt.turnState[team][entry.agent].taskId
+            };
+          }
 
-    return () => {
-      for (const es of Object.values(connections)) es.close();
+          const log = _pt.activityLog[team];
+          if (log) {
+            _pt.activityLog[team] = log.filter(e => e.agent !== entry.agent);
+          }
+
+          const ctx = _pt.managerCtx[team];
+          if (ctx && ctx.agent === entry.agent) {
+            _pt.managerCtx[team] = null;
+            if (isCurrent) managerTurnContext.value = null;
+          }
+
+          if (isCurrent) _syncSignals(team);
+          return;
+        }
+
+        // ── task_update ──
+        if (entry.type === "task_update") {
+          if (isCurrent) {
+            const tid = entry.task_id;
+            const cur = tasks.value;
+            const idx = cur.findIndex(t => t.id === tid);
+            if (idx !== -1) {
+              const task = cur[idx];
+              const updated = { ...task };
+              if (entry.status !== undefined) updated.status = entry.status;
+              if (entry.assignee !== undefined) updated.assignee = entry.assignee;
+              const next = [...cur];
+              next[idx] = updated;
+              tasks.value = next;
+
+              const human = humanName.value;
+
+              if (entry.assignee && entry.assignee.toLowerCase() === human.toLowerCase() &&
+                  (entry.status === "in_approval" || entry.status === "merge_failed")) {
+                const title = `T${String(tid).padStart(4, "0")} "${task.title}"`;
+                const body = entry.status === "in_approval"
+                  ? "Needs your approval"
+                  : "Merge failed -- needs resolution";
+                showActionToast({ title, body, taskId: tid, type: "info" });
+              }
+
+              if (entry.status === "done") {
+                const title = `T${String(tid).padStart(4, "0")} "${task.title}"`;
+                const body = "Merged successfully";
+                showActionToast({ title, body, taskId: tid, type: "success" });
+              }
+            }
+          }
+          return;
+        }
+
+        // ── agent_activity ──
+        if (!_pt.activity[team]) _pt.activity[team] = {};
+        _pt.activity[team][entry.agent] = entry;
+
+        if (!_pt.activityLog[team]) _pt.activityLog[team] = [];
+        const log = _pt.activityLog[team];
+        if (log.length >= MAX_LOG_ENTRIES) log.splice(0, log.length - MAX_LOG_ENTRIES + 1);
+        log.push(entry);
+
+        const mgrName = _pt.managerName[team];
+        if (mgrName && entry.agent === mgrName) {
+          const ctx = _pt.managerCtx[team];
+          if (ctx) {
+            _pt.managerCtx[team] = { ...ctx, timestamp: entry.timestamp };
+          } else {
+            _pt.managerCtx[team] = {
+              type: "turn_started",
+              agent: entry.agent,
+              team: team,
+              task_id: entry.task_id ?? null,
+              sender: "",
+              timestamp: entry.timestamp,
+            };
+          }
+        }
+
+        if (!_pt.turnState[team]) _pt.turnState[team] = {};
+        if (!_pt.turnState[team][entry.agent] || !_pt.turnState[team][entry.agent].inTurn) {
+          _pt.turnState[team][entry.agent] = {
+            inTurn: true,
+            taskId: entry.task_id ?? null,
+            sender: ""
+          };
+        }
+
+        if (isCurrent) _syncSignals(team);
+      } catch (e) { /* ignore malformed events */ }
     };
+
+    es.onerror = () => {};
+
+    return () => es.close();
   });
 
   return (

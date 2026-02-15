@@ -6,9 +6,13 @@ All notable changes to Delegate are documented here.
 
 ### Changed
 - **esbuild watcher gated behind `--dev` flag** — `delegate start` no longer auto-starts the esbuild frontend watcher in dev checkouts. Use `delegate start --dev` to enable live frontend rebuilds. This avoids unnecessary node processes and potential startup delays in normal usage.
+- **Single global SSE stream** — frontend opens one `EventSource` to `/stream` instead of one per team, eliminating browser connection pool exhaustion when multiple tabs are open.
+- **Content-hash cache busting** — static assets (`app.js`, `styles.css`) served with `?v={hash}` derived from file contents, ensuring browsers always fetch the latest bundle after rebuilds or upgrades without manual version bumps.
+- **`/bootstrap` performance** — eliminated redundant `ensure_schema` checks, batched agent stats into a single `GROUP BY` query, and reduced per-team agent counting to a cheap directory listing; ~80% faster cold bootstrap.
 
 ### Fixed
 - **`team remove` not cleaning up database** — removed teams still appeared in the UI because the `teams` table row was never deleted; now cleaned up on removal.
+- **UI hang with multiple tabs** — per-team SSE connections exhausted the browser's 6-connection HTTP/1.1 pool; switching to a single global stream freed connections for normal API requests.
 
 ## 0.2.3 — 2026-02-15
 
