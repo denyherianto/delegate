@@ -1848,6 +1848,13 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         """List AI agents for a team (excludes human members)."""
         return _list_team_agents(hc_home, team)
 
+    @app.get("/teams/{team}/agents/stats")
+    def get_all_agent_stats(team: str):
+        """Get aggregated stats for all agents in a team (single DB query)."""
+        agents_data = _list_team_agents(hc_home, team)
+        agent_names = [a["name"] for a in agents_data]
+        return _get_team_agent_stats(hc_home, team, agent_names)
+
     @app.get("/teams/{team}/agents/{name}/stats")
     def get_agent_stats(team: str, name: str):
         """Get aggregated stats for a specific agent."""

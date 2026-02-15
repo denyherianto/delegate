@@ -239,6 +239,11 @@ export async function fetchAgentStats(team, agentName) {
   return r.ok ? r.json() : null;
 }
 
+export async function fetchAllAgentStats(team) {
+  const r = await fetch(`/teams/${team}/agents/stats`);
+  return r.ok ? r.json() : {};
+}
+
 export async function fetchFileContent(team, path, opts = {}) {
   const r = await fetch(`/teams/${team}/files/content?path=${encodeURIComponent(path)}`, { signal: opts.signal });
   if (!r.ok) {

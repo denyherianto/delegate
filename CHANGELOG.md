@@ -4,11 +4,16 @@ All notable changes to Delegate are documented here.
 
 ## 0.2.4 — 2026-02-15
 
+### Added
+- **SharedWorker SSE multiplexing** — a `SharedWorker` maintains a single SSE connection to `/stream` shared across all browser tabs, with automatic fallback to direct `EventSource` when `SharedWorker` is unavailable. Unlimited tabs now share 1 HTTP connection.
+- **Batch agent stats endpoint** — `GET /teams/{team}/agents/stats` returns stats for all agents in a single `GROUP BY` query, replacing N individual per-agent requests.
+
 ### Changed
 - **esbuild watcher gated behind `--dev` flag** — `delegate start` no longer auto-starts the esbuild frontend watcher in dev checkouts. Use `delegate start --dev` to enable live frontend rebuilds. This avoids unnecessary node processes and potential startup delays in normal usage.
 - **Single global SSE stream** — frontend opens one `EventSource` to `/stream` instead of one per team, eliminating browser connection pool exhaustion when multiple tabs are open.
 - **Content-hash cache busting** — static assets (`app.js`, `styles.css`) served with `?v={hash}` derived from file contents, ensuring browsers always fetch the latest bundle after rebuilds or upgrades without manual version bumps.
 - **`/bootstrap` performance** — eliminated redundant `ensure_schema` checks, batched agent stats into a single `GROUP BY` query, and reduced per-team agent counting to a cheap directory listing; ~80% faster cold bootstrap.
+- **Agent stats deferred to agents tab** — polling loop only fetches agent stats when the agents tab is active, eliminating unnecessary DB round-trips on chat and tasks views.
 
 ### Fixed
 - **`team remove` not cleaning up database** — removed teams still appeared in the UI because the `teams` table row was never deleted; now cleaned up on removal.

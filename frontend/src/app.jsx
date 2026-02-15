@@ -257,15 +257,13 @@ function App() {
           api.fetchAgentsCrossTeam(),
         ]);
 
-        const statsMap = {};
-        await Promise.all(
-          agentData.map(async (a) => {
-            try {
-              const s = await api.fetchAgentStats(t, a.name);
-              if (s) statsMap[a.name] = s;
-            } catch (e) { }
-          })
-        );
+        // Only fetch stats when on the agents tab — saves N+1 DB queries otherwise
+        let statsMap = agentStatsMap.value; // keep previous
+        if (activeTab.value === "agents") {
+          try {
+            statsMap = await api.fetchAllAgentStats(t);
+          } catch (e) { }
+        }
 
         if (active && t === currentTeam.value && filter === taskTeamFilter.value) {
           batch(() => {
@@ -478,9 +476,9 @@ function App() {
     }
   });
 
-  // ── SSE: single global connection (avoids exhausting browser's 6-connection limit) ──
-  // Uses the /stream endpoint which delivers events for ALL teams with a `team` field.
-  // Each tab uses 1 connection instead of N (one per team).
+  // ── SSE: SharedWorker multiplexes a single /stream connection across all tabs ──
+  // Falls back to a direct EventSource if SharedWorker is unavailable (e.g. file:// origin).
+  // This means unlimited tabs share just 1 HTTP connection for real-time events.
   useSignalEffect(() => {
     const list = teams.value;              // ← auto-tracked
     if (!list || list.length === 0) return;
@@ -501,77 +499,74 @@ function App() {
       }
     }
 
-    const es = new EventSource("/stream");
+    // Handle an SSE event (shared between worker and direct paths)
+    const handleSSE = (entry) => {
+      if (entry.type === "connected") return;
 
-    es.onmessage = (evt) => {
-      try {
-        const entry = JSON.parse(evt.data);
-        if (entry.type === "connected") return;
+      const team = entry.team;
+      if (!team) return;  // skip events without team field
 
-        const team = entry.team;
-        if (!team) return;  // skip events without team field
+      const isCurrent = (team === currentTeam.value);
 
-        const isCurrent = (team === currentTeam.value);
+      // ── turn_started ──
+      if (entry.type === "turn_started") {
+        if (!_pt.turnState[team]) _pt.turnState[team] = {};
+        _pt.turnState[team][entry.agent] = {
+          inTurn: true,
+          taskId: entry.task_id ?? null,
+          sender: entry.sender ?? ""
+        };
 
-        // ── turn_started ──
-        if (entry.type === "turn_started") {
-          if (!_pt.turnState[team]) _pt.turnState[team] = {};
+        const mgrName = _pt.managerName[team];
+        if (mgrName && mgrName === entry.agent) {
+          _pt.managerCtx[team] = entry;
+          if (isCurrent) managerTurnContext.value = entry;
+        }
+
+        if (isCurrent) _syncSignals(team);
+        return;
+      }
+
+      // ── turn_ended ──
+      if (entry.type === "turn_ended") {
+        if (_pt.turnState[team] && _pt.turnState[team][entry.agent]) {
           _pt.turnState[team][entry.agent] = {
-            inTurn: true,
-            taskId: entry.task_id ?? null,
-            sender: entry.sender ?? ""
+            inTurn: false,
+            taskId: _pt.turnState[team][entry.agent].taskId
           };
-
-          const mgrName = _pt.managerName[team];
-          if (mgrName && mgrName === entry.agent) {
-            _pt.managerCtx[team] = entry;
-            if (isCurrent) managerTurnContext.value = entry;
-          }
-
-          if (isCurrent) _syncSignals(team);
-          return;
         }
 
-        // ── turn_ended ──
-        if (entry.type === "turn_ended") {
-          if (_pt.turnState[team] && _pt.turnState[team][entry.agent]) {
-            _pt.turnState[team][entry.agent] = {
-              inTurn: false,
-              taskId: _pt.turnState[team][entry.agent].taskId
-            };
-          }
-
-          const log = _pt.activityLog[team];
-          if (log) {
-            _pt.activityLog[team] = log.filter(e => e.agent !== entry.agent);
-          }
-
-          const ctx = _pt.managerCtx[team];
-          if (ctx && ctx.agent === entry.agent) {
-            _pt.managerCtx[team] = null;
-            if (isCurrent) managerTurnContext.value = null;
-          }
-
-          if (isCurrent) _syncSignals(team);
-          return;
+        const log = _pt.activityLog[team];
+        if (log) {
+          _pt.activityLog[team] = log.filter(e => e.agent !== entry.agent);
         }
 
-        // ── task_update ──
-        if (entry.type === "task_update") {
-          if (isCurrent) {
-            const tid = entry.task_id;
-            const cur = tasks.value;
-            const idx = cur.findIndex(t => t.id === tid);
-            if (idx !== -1) {
-              const task = cur[idx];
-              const updated = { ...task };
-              if (entry.status !== undefined) updated.status = entry.status;
-              if (entry.assignee !== undefined) updated.assignee = entry.assignee;
-              const next = [...cur];
-              next[idx] = updated;
-              tasks.value = next;
+        const ctx = _pt.managerCtx[team];
+        if (ctx && ctx.agent === entry.agent) {
+          _pt.managerCtx[team] = null;
+          if (isCurrent) managerTurnContext.value = null;
+        }
 
-              const human = humanName.value;
+        if (isCurrent) _syncSignals(team);
+        return;
+      }
+
+      // ── task_update ──
+      if (entry.type === "task_update") {
+        if (isCurrent) {
+          const tid = entry.task_id;
+          const cur = tasks.value;
+          const idx = cur.findIndex(t => t.id === tid);
+          if (idx !== -1) {
+            const task = cur[idx];
+            const updated = { ...task };
+            if (entry.status !== undefined) updated.status = entry.status;
+            if (entry.assignee !== undefined) updated.assignee = entry.assignee;
+            const next = [...cur];
+            next[idx] = updated;
+            tasks.value = next;
+
+            const human = humanName.value;
 
               if (entry.assignee && entry.assignee.toLowerCase() === human.toLowerCase() &&
                   (entry.status === "in_approval" || entry.status === "merge_failed")) {
@@ -628,12 +623,35 @@ function App() {
         }
 
         if (isCurrent) _syncSignals(team);
-      } catch (e) { /* ignore malformed events */ }
     };
 
-    es.onerror = () => {};
+    // Try SharedWorker first (shares 1 SSE connection across all tabs)
+    let cleanup;
+    if (typeof SharedWorker !== "undefined") {
+      try {
+        const worker = new SharedWorker("/static/sse-worker.js", { name: "delegate-sse" });
+        worker.port.onmessage = (evt) => {
+          if (evt.data.type === "sse") handleSSE(evt.data.data);
+        };
+        worker.port.start();
+        worker.port.postMessage({ type: "init" });
+        cleanup = () => worker.port.close();
+      } catch (_) {
+        // SharedWorker failed (e.g. security restriction) — fall through to direct
+      }
+    }
 
-    return () => es.close();
+    // Fallback: direct EventSource (1 connection per tab)
+    if (!cleanup) {
+      const es = new EventSource("/stream");
+      es.onmessage = (evt) => {
+        try { handleSSE(JSON.parse(evt.data)); } catch (_) {}
+      };
+      es.onerror = () => {};
+      cleanup = () => es.close();
+    }
+
+    return cleanup;
   });
 
   return (
