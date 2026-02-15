@@ -551,11 +551,13 @@ function App() {
         // Push a visual separator instead of clearing the log
         const log = _pt.activityLog[team];
         if (log) {
+          const turnInfo = _pt.turnState[team]?.[entry.agent];
           _pt.activityLog[team].push({
             type: "turn_separator",
             agent: entry.agent,
             timestamp: new Date().toISOString(),
-            task_id: entry.task_id
+            task_id: entry.task_id,
+            sender: turnInfo?.sender ?? ""
           });
         }
 

@@ -220,10 +220,18 @@ function AgentView({ agentName }) {
         {entries.map((e, i) => {
           // Render turn separator
           if (e.type === "turn_separator") {
+            let label = "Turn ended";
+            if (e.sender && e.task_id != null) {
+              label = `Responding to ${e.sender} about ${taskIdStr(e.task_id)}`;
+            } else if (e.task_id != null) {
+              label = `Working on ${taskIdStr(e.task_id)}`;
+            } else if (e.sender) {
+              label = `Responding to ${e.sender}`;
+            }
             return (
               <div key={i} class="agent-activity-separator">
                 <span class="agent-activity-separator-line"></span>
-                <span class="agent-activity-separator-text">Turn ended</span>
+                <span class="agent-activity-separator-text">{label}</span>
                 <span class="agent-activity-separator-line"></span>
               </div>
             );
