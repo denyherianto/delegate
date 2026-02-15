@@ -36,7 +36,7 @@ function CyclingVerb() {
         setIndex((prev) => (prev + 1) % THINKING_WORDS.length);
         setIsTransitioning(false);
       }, 200);
-    }, 1000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, []);
