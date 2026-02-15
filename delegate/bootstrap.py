@@ -331,7 +331,7 @@ def bootstrap(
 def add_agent(
     hc_home: Path,
     team_name: str,
-    agent_name: str,
+    agent_name: str | None = None,
     role: str = "engineer",
     seniority: str | None = None,
     bio: str | None = None,
@@ -345,11 +345,14 @@ def add_agent(
     Args:
         hc_home: Delegate home directory (~/.delegate).
         team_name: Name of the existing team.
-        agent_name: Name for the new agent.
+        agent_name: Name for the new agent. If None, a random name is generated.
         role: Agent role (default ``"engineer"``).
         seniority: ``"junior"`` or ``"senior"``.  Defaults based on role
             (manager → senior, others → junior).
         bio: Optional bio text.  If omitted a placeholder is written.
+
+    Returns:
+        The agent name (either the provided name or the auto-generated one).
 
     Raises:
         FileNotFoundError: If the team does not exist.
@@ -363,6 +366,28 @@ def add_agent(
     td = _team_dir(hc_home, team_name)
     if not td.is_dir():
         raise FileNotFoundError(f"Team '{team_name}' does not exist")
+
+    # Auto-generate name if not provided
+    if agent_name is None:
+        from delegate.names import pick_names
+        from delegate.config import get_human_members
+
+        # Build exclusion set: existing agents + human members + manager
+        exclude = {"delegate"}
+
+        # Add all human member names
+        human_members = get_human_members(hc_home)
+        for member in human_members:
+            exclude.add(member["name"])
+
+        # Add all existing agent names in this team
+        agents_root = _agents_dir(hc_home, team_name)
+        if agents_root.is_dir():
+            for agent_dir in agents_root.iterdir():
+                if agent_dir.is_dir():
+                    exclude.add(agent_dir.name)
+
+        agent_name = pick_names(1, exclude)[0]
 
     agents_root = _agents_dir(hc_home, team_name)
     member_dir = agents_root / agent_name
@@ -413,6 +438,8 @@ def add_agent(
         roster_text += "\n"
     roster_text += roster_line + "\n"
     rp.write_text(roster_text)
+
+    return agent_name
 
 
 def get_member_by_role(hc_home: Path, team: str, role: str) -> str | None:

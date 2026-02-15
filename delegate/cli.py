@@ -523,7 +523,7 @@ def agent() -> None:
 
 @agent.command("add")
 @click.argument("team")
-@click.argument("name")
+@click.argument("name", required=False, default=None)
 @click.option(
     "--role", default="engineer",
     help="Role for the new agent (default: engineer).",
@@ -537,21 +537,21 @@ def agent() -> None:
     help="Short bio/description of the agent's strengths and focus.",
 )
 @click.pass_context
-def agent_add(ctx: click.Context, team: str, name: str, role: str, seniority: str, bio: str | None) -> None:
+def agent_add(ctx: click.Context, team: str, name: str | None, role: str, seniority: str, bio: str | None) -> None:
     """Add a new agent to an existing team.
 
-    TEAM is the team name.  NAME is the new agent's name.
+    TEAM is the team name.  NAME is the new agent's name (optional - auto-generated if omitted).
     """
     from delegate.bootstrap import add_agent
     from delegate.fmt import success
 
     hc_home = _get_home(ctx)
     try:
-        add_agent(hc_home, team_name=team, agent_name=name, role=role, seniority=seniority, bio=bio)
+        agent_name = add_agent(hc_home, team_name=team, agent_name=name, role=role, seniority=seniority, bio=bio)
     except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc))
 
-    success(f"Added agent '{name}' to team '{team}' (role: {role}, seniority: {seniority})")
+    success(f"Added agent '{agent_name}' to team '{team}' (role: {role}, seniority: {seniority or 'junior' if role != 'manager' else 'senior'})")
 
 
 # ──────────────────────────────────────────────────────────────

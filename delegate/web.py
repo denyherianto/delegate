@@ -1568,7 +1568,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     # --- Magic commands endpoints ---
 
     class AddAgentRequest(BaseModel):
-        name: str
+        name: str | None = None
         role: str | None = None
         seniority: str | None = None
         bio: str | None = None
@@ -1584,11 +1584,11 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         if req.bio is not None:
             kwargs["bio"] = req.bio
         try:
-            add_agent(**kwargs)
+            agent_name = add_agent(**kwargs)
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         seniority_display = req.seniority or ("junior" if req.role != "manager" else "senior")
-        return {"message": f"Added agent '{req.name}' to team '{team}' (role: {req.role or 'engineer'}, seniority: {seniority_display})"}
+        return {"message": f"Added agent '{agent_name}' to team '{team}' (role: {req.role or 'engineer'}, seniority: {seniority_display})"}
 
     class ShellExecRequest(BaseModel):
         command: str

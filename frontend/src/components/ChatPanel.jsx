@@ -1018,14 +1018,10 @@ export function ChatPanel() {
           }
 
           if (!result) {
-            if (!nameToken) {
-              result = { error: 'Usage: /agent add <name> [--role <role>] [--seniority junior|senior] [--bio \'...\']', exit_code: -1 };
-            } else {
-              try {
-                result = await api.addAgent(team, nameToken, options);
-              } catch (err) {
-                result = { error: err.message, exit_code: -1 };
-              }
+            try {
+              result = await api.addAgent(team, nameToken || null, options);
+            } catch (err) {
+              result = { error: err.message, exit_code: -1 };
             }
           }
         }
