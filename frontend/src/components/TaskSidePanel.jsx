@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks";
+import { effect } from "@preact/signals";
 import {
   tasks, taskPanelId, knownAgentNames, humanName,
   panelStack, pushPanel, closeAllPanels, popPanel, taskTeamFilter, currentTeam,
@@ -761,7 +762,14 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
 // ── Main TaskSidePanel ──
 export function TaskSidePanel() {
   const id = taskPanelId.value;
-  const allTasks = tasks.value;
+  // NOTE: Do NOT read tasks.value here in the render body.
+  // Doing so subscribes this component to the `tasks` signal,
+  // which the polling loop updates every 2 s with a new array ref.
+  // @preact/signals v2 can lose hook state on signal-driven re-renders
+  // (the known commit-phase scheduling bug), resetting activeTab to
+  // "overview" each time.  Instead, read tasks.value only inside
+  // effects / callbacks (which don't create signal subscriptions)
+  // and use tasks.peek() for the one render-time read (panelTitle).
 
   const [task, setTask] = useState(null);
   const [stats, setStats] = useState(null);
@@ -784,14 +792,20 @@ export function TaskSidePanel() {
   const [activityRaw, setActivityRaw] = useState(null);
   const [activityLoaded, setActivityLoaded] = useState(false);
 
-  // Mark tab as visited when selected
+  // Mark tab as visited when selected.
+  // IMPORTANT: persist to _tabState synchronously FIRST, before queuing
+  // any state setters.  @preact/signals v2 can trigger a commit-phase
+  // re-render between the click and the state commit, and if the
+  // component re-initialises hooks during that window it must find the
+  // latest tab in _tabState.
   const switchTab = useCallback((tab) => {
-    setActiveTab(tab);
-    setVisitedTabs(prev => {
-      const next = prev[tab] ? prev : { ...prev, [tab]: true };
-      _tabState.set(id, { activeTab: tab, visitedTabs: next });
-      return next;
+    const prev = _tabState.get(id) || { visitedTabs: { overview: true } };
+    _tabState.set(id, {
+      activeTab: tab,
+      visitedTabs: { ...prev.visitedTabs, [tab]: true },
     });
+    setActiveTab(tab);
+    setVisitedTabs(v => v[tab] ? v : { ...v, [tab]: true });
   }, [id]);
 
   // Load task data when panel opens — stale-while-revalidate.
@@ -822,7 +836,7 @@ export function TaskSidePanel() {
       setVisitedTabs({ overview: true });
     }
 
-    const cached = allTasks.find(t => t.id === id);
+    const cached = tasks.value.find(t => t.id === id);
     if (cached) setTask(cached);
 
     // ── Revalidate in background ──
@@ -879,12 +893,20 @@ export function TaskSidePanel() {
     })();
   }, [id]);
 
-  // Sync task from signal when SSE pushes updates
+  // Sync task from signal when SSE pushes updates.
+  // We subscribe to `tasks` via effect() (from @preact/signals) rather
+  // than reading tasks.value in the render body, which would re-subscribe
+  // the whole component and trigger signal-driven re-renders that can lose
+  // hook state due to the v2 commit-phase scheduling bug.
   useEffect(() => {
     if (id === null) return;
-    const updated = allTasks.find(t => t.id === id);
-    if (updated) setTask(prev => prev ? { ...prev, ...updated } : updated);
-  }, [allTasks, id]);
+    const dispose = effect(() => {
+      const allTasks = tasks.value;  // auto-tracked by effect()
+      const updated = allTasks.find(t => t.id === id);
+      if (updated) setTask(prev => prev ? { ...prev, ...updated } : updated);
+    });
+    return dispose;
+  }, [id]);
 
   // Lazy load diff when Changes tab first visited — stale-while-revalidate
   useEffect(() => {
@@ -980,7 +1002,7 @@ export function TaskSidePanel() {
         {/* Back bar */}
         {hasPrev && (
           <div class="panel-back-bar" onClick={popPanel}>
-            <span class="panel-back-arrow">&larr;</span> Back to {panelTitle(prev, allTasks)}
+            <span class="panel-back-arrow">&larr;</span> Back to {panelTitle(prev, tasks.peek())}
           </div>
         )}
         {/* Header */}
