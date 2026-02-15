@@ -258,10 +258,22 @@ function App() {
         ]);
 
         // Only fetch stats when on the agents tab — saves N+1 DB queries otherwise
-        let statsMap = agentStatsMap.value; // keep previous
+        let statsMapByTeam = agentStatsMap.value; // keep previous
         if (activeTab.value === "agents") {
           try {
-            statsMap = await api.fetchAllAgentStats(t);
+            // Fetch stats for all teams to support cross-team agent views
+            const teamList = teams.value || [];
+            const statsPromises = teamList.map(async (team) => {
+              const teamName = typeof team === 'string' ? team : team.name;
+              try {
+                const stats = await api.fetchAllAgentStats(teamName);
+                return [teamName, stats];
+              } catch (e) {
+                return [teamName, {}];
+              }
+            });
+            const statsResults = await Promise.all(statsPromises);
+            statsMapByTeam = Object.fromEntries(statsResults);
           } catch (e) { }
         }
 
@@ -269,7 +281,7 @@ function App() {
           batch(() => {
             tasks.value = taskData;
             agents.value = agentData;
-            agentStatsMap.value = statsMap;
+            agentStatsMap.value = statsMapByTeam;
             knownAgentNames.value = agentData.map(a => a.name);
             allTeamsAgents.value = allAgentData;
           });

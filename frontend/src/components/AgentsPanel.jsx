@@ -65,7 +65,7 @@ export function AgentsPanel() {
 
   // Render agent card (extracted to avoid duplication)
   const renderAgentCard = (a, showTeamBadge = false) => {
-    const stats = statsMap[a.name] || {};
+    const stats = (statsMap[a.team] || {})[a.name] || {};
     const currentTask = inProgressTasks.find(t => t.assignee === a.name);
     const roleBadge = roleBadgeMap[a.role] || cap(a.role || "worker");
     const doneToday = doneTodayByAgent[a.name] || 0;

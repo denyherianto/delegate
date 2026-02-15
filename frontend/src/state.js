@@ -18,7 +18,7 @@ export const taskTeamFilter = signal("all"); // "current" | "all" | specific tea
 // ── API data (refreshed by polling) ──
 export const tasks = signal([]);
 export const agents = signal([]);
-export const agentStatsMap = signal({}); // { agentName: statsObj }
+export const agentStatsMap = signal({}); // { teamName: { agentName: statsObj } }
 export const messages = signal([]);
 export const allTeamsAgents = signal([]); // All agents across all teams
 export const allTeamsTurnState = signal({}); // { teamName: { agentName: { inTurn, taskId, sender } } }

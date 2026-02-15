@@ -213,7 +213,7 @@ function AgentsWidget({ collapsed }) {
             <div key={teamName} class="sb-team-group">
               <div class="sb-team-name">{teamName}</div>
               {active.map(({ agent: a, status, displayTaskId, respondingTo, taskStatus }) => {
-                let dotClass = getAgentDotClass(a, allTasks, statsMap[a.name]);
+                let dotClass = getAgentDotClass(a, allTasks, (statsMap[a.team] || {})[a.name]);
 
                 // Get last 1 tool invocation for this agent (only for current team)
                 const agentActivities = isCurrentTeam
