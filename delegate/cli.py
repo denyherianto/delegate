@@ -177,6 +177,7 @@ def _auto_setup(hc_home: Path, success) -> None:
     default=None,
     help="Path to .env file to load (e.g. for ANTHROPIC_API_KEY).",
 )
+@click.option("--dev", is_flag=True, help="Enable dev mode (esbuild watcher for live frontend rebuilds).")
 @click.pass_context
 def start(
     ctx: click.Context,
@@ -186,6 +187,7 @@ def start(
     token_budget: int | None,
     foreground: bool,
     env_file: Path | None,
+    dev: bool,
 ) -> None:
     """Start delegate (web UI + agent orchestration)."""
     import webbrowser
@@ -266,6 +268,7 @@ def start(
             max_concurrent=max_concurrent,
             token_budget=token_budget,
             foreground=True,
+            dev=dev,
         )
     else:
         result_pid = start_daemon(
@@ -275,6 +278,7 @@ def start(
             max_concurrent=max_concurrent,
             token_budget=token_budget,
             foreground=False,
+            dev=dev,
         )
         if result_pid:
             success(f"Delegate started (PID {result_pid})")

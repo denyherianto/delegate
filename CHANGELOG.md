@@ -4,6 +4,9 @@ All notable changes to Delegate are documented here.
 
 ## 0.2.4 — 2026-02-15
 
+### Changed
+- **esbuild watcher gated behind `--dev` flag** — `delegate start` no longer auto-starts the esbuild frontend watcher in dev checkouts. Use `delegate start --dev` to enable live frontend rebuilds. This avoids unnecessary node processes and potential startup delays in normal usage.
+
 ### Fixed
 - **`team remove` not cleaning up database** — removed teams still appeared in the UI because the `teams` table row was never deleted; now cleaned up on removal.
 

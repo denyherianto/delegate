@@ -54,11 +54,15 @@ def start_daemon(
     max_concurrent: int = 32,
     token_budget: int | None = None,
     foreground: bool = False,
+    dev: bool = False,
 ) -> int | None:
     """Start the daemon.
 
     If *foreground* is True, runs uvicorn in the current process (blocking).
     Otherwise, spawns a background subprocess and writes its PID.
+
+    When *dev* is True, the esbuild frontend watcher is started alongside
+    the server for live rebuilds during development.
 
     Returns the PID of the spawned process (or None if foreground).
     """
@@ -77,6 +81,8 @@ def start_daemon(
     env["DELEGATE_PORT"] = str(port)
     if token_budget is not None:
         env["DELEGATE_TOKEN_BUDGET"] = str(token_budget)
+    if dev:
+        env["DELEGATE_DEV"] = "1"
 
     if foreground:
         # Run in current process (blocking)

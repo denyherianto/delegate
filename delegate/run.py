@@ -80,7 +80,10 @@ def main():
         os.environ["DELEGATE_TOKEN_BUDGET"] = str(args.token_budget)
 
     # --- Start uvicorn (reload on by default) ---
+    # reload implies dev mode — enable esbuild watcher
     reload = not args.no_reload
+    if reload:
+        os.environ["DELEGATE_DEV"] = "1"
     uvicorn.run(
         "delegate.web:create_app",
         factory=True,

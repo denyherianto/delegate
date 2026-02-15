@@ -596,10 +596,12 @@ async def _lifespan(app: FastAPI):
             _daemon_loop(hc_home, interval, max_concurrent, token_budget)
         )
 
-    # Auto-start frontend watcher if source checkout detected
-    frontend_dir = _find_frontend_dir()
-    if frontend_dir:
-        esbuild_proc = _start_esbuild_watch(frontend_dir)
+    # Auto-start frontend watcher only in dev mode (delegate start --dev)
+    dev_mode = os.environ.get("DELEGATE_DEV", "").lower() in ("1", "true", "yes")
+    if dev_mode:
+        frontend_dir = _find_frontend_dir()
+        if frontend_dir:
+            esbuild_proc = _start_esbuild_watch(frontend_dir)
 
     yield
 
