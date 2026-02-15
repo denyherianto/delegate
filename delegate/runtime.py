@@ -42,7 +42,6 @@ from delegate.agent import (
     _read_state,
     _next_worklog_number,
     _process_turn_messages,
-    TurnTokens,
     SENIORITY_MODELS,
     DEFAULT_SENIORITY,
     MAX_BATCH_SIZE,
@@ -384,7 +383,7 @@ async def _stream_telephone(
     tel: Any,
     prompt: str,
     alog: AgentLogger,
-    turn_tokens: TurnTokens,
+    turn_tokens: TelephoneUsage,
     turn_tools: list[str],
     worklog_lines: list[str],
     *,
@@ -394,11 +393,11 @@ async def _stream_telephone(
     current_task_id: int | None,
 ) -> None:
     """Send a prompt through a Telephone, process each message."""
-    # usage tracking for persistent telephone is different so 
-    # pass a dummy usage object to the _process_turn_messages function.
-    # and update the turn_tokens object with the actual usage after the turn.
-    starting_usage = tel.usage()
-    dummy = TelephoneUsage()
+    # Telephone._track_message already updates tel.usage internally.
+    # Snapshot before/after to compute the per-turn delta and add it
+    # to the caller's accumulator.
+    starting_usage = tel.total_usage()
+    dummy = TelephoneUsage()  # throwaway so _process_turn_messages can do worklog/tools
     async for msg in tel.send(prompt):
         _process_turn_messages(
             msg, alog, dummy, turn_tools, worklog_lines,
@@ -410,12 +409,7 @@ async def _stream_telephone(
                 if tool_name:
                     broadcast_activity(agent, team, tool_name, detail, task_id=current_task_id)
 
-    ending_usage = tel.usage()
-    turn_tokens.input += ending_usage.input_tokens - starting_usage.input_tokens
-    turn_tokens.output += ending_usage.output_tokens - starting_usage.output_tokens
-    turn_tokens.cache_read += ending_usage.cache_read_tokens - starting_usage.cache_read_tokens
-    turn_tokens.cache_write += ending_usage.cache_write_tokens - starting_usage.cache_write_tokens
-    turn_tokens.cost_usd += ending_usage.cost_usd - starting_usage.cost_usd
+    turn_tokens += tel.total_usage() - starting_usage
 
 
 async def _stream_legacy(
@@ -423,7 +417,7 @@ async def _stream_legacy(
     prompt: str,
     options: Any,
     alog: AgentLogger,
-    turn_tokens: TurnTokens,
+    turn_tokens: TelephoneUsage,
     turn_tools: list[str],
     worklog_lines: list[str],
     *,
@@ -629,7 +623,7 @@ async def run_turn(
     alog.turn_start(1, user_msg)
 
     # --- Main turn ---
-    turn = TurnTokens()
+    turn = TelephoneUsage()
     turn_tools: list[str] = []
     error_occurred = False
 
@@ -675,10 +669,10 @@ async def run_turn(
         try:
             end_session(
                 hc_home, team, session_id,
-                tokens_in=turn.input, tokens_out=turn.output,
+                tokens_in=turn.input_tokens, tokens_out=turn.output_tokens,
                 cost_usd=turn.cost_usd,
-                cache_read_tokens=turn.cache_read,
-                cache_write_tokens=turn.cache_write,
+                cache_read_tokens=turn.cache_read_tokens,
+                cache_write_tokens=turn.cache_write_tokens,
             )
         except Exception:
             logger.exception("Failed to end session")
@@ -693,22 +687,22 @@ async def run_turn(
     # --- Post-turn bookkeeping ---
     alog.turn_end(
         1,
-        tokens_in=turn.input,
-        tokens_out=turn.output,
+        tokens_in=turn.input_tokens,
+        tokens_out=turn.output_tokens,
         cost_usd=turn.cost_usd,
-        cumulative_tokens_in=turn.input,
-        cumulative_tokens_out=turn.output,
+        cumulative_tokens_in=turn.input_tokens,
+        cumulative_tokens_out=turn.output_tokens,
         cumulative_cost=turn.cost_usd,
         tool_calls=turn_tools or None,
     )
 
     update_session_tokens(
         hc_home, team, session_id,
-        tokens_in=turn.input,
-        tokens_out=turn.output,
+        tokens_in=turn.input_tokens,
+        tokens_out=turn.output_tokens,
         cost_usd=turn.cost_usd,
-        cache_read_tokens=turn.cache_read,
-        cache_write_tokens=turn.cache_write,
+        cache_read_tokens=turn.cache_read_tokens,
+        cache_write_tokens=turn.cache_write_tokens,
     )
 
     _mark_batch_processed(hc_home, team, batch)
@@ -729,9 +723,9 @@ async def run_turn(
             pass
 
     # --- Optional reflection turn (1-in-10 coin flip) ---
-    total = TurnTokens(
-        input=turn.input, output=turn.output,
-        cache_read=turn.cache_read, cache_write=turn.cache_write,
+    total = TelephoneUsage(
+        input_tokens=turn.input_tokens, output_tokens=turn.output_tokens,
+        cache_read_tokens=turn.cache_read_tokens, cache_write_tokens=turn.cache_write_tokens,
         cost_usd=turn.cost_usd,
     )
     turn_num = 1
@@ -746,7 +740,7 @@ async def run_turn(
             worklog_lines.append(f"\n## Turn 2 (reflection)\n{ref_msg}")
             alog.turn_start(2, ref_msg)
 
-            ref = TurnTokens()
+            ref = TelephoneUsage()
             ref_tools: list[str] = []
 
             ref_stream_kw = dict(
@@ -781,19 +775,15 @@ async def run_turn(
                     ref_options = sdk_options_class(**ref_kw)
                     await _stream_legacy(sdk_query, ref_msg, ref_options, **ref_stream_kw)
 
-                total.input += ref.input
-                total.output += ref.output
-                total.cache_read += ref.cache_read
-                total.cache_write += ref.cache_write
-                total.cost_usd += ref.cost_usd
+                total += ref
 
                 alog.turn_end(
                     2,
-                    tokens_in=ref.input,
-                    tokens_out=ref.output,
+                    tokens_in=ref.input_tokens,
+                    tokens_out=ref.output_tokens,
                     cost_usd=ref.cost_usd,
-                    cumulative_tokens_in=total.input,
-                    cumulative_tokens_out=total.output,
+                    cumulative_tokens_in=total.input_tokens,
+                    cumulative_tokens_out=total.output_tokens,
                     cumulative_cost=total.cost_usd,
                     tool_calls=ref_tools or None,
                 )
@@ -802,29 +792,29 @@ async def run_turn(
             except Exception as exc:
                 alog.error("Reflection turn failed: %s", exc)
     finally:
-        result.tokens_in = total.input
-        result.tokens_out = total.output
-        result.cache_read = total.cache_read
-        result.cache_write = total.cache_write
+        result.tokens_in = total.input_tokens
+        result.tokens_out = total.output_tokens
+        result.cache_read = total.cache_read_tokens
+        result.cache_write = total.cache_write_tokens
         result.cost_usd = total.cost_usd
         result.turns = turn_num
 
         try:
             update_session_tokens(
                 hc_home, team, session_id,
-                tokens_in=total.input,
-                tokens_out=total.output,
+                tokens_in=total.input_tokens,
+                tokens_out=total.output_tokens,
                 cost_usd=total.cost_usd,
-                cache_read_tokens=total.cache_read,
-                cache_write_tokens=total.cache_write,
+                cache_read_tokens=total.cache_read_tokens,
+                cache_write_tokens=total.cache_write_tokens,
             )
         except Exception:
             logger.exception("Failed to update session tokens")
 
         alog.session_end_log(
             turns=turn_num,
-            tokens_in=total.input,
-            tokens_out=total.output,
+            tokens_in=total.input_tokens,
+            tokens_out=total.output_tokens,
             cost_usd=total.cost_usd,
         )
 
@@ -833,7 +823,7 @@ async def run_turn(
         # context.md: in telephone mode, on_rotation writes it.
         # In legacy mode, write a basic summary as before.
         if not use_telephone:
-            total_tokens = total.input + total.output
+            total_tokens = total.input_tokens + total.output_tokens
             (ad / "context.md").write_text(
                 f"Last session: {datetime.now(timezone.utc).isoformat()}\n"
                 f"Turns: {turn_num}\n"

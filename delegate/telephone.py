@@ -79,13 +79,23 @@ _UNSET = object()
 
 @dataclass
 class TelephoneUsage:
-    """Cumulative token usage for a telephone conversation."""
+    """Token / cost accounting — single source of truth.
+
+    Used both as a per-message snapshot and as a cumulative
+    accumulator.  Supports arithmetic (``+``, ``-``, ``+=``) so
+    callers can combine per-turn deltas into lifetime totals.
+
+    The ``from_sdk_message()`` classmethod extracts usage from
+    a ``ResultMessage`` emitted by the Claude Code SDK.
+    """
 
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     cost_usd: float = 0.0
+
+    # --- Arithmetic ---------------------------------------------------
 
     def __add__(self, other: TelephoneUsage) -> TelephoneUsage:
         return TelephoneUsage(
@@ -96,6 +106,14 @@ class TelephoneUsage:
             cost_usd=self.cost_usd + other.cost_usd,
         )
 
+    def __iadd__(self, other: TelephoneUsage) -> TelephoneUsage:
+        self.input_tokens += other.input_tokens
+        self.output_tokens += other.output_tokens
+        self.cache_read_tokens += other.cache_read_tokens
+        self.cache_write_tokens += other.cache_write_tokens
+        self.cost_usd += other.cost_usd
+        return self
+
     def __sub__(self, other: TelephoneUsage) -> TelephoneUsage:
         return TelephoneUsage(
             input_tokens=self.input_tokens - other.input_tokens,
@@ -104,19 +122,59 @@ class TelephoneUsage:
             cache_write_tokens=self.cache_write_tokens - other.cache_write_tokens,
             cost_usd=self.cost_usd - other.cost_usd,
         )
+
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, TelephoneUsage):
             return False
         return (
-            self.input_tokens == other.input_tokens 
-            and self.output_tokens == other.output_tokens 
-            and self.cache_read_tokens == other.cache_read_tokens 
-            and self.cache_write_tokens == other.cache_write_tokens 
+            self.input_tokens == other.input_tokens
+            and self.output_tokens == other.output_tokens
+            and self.cache_read_tokens == other.cache_read_tokens
+            and self.cache_write_tokens == other.cache_write_tokens
             and abs(self.cost_usd - other.cost_usd) < 1e-6
         )
 
     def __ne__(self, other: Any) -> bool:
         return not self == other
+
+    # --- SDK extraction -----------------------------------------------
+
+    @classmethod
+    def from_sdk_message(cls, msg: Any) -> TelephoneUsage:
+        """Extract usage from a Claude Code SDK ``ResultMessage``.
+
+        Only ``ResultMessage`` carries usage/cost data.
+        ``AssistantMessage`` has ``content`` and ``model`` but no usage
+        fields — the SDK aggregates all token/cost info into the single
+        ``ResultMessage`` emitted at the end of each ``query()`` call.
+
+        Returns a zero-valued instance for non-ResultMessage inputs.
+        """
+        if not hasattr(msg, "total_cost_usd"):
+            return cls()
+
+        cost = msg.total_cost_usd or 0.0
+        usage = getattr(msg, "usage", None)
+        tin = tout = cache_read = cache_write = 0
+
+        if usage and isinstance(usage, dict):
+            tin = usage.get("input_tokens", 0)
+            tout = usage.get("output_tokens", 0)
+            cache_read = usage.get("cache_read_input_tokens", 0)
+            cache_write = usage.get("cache_creation_input_tokens", 0)
+        elif usage is not None:
+            logger.warning(
+                "Unexpected usage type %s on %s — skipping",
+                type(usage).__name__, type(msg).__name__,
+            )
+
+        return cls(
+            input_tokens=tin,
+            output_tokens=tout,
+            cache_read_tokens=cache_read,
+            cache_write_tokens=cache_write,
+            cost_usd=cost,
+        )
 
 # ---------------------------------------------------------------------------
 # Telephone
@@ -589,44 +647,9 @@ class Telephone:
 
     def _track_message(self, msg: Any) -> None:
         """Update token accounting from a ``ResultMessage``."""
-        # Import lazily to avoid hard dep at module level.
-        try:
-            from claude_code_sdk import ResultMessage
-        except ImportError:
-            return
-
-        if not isinstance(msg, ResultMessage):
-            return
-
-        u = msg.usage or {}
-
-        # token counts are NOT cumulative, so we can just add them to the existing values.
-        if u.get("input_tokens") is not None:
-            self.usage.input_tokens += u.get("input_tokens")
-        else:
-            logger.warning("No input tokens found in usage")
-
-        if u.get("output_tokens") is not None:
-            self.usage.output_tokens += u.get("output_tokens")
-        else:
-            logger.warning("No output tokens found in usage")
-
-        if u.get("cache_read_input_tokens") is not None:
-            self.usage.cache_read_tokens += u.get("cache_read_input_tokens")
-        else:
-            logger.warning("No cache read tokens found in usage")
-
-        if u.get("cache_creation_input_tokens") is not None:
-            self.usage.cache_write_tokens += u.get("cache_creation_input_tokens")
-        else:
-            logger.warning("No cache creation tokens found in usage")
-
-        # cost is cumulative, so we can just set the value.
-        if msg.total_cost_usd is not None:
-            assert msg.total_cost_usd >= self.usage.cost_usd, "cost should be non-decreasing"
-            self.usage.cost_usd = msg.total_cost_usd
-        else:
-            logger.warning("No cost found in usage")
+        delta = TelephoneUsage.from_sdk_message(msg)
+        if delta.input_tokens or delta.output_tokens:
+            self.usage += delta
 
 
 # ---------------------------------------------------------------------------

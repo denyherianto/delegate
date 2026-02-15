@@ -15,7 +15,6 @@ import logging
 import re
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -704,64 +703,6 @@ def build_reflection_message(hc_home: Path, team: str, agent: str) -> str:
 # Token / worklog helpers
 # ---------------------------------------------------------------------------
 
-@dataclass
-class TokenUsage:
-    """Token usage extracted from a single ResultMessage."""
-
-    input: int = 0
-    output: int = 0
-    cache_read: int = 0
-    cache_write: int = 0
-    cost_usd: float = 0.0
-
-
-def _collect_tokens_from_message(msg: Any) -> TokenUsage:
-    """Extract authoritative token usage from a ``ResultMessage``.
-
-    Only ``ResultMessage`` carries usage/cost data in the Claude Code SDK.
-    ``AssistantMessage`` has ``content`` and ``model`` but no usage fields —
-    the SDK aggregates all token/cost info into the single ``ResultMessage``
-    emitted at the end of each ``query()`` call.
-
-    The ``usage`` dict follows the Anthropic API shape::
-
-        {
-            "input_tokens": int,
-            "output_tokens": int,
-            "cache_creation_input_tokens": int,   # tokens written to cache
-            "cache_read_input_tokens": int,        # tokens served from cache
-        }
-    """
-    msg_type = type(msg).__name__
-    if not hasattr(msg, "total_cost_usd"):
-        logger.debug("Skipping %s (no total_cost_usd attr)", msg_type)
-        return TokenUsage()
-
-    cost = msg.total_cost_usd or 0.0
-    usage = getattr(msg, "usage", None)
-    tin = tout = cache_read = cache_write = 0
-
-    if usage and isinstance(usage, dict):
-        tin = usage.get("input_tokens", 0)
-        tout = usage.get("output_tokens", 0)
-        cache_read = usage.get("cache_read_input_tokens", 0)
-        cache_write = usage.get("cache_creation_input_tokens", 0)
-    elif usage is not None:
-        logger.warning(
-            "Unexpected usage type %s on %s — skipping token extraction",
-            type(usage).__name__, msg_type,
-        )
-
-    logger.debug(
-        "Token extract from %s: in=%d out=%d cache_read=%d cache_write=%d cost=%.6f",
-        msg_type, tin, tout, cache_read, cache_write, cost,
-    )
-    return TokenUsage(
-        input=tin, output=tout,
-        cache_read=cache_read, cache_write=cache_write,
-        cost_usd=cost,
-    )
-
 
 def _extract_tool_calls_rich(msg: Any) -> list[dict]:
     """Extract tool call names and key inputs from a response message.
@@ -858,29 +799,10 @@ def _extract_tool_calls(msg: Any) -> list[str]:
 # Turn processing helper
 # ---------------------------------------------------------------------------
 
-@dataclass
-class TurnTokens:
-    """Mutable accumulator for token usage across a turn."""
-
-    input: int = 0
-    output: int = 0
-    cache_read: int = 0
-    cache_write: int = 0
-    cost_usd: float = 0.0
-
-    def add(self, usage: TokenUsage) -> None:
-        self.input += usage.input
-        self.output += usage.output
-        self.cache_read += usage.cache_read
-        self.cache_write += usage.cache_write
-        if usage.cost_usd > 0:
-            self.cost_usd = usage.cost_usd  # ResultMessage gives cumulative cost
-
-
 def _process_turn_messages(
     msg: Any,
     alog: AgentLogger,
-    turn_tokens: TurnTokens,
+    turn_tokens: Any,  # TelephoneUsage (imported by runtime)
     turn_tools: list[str],
     worklog_lines: list[str],
     *,
@@ -890,9 +812,12 @@ def _process_turn_messages(
     """Process a single response message: extract tokens, tools, worklog.
 
     Mutates ``turn_tokens`` and ``turn_tools`` in place.
+    ``turn_tokens`` is a ``TelephoneUsage`` instance — the ``+=``
+    operator accumulates the per-message delta.
     """
-    usage = _collect_tokens_from_message(msg)
-    turn_tokens.add(usage)
+    from delegate.telephone import TelephoneUsage
+
+    turn_tokens += TelephoneUsage.from_sdk_message(msg)
 
     # Log tool calls
     tools = _extract_tool_calls_rich(msg)
