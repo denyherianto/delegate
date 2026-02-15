@@ -197,9 +197,6 @@ function AgentsWidget({ collapsed }) {
           const active = agentsWithStatus.filter(a => a.status !== "idle");
           const idle = agentsWithStatus.filter(a => a.status === "idle");
 
-          // Only show teams with at least one active member
-          if (active.length === 0) return null;
-
           // Sort active: working first, then waiting, alpha within
           active.sort((a, b) => {
             const order = { working: 0, waiting: 1 };
@@ -280,11 +277,26 @@ function AgentsWidget({ collapsed }) {
                   </div>
                 );
               })}
-              {idle.length > 0 && (
-                <div class="sb-idle-summary">
-                  {idle.length} agent{idle.length !== 1 ? "s" : ""} idle
-                </div>
-              )}
+              {idle.map(({ agent: a }) => {
+                const dotClass = getAgentDotClass(a, allTasks, (statsMap[a.team] || {})[a.name]);
+                return (
+                  <div
+                    key={a.name}
+                    class="sb-agent-row"
+                  >
+                    <div class="sb-agent-line1">
+                      <span class={"sb-dot " + dotClass}></span>
+                      <span
+                        class="sb-agent-name"
+                        onClick={(e) => { e.stopPropagation(); openPanel("agent", a.name); }}
+                      >
+                        {cap(a.name)}
+                      </span>
+                      <span class="sb-agent-status">idle</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           );
         })}
