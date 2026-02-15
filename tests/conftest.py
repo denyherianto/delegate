@@ -6,6 +6,28 @@ from pathlib import Path
 
 import pytest
 
+
+# ---------------------------------------------------------------------------
+# --run-llm gate: skip @pytest.mark.llm tests unless the flag is passed
+# ---------------------------------------------------------------------------
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-llm",
+        action="store_true",
+        default=False,
+        help="Run tests that call live LLM APIs (costly, requires auth).",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--run-llm"):
+        return  # run everything
+    skip_llm = pytest.mark.skip(reason="needs --run-llm flag to run")
+    for item in items:
+        if "llm" in item.keywords:
+            item.add_marker(skip_llm)
+
 # Ensure the worktree's delegate/ directory is on the package path so that
 # new modules (e.g. delegate.notify) are importable even before the branch
 # is merged to main and installed.

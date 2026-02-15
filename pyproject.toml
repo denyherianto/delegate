@@ -38,9 +38,9 @@ packages = ["delegate"]
 delegate = "delegate.cli:main"
 
 [dependency-groups]
-dev = ["httpx>=0.28.1", "pytest>=9.0.2", "pytest-asyncio>=1.3.0"]
+dev = ["httpx>=0.28.1", "pytest>=9.0.2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-asyncio_mode = "auto"
+markers = ["llm: tests that call live LLM APIs (run with --run-llm)"]
