@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks";
 import {
   tasks, taskPanelId, knownAgentNames, humanName,
-  panelStack, pushPanel, closeAllPanels, popPanel, taskTeamFilter,
+  panelStack, pushPanel, closeAllPanels, popPanel, taskTeamFilter, currentTeam,
 } from "../state.js";
 import * as api from "../api.js";
 import {
@@ -925,8 +925,12 @@ export function TaskSidePanel() {
   const close = useCallback(() => { closeAllPanels(); }, []);
 
   const handleAction = useCallback(() => {
-    // Refresh task list using task's team (task object has team field)
-    if (task && task.team) {
+    const filter = taskTeamFilter.value;
+    if (filter === "all") {
+      api.fetchAllTasks().then(list => { tasks.value = list; });
+    } else if (filter === "current") {
+      api.fetchTasks(currentTeam.value).then(list => { tasks.value = list; });
+    } else if (task && task.team) {
       api.fetchTasks(task.team).then(list => { tasks.value = list; });
     }
   }, [task]);
