@@ -2,6 +2,15 @@
 
 All notable changes to Delegate are documented here.
 
+## 0.2.5 — 2026-02-15
+
+### Added
+- **OS-level bash sandboxing** — agents run with macOS Seatbelt / Linux bubblewrap isolation via `claude-agent-sdk`. Bash commands are kernel-restricted to the delegate home directory and platform temp directory; writes outside are blocked at the OS level regardless of what the model attempts.
+- **Migrated to `claude-agent-sdk`** — replaced `claude-code-sdk` (v0.0.25) with `claude-agent-sdk` (v0.1.36), which bundles the Claude Code CLI binary (no separate `npm install` required) and adds native `SandboxSettings` support.
+
+### Changed
+- **Defense-in-depth permissioning** — three independent layers now enforce write isolation: (1) `can_use_tool` callback blocks Edit/Write tools outside allowed paths, (2) `disallowed_tools` hides dangerous git commands at the SDK level, (3) OS sandbox restricts all bash file writes at the kernel level.
+
 ## 0.2.4 — 2026-02-15
 
 ### Added

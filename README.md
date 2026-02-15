@@ -110,6 +110,43 @@ Agents are [Claude Code](https://docs.anthropic.com/en/docs/claude-code) instanc
 
 There's no magic. You can `ls` into any agent's directory and see exactly what they're doing. Worklogs, memory journals, context files — it's all plain text.
 
+## Sandboxing & Permissions
+
+Delegate restricts what agents can do through three independent layers — defense-in-depth so no single bypass compromises the system:
+
+**1. Write-path isolation (`can_use_tool` callback)**
+
+Every agent turn runs with a programmatic guard that inspects each tool call before it executes. The `Edit` and `Write` tools are only allowed to target files inside explicitly permitted directories:
+
+| Role | Allowed write paths |
+|------|-------------------|
+| Manager | Entire team directory (`~/.delegate/teams/<team>/`) |
+| Engineer | Own agent directory, task worktree(s), team `shared/` folder |
+
+Writes outside these paths are denied with an error message — the model sees the denial and can adjust.
+
+**2. Disallowed git commands (`disallowed_tools`)**
+
+Several git commands that could change branch topology or pull in external state are hidden from agents entirely at the SDK level:
+
+```
+git rebase, git merge, git pull, git push, git fetch,
+git checkout, git switch, git reset --hard, git worktree
+```
+
+Agents never see these tools and cannot invoke them — branch management is handled by Delegate's merge worker instead.
+
+**3. OS-level bash sandbox (macOS Seatbelt / Linux bubblewrap)**
+
+All bash commands run inside an OS-level sandbox provided by Claude Code's native sandboxing. The sandbox restricts filesystem writes to:
+
+- `DELEGATE_HOME` (`~/.delegate/` by default) — all team data lives here
+- Platform temp directory (`/tmp` on Unix, `%TEMP%` on Windows)
+
+Even if the model crafts a bash command that bypasses the tool-level guards, the kernel blocks the write. Network access and other system calls are similarly restricted.
+
+Together these three layers mean: the model can only write to directories Delegate explicitly allows, cannot touch your git branch topology, and cannot escape the sandbox even through creative bash commands.
+
 ## Configuration
 
 ### Environment
@@ -188,7 +225,7 @@ npx playwright test
 
 Delegate is under active development. Here's what's coming:
 
-- **Sandboxing & permissions** — run agents in containers with fine-grained filesystem and network access controls, so you can safely let them operate on production repos.
+- ~~**Sandboxing & permissions**~~ — ✅ shipped in v0.2.5 (OS-level sandbox + write-path isolation + git command restrictions).
 - **More powerful workflows** — conditional transitions, parallel stages, human-in-the-loop checkpoints, and webhook triggers.
 - **External tool integrations** — GitHub (PRs, issues), Slack (notifications, commands), Linear (task sync), and CI/CD pipelines (GitHub Actions, etc.).
 - **Remote repositories** — push to and pull from remote Git hosts, not just local repos.
