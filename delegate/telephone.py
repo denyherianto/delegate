@@ -87,6 +87,36 @@ class TelephoneUsage:
     cache_write_tokens: int = 0
     cost_usd: float = 0.0
 
+    def __add__(self, other: TelephoneUsage) -> TelephoneUsage:
+        return TelephoneUsage(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
+            cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
+            cost_usd=self.cost_usd + other.cost_usd,
+        )
+
+    def __sub__(self, other: TelephoneUsage) -> TelephoneUsage:
+        return TelephoneUsage(
+            input_tokens=self.input_tokens - other.input_tokens,
+            output_tokens=self.output_tokens - other.output_tokens,
+            cache_read_tokens=self.cache_read_tokens - other.cache_read_tokens,
+            cache_write_tokens=self.cache_write_tokens - other.cache_write_tokens,
+            cost_usd=self.cost_usd - other.cost_usd,
+        )
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, TelephoneUsage):
+            return False
+        return (
+            self.input_tokens == other.input_tokens 
+            and self.output_tokens == other.output_tokens 
+            and self.cache_read_tokens == other.cache_read_tokens 
+            and self.cache_write_tokens == other.cache_write_tokens 
+            and abs(self.cost_usd - other.cost_usd) < 1e-6
+        )
+
+    def __ne__(self, other: Any) -> bool:
+        return not self == other
 
 # ---------------------------------------------------------------------------
 # Telephone
@@ -216,7 +246,8 @@ class Telephone:
         self._effective_write_paths: list[Path] | None = (
             list(self._allowed_write_paths) if self._allowed_write_paths is not None else None
         )
-        self.usage = TelephoneUsage()
+        self.usage = TelephoneUsage() # usage from current generation
+        self.prior_usage = TelephoneUsage() # usage from previous generations
         self.turns: int = 0
         self.created_at: float = time.time()
         self.generation: int = 0  # increments on each rotation
@@ -247,6 +278,9 @@ class Telephone:
             if paths is not None
             else None
         )
+    
+    def total_usage(self) -> TelephoneUsage:
+        return self.usage + self.prior_usage
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -427,9 +461,12 @@ class Telephone:
             self._stale_client = self._client
             self._client = None
         self.id = uuid.uuid4().hex
-        self.usage = TelephoneUsage()
         self.turns = 0
         self.created_at = time.time()
+        # roll over usage from this generation to the prior generations
+        self.prior_usage += self.usage
+        self.usage = TelephoneUsage()
+
         self.generation += 1
 
     # ------------------------------------------------------------------

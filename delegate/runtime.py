@@ -54,8 +54,10 @@ from delegate.mailbox import (
     Message,
 )
 from delegate.prompt import Prompt
+from delegate.telephone import Telephone, TelephoneUsage
 from delegate.task import format_task_id
 from delegate.activity import broadcast as broadcast_activity, broadcast_turn_event
+from delegate.paths import team_dir
 
 logger = logging.getLogger(__name__)
 
@@ -357,9 +359,6 @@ def _create_telephone(
     The ``on_rotation`` callback writes the rotation summary
     to the agent's ``context.md``.
     """
-    from delegate.telephone import Telephone
-    from delegate.paths import team_dir
-
     if ad is None:
         ad = _agent_dir(hc_home, team, agent)
 
@@ -395,9 +394,14 @@ async def _stream_telephone(
     current_task_id: int | None,
 ) -> None:
     """Send a prompt through a Telephone, process each message."""
+    # usage tracking for persistent telephone is different so 
+    # pass a dummy usage object to the _process_turn_messages function.
+    # and update the turn_tokens object with the actual usage after the turn.
+    starting_usage = tel.usage()
+    dummy = TelephoneUsage()
     async for msg in tel.send(prompt):
         _process_turn_messages(
-            msg, alog, turn_tokens, turn_tools, worklog_lines,
+            msg, alog, dummy, turn_tools, worklog_lines,
             agent=agent, task_label=task_label,
         )
         if hasattr(msg, "content"):
@@ -405,6 +409,13 @@ async def _stream_telephone(
                 tool_name, detail = _extract_tool_summary(block)
                 if tool_name:
                     broadcast_activity(agent, team, tool_name, detail, task_id=current_task_id)
+
+    ending_usage = tel.usage()
+    turn_tokens.input += ending_usage.input_tokens - starting_usage.input_tokens
+    turn_tokens.output += ending_usage.output_tokens - starting_usage.output_tokens
+    turn_tokens.cache_read += ending_usage.cache_read_tokens - starting_usage.cache_read_tokens
+    turn_tokens.cache_write += ending_usage.cache_write_tokens - starting_usage.cache_write_tokens
+    turn_tokens.cost_usd += ending_usage.cost_usd - starting_usage.cost_usd
 
 
 async def _stream_legacy(

@@ -135,6 +135,7 @@ class TestTelephoneUnit:
         assert t.usage.input_tokens == 0
         assert t.id != old_id  # new UUID
         assert t.generation == 1  # incremented
+        assert t.total_usage().input_tokens == 50_000
         assert t.memory == "important context"  # preserved!
 
     def test_needs_rotation(self, tmp_path):
@@ -310,6 +311,31 @@ class TestTelephoneUnit:
         )
         assert t.rotation_prompt is None
 
+    def test_usage_accumulates_and_resets(self, tmp_path):
+        """Usage accumulates within a generation and zeroes on reset."""
+        t = Telephone(preamble="hello", cwd=tmp_path)
+
+        # Simulate two turns of accumulated usage
+        t.usage = TelephoneUsage(input_tokens=1000, output_tokens=200, cache_read_tokens=50, cache_write_tokens=30, cost_usd=0.012)
+        t.prior_usage = TelephoneUsage(input_tokens=100, output_tokens=20, cache_read_tokens=5, cache_write_tokens=3, cost_usd=0.001)
+
+        # Simulate new generation usage — accumulates from zero
+        t.reset()
+        assert t.total_usage() == TelephoneUsage(input_tokens=1100, output_tokens=220, cache_read_tokens=55, cache_write_tokens=33, cost_usd=0.013)
+        assert t.prior_usage == t.total_usage()
+        assert t.usage == TelephoneUsage()
+
+    def test_needs_rotation_respects_reset(self, tmp_path):
+        """needs_rotation is true when over budget, false after reset."""
+        t = Telephone(preamble="hello", cwd=tmp_path, max_context_tokens=500)
+
+        assert not t.needs_rotation
+        t.usage.input_tokens = 501
+        assert t.needs_rotation
+
+        t.reset()
+        assert not t.needs_rotation  # usage zeroed → back under budget
+
 
 # ---------------------------------------------------------------------------
 # Live LLM integration tests
@@ -379,21 +405,21 @@ class TestTelephoneLive:
             )
             try:
                 await _send_and_collect(t, "Say hello three times.")
-                input_after_1 = t.usage.input_tokens
-                output_after_1 = t.usage.output_tokens
-                usd_after_1 = t.usage.cost_usd
-                cache_read_tokens_after_1 = t.usage.cache_read_tokens
-                cache_write_tokens_after_1 = t.usage.cache_write_tokens
+                input_after_1 = t.total_usage().input_tokens
+                output_after_1 = t.total_usage().output_tokens
+                usd_after_1 = t.total_usage().cost_usd
+                cache_read_tokens_after_1 = t.total_usage().cache_read_tokens
+                cache_write_tokens_after_1 = t.total_usage().cache_write_tokens
                 assert input_after_1 > 0, "input_tokens should be > 0"
                 assert output_after_1 > 0, "output_tokens should be > 0"
                 assert isinstance(usd_after_1, (int, float))
 
                 await _send_and_collect(t, "Say hello.")
-                input_after_2 = t.usage.input_tokens
-                output_after_2 = t.usage.output_tokens
-                cache_read_tokens_after_2 = t.usage.cache_read_tokens
-                cache_write_tokens_after_2 = t.usage.cache_write_tokens
-                usd_after_2 = t.usage.cost_usd
+                input_after_2 = t.total_usage().input_tokens
+                output_after_2 = t.total_usage().output_tokens
+                cache_read_tokens_after_2 = t.total_usage().cache_read_tokens
+                cache_write_tokens_after_2 = t.total_usage().cache_write_tokens
+                usd_after_2 = t.total_usage().cost_usd
 
                 assert input_after_2 > input_after_1, (
                     f"Expected input_tokens to grow: {input_after_1} -> {input_after_2}"
