@@ -1006,10 +1006,12 @@ def _run_daemon_loop(
     from delegate.runtime import run_turn
     from delegate.mailbox import agents_with_unread
     from delegate.merge import merge_once
+    from delegate.telephone import TelephoneExchange
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     active: dict[str, asyncio.Task] = {}
+    exchange = TelephoneExchange()
 
     logger.info("Eval daemon loop started — polling every %.1fs", interval)
 
@@ -1043,7 +1045,7 @@ def _run_daemon_loop(
             if len(active) >= max_concurrent:
                 break
             active[agent_name] = asyncio.create_task(
-                run_turn(hc_home, team, agent_name)
+                run_turn(hc_home, team, agent_name, exchange=exchange)
             )
             logger.info("Dispatched turn for %s", agent_name)
 

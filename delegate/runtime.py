@@ -341,12 +341,36 @@ def _extract_tool_summary(block: Any) -> tuple[str, str]:
 # Telephone creation helper
 # ---------------------------------------------------------------------------
 
+def _write_paths_for_role(
+    hc_home: Path,
+    team: str,
+    agent: str,
+    role: str,
+) -> list[str]:
+    """Return the base allowed-write paths for an agent based on its role.
+
+    * **manager** — the entire team directory (manages all agents/tasks).
+    * **everyone else** — agent's own directory + the team ``shared/`` folder.
+      Per-task worktree paths are added dynamically each turn.
+    """
+    from delegate.paths import shared_dir, agent_dir as _ad
+
+    if role == "manager":
+        return [str(team_dir(hc_home, team))]
+
+    return [
+        str(_ad(hc_home, team, agent)),
+        str(shared_dir(hc_home, team)),
+    ]
+
+
 def _create_telephone(
     hc_home: Path,
     team: str,
     agent: str,
     *,
     preamble: str,
+    role: str = "engineer",
     model: str | None = None,
     ad: Path | None = None,
 ) -> Any:
@@ -354,6 +378,11 @@ def _create_telephone(
 
     Uses the team home as ``cwd`` (per design: all agents get
     ``team_dir`` as their working directory).
+
+    Write-path enforcement is role-based:
+    * Manager — may write anywhere under the team directory.
+    * Workers — may write to their own agent directory, the team
+      ``shared/`` folder, and (added per-turn) task worktree paths.
 
     The ``on_rotation`` callback writes the rotation summary
     to the agent's ``context.md``.
@@ -369,6 +398,7 @@ def _create_telephone(
         preamble=preamble,
         cwd=team_dir(hc_home, team),
         model=model,
+        allowed_write_paths=_write_paths_for_role(hc_home, team, agent, role),
         add_dirs=[str(hc_home)],
         disallowed_tools=DISALLOWED_TOOLS,
         on_rotation=_on_rotation,
@@ -376,7 +406,7 @@ def _create_telephone(
 
 
 # ---------------------------------------------------------------------------
-# Inner helpers: stream turn messages through a Telephone or legacy query
+# Inner helpers: stream turn messages through a Telephone
 # ---------------------------------------------------------------------------
 
 async def _stream_telephone(
@@ -412,33 +442,6 @@ async def _stream_telephone(
     turn_tokens += tel.total_usage() - starting_usage
 
 
-async def _stream_legacy(
-    sdk_query: Any,
-    prompt: str,
-    options: Any,
-    alog: AgentLogger,
-    turn_tokens: TelephoneUsage,
-    turn_tools: list[str],
-    worklog_lines: list[str],
-    *,
-    agent: str,
-    team: str,
-    task_label: str,
-    current_task_id: int | None,
-) -> None:
-    """Send a prompt via legacy sdk_query, process each message."""
-    async for msg in sdk_query(prompt=prompt, options=options):
-        _process_turn_messages(
-            msg, alog, turn_tokens, turn_tools, worklog_lines,
-            agent=agent, task_label=task_label,
-        )
-        if hasattr(msg, "content"):
-            for block in msg.content:
-                tool_name, detail = _extract_tool_summary(block)
-                if tool_name:
-                    broadcast_activity(agent, team, tool_name, detail, task_id=current_task_id)
-
-
 # ---------------------------------------------------------------------------
 # Core: run a single turn for one agent
 # ---------------------------------------------------------------------------
@@ -448,9 +451,7 @@ async def run_turn(
     team: str,
     agent: str,
     *,
-    exchange: TelephoneExchange | None = None,
-    sdk_query: Any = None,
-    sdk_options_class: Any = None,
+    exchange: TelephoneExchange,
 ) -> TurnResult:
     """Run a single turn for an agent.
 
@@ -463,17 +464,14 @@ async def run_turn(
     turn is appended **on the same Telephone** so the model has full
     conversation context from the main turn.
 
-    **Two execution modes:**
+    A persistent ``Telephone`` is reused across turns via the
+    ``exchange``; the preamble is rebuilt each turn and the telephone is
+    rotated if it changed.
 
-    * **Telephone mode** (``exchange`` provided) — the normal daemon
-      path.  A persistent ``Telephone`` is reused across turns; the
-      preamble is rebuilt each turn and the telephone is rotated if it
-      changed.
-
-    * **Legacy mode** (``sdk_query`` + ``sdk_options_class`` provided)
-      — used by existing tests that inject a mock SDK query function.
-      No persistent subprocess.  Will be removed once tests are
-      migrated.
+    Write-path enforcement is role-based (see ``_write_paths_for_role``):
+    managers may write anywhere under the team directory; workers may
+    only write to their own agent directory, the team shared folder,
+    and the current task's worktree paths.
 
     DB session semantics are unchanged: ``start_session()`` /
     ``end_session()`` bracket each ``run_turn()`` call one-to-one.
@@ -486,27 +484,6 @@ async def run_turn(
         update_session_tokens,
         update_session_task,
     )
-    from delegate.agent import build_system_prompt, build_user_message, build_reflection_message
-
-    # Determine execution mode
-    use_telephone = exchange is not None
-    use_legacy = sdk_query is not None or sdk_options_class is not None
-
-    # Validate: at least one mode must be available
-    if not use_telephone and not use_legacy:
-        try:
-            from claude_code_sdk import (
-                query as default_query,
-                ClaudeCodeOptions as DefaultOptions,
-            )
-            sdk_query = default_query
-            sdk_options_class = DefaultOptions
-            use_legacy = True
-        except ImportError:
-            raise RuntimeError(
-                "claude_code_sdk is required for agent turns "
-                "(install with: pip install claude-code-sdk)"
-            )
 
     alog = AgentLogger(agent)
     result = TurnResult(agent=agent, team=team)
@@ -588,22 +565,32 @@ async def run_turn(
     # --- Build prompts ---
     prompt_builder = Prompt(hc_home, team, agent)
 
-    if use_telephone:
-        preamble = prompt_builder.build_preamble()
-        # Get or create Telephone; rotate if preamble changed
-        tel = exchange.get(team, agent)
-        if tel is not None and tel.preamble != preamble:
-            logger.info("Preamble changed for %s/%s — rotating telephone", team, agent)
-            await tel.rotate()
-            tel.preamble = preamble
-        if tel is None:
-            tel = _create_telephone(
-                hc_home, team, agent,
-                preamble=preamble,
-                model=model,
-                ad=ad,
-            )
-            exchange.put(team, agent, tel)
+    preamble = prompt_builder.build_preamble()
+    # Get or create Telephone; rotate if preamble changed
+    tel = exchange.get(team, agent)
+    if tel is not None and tel.preamble != preamble:
+        logger.info("Preamble changed for %s/%s — rotating telephone", team, agent)
+        await tel.rotate()
+        tel.preamble = preamble
+    if tel is None:
+        tel = _create_telephone(
+            hc_home, team, agent,
+            preamble=preamble,
+            role=role,
+            model=model,
+            ad=ad,
+        )
+        exchange.put(team, agent, tel)
+
+    # --- Per-turn write-path update for workers ---
+    # Managers already have access to the entire team directory (static).
+    # Workers get their base paths (agent dir + shared) plus any task
+    # worktree paths that change per-turn.
+    if role != "manager" and workspace_paths:
+        tel.allowed_write_paths = (
+            _write_paths_for_role(hc_home, team, agent, role)
+            + [str(p) for p in workspace_paths.values()]
+        )
 
     user_msg = prompt_builder.build_user_message(
         messages=batch,
@@ -640,24 +627,7 @@ async def run_turn(
 
     try:
         try:
-            if use_telephone:
-                await _stream_telephone(tel, user_msg, **stream_kw)
-            else:
-                # Legacy path: build options the old way
-                sys_prompt = build_system_prompt(hc_home, team, agent)
-                kw: dict[str, Any] = dict(
-                    system_prompt=sys_prompt,
-                    cwd=str(workspace),
-                    permission_mode="bypassPermissions",
-                    add_dirs=[str(hc_home)],
-                    disallowed_tools=DISALLOWED_TOOLS,
-                )
-                if model:
-                    kw["model"] = model
-                if max_turns:
-                    kw["max_turns"] = max_turns
-                options = sdk_options_class(**kw)
-                await _stream_legacy(sdk_query, user_msg, options, **stream_kw)
+            await _stream_telephone(tel, user_msg, **stream_kw)
 
         except Exception as exc:
             alog.session_error(exc)
@@ -755,25 +725,9 @@ async def run_turn(
             )
 
             try:
-                if use_telephone:
-                    # Reflection on the same Telephone — model has full
-                    # conversation context from the main turn.
-                    await _stream_telephone(tel, ref_msg, **ref_stream_kw)
-                else:
-                    ref_prompt = build_system_prompt(hc_home, team, agent)
-                    ref_kw: dict[str, Any] = dict(
-                        system_prompt=ref_prompt,
-                        cwd=str(workspace),
-                        permission_mode="bypassPermissions",
-                        add_dirs=[str(hc_home)],
-                        disallowed_tools=DISALLOWED_TOOLS,
-                    )
-                    if model:
-                        ref_kw["model"] = model
-                    if max_turns:
-                        ref_kw["max_turns"] = max_turns
-                    ref_options = sdk_options_class(**ref_kw)
-                    await _stream_legacy(sdk_query, ref_msg, ref_options, **ref_stream_kw)
+                # Reflection on the same Telephone — model has full
+                # conversation context from the main turn.
+                await _stream_telephone(tel, ref_msg, **ref_stream_kw)
 
                 total += ref
 
@@ -820,15 +774,8 @@ async def run_turn(
 
         _write_worklog(ad, worklog_lines)
 
-        # context.md: in telephone mode, on_rotation writes it.
-        # In legacy mode, write a basic summary as before.
-        if not use_telephone:
-            total_tokens = total.input_tokens + total.output_tokens
-            (ad / "context.md").write_text(
-                f"Last session: {datetime.now(timezone.utc).isoformat()}\n"
-                f"Turns: {turn_num}\n"
-                f"Tokens: {total_tokens}\n"
-            )
+        # context.md is written by the Telephone's on_rotation callback
+        # when the context window fills up and the session rotates.
 
         broadcast_turn_event('turn_ended', agent, team=team, task_id=current_task_id, sender=primary_sender)
         log_caller.reset(_prev_caller)

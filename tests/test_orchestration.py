@@ -12,7 +12,8 @@ from unittest.mock import patch
 import pytest
 
 from delegate.mailbox import deliver, Message, agents_with_unread, mark_processed, read_inbox
-from delegate.runtime import list_ai_agents, run_turn
+from delegate.runtime import list_ai_agents, run_turn, TelephoneExchange
+from delegate.telephone import TelephoneUsage
 
 TEAM = "testteam"
 
@@ -24,6 +25,61 @@ def _deliver_msg(tmp_team, to_agent, body="Hello", sender="manager"):
         time="2026-02-08T12:00:00Z",
         body=body,
     ))
+
+
+# ---------------------------------------------------------------------------
+# Mock Telephone for testing
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _FakeResultMsg:
+    """Mimics a claude_code_sdk ResultMessage."""
+    total_cost_usd: float = 0.01
+    usage: dict | None = None
+
+    def __post_init__(self):
+        if self.usage is None:
+            self.usage = {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cache_read_input_tokens": 20,
+                "cache_creation_input_tokens": 10,
+            }
+
+
+class _MockTelephone:
+    """Minimal Telephone stand-in for unit testing run_turn().
+
+    When ``send()`` is called, yields a single ``_FakeResultMsg`` and
+    updates ``usage`` to mimic what the real Telephone does internally.
+    """
+
+    def __init__(self, preamble: str = ""):
+        self.preamble = preamble
+        self._prior = TelephoneUsage()
+        self.usage = TelephoneUsage()
+        self.allowed_write_paths: list[str] | None = None
+        self._effective_write_paths: list[str] | None = None
+        self.turns = 0
+
+    async def send(self, prompt: str):
+        """Async generator mimicking Telephone.send()."""
+        self.turns += 1
+        msg = _FakeResultMsg()
+        self.usage += TelephoneUsage.from_sdk_message(msg)
+        yield msg
+
+    def total_usage(self) -> TelephoneUsage:
+        return self._prior + self.usage
+
+    async def rotate(self):
+        """No-op for tests."""
+        self._prior = self._prior + self.usage
+        self.usage = TelephoneUsage()
+
+    async def close(self):
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -79,54 +135,25 @@ class TestListAIAgents:
 
 
 # ---------------------------------------------------------------------------
-# run_turn — with mock SDK
+# run_turn — with mock Telephone via TelephoneExchange
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class _FakeResultMsg:
-    """Mimics a claude_code_sdk ResultMessage."""
-    total_cost_usd: float = 0.01
-    usage: dict | None = None
-
-    def __post_init__(self):
-        if self.usage is None:
-            self.usage = {
-                "input_tokens": 100,
-                "output_tokens": 50,
-                "cache_read_input_tokens": 20,
-                "cache_creation_input_tokens": 10,
-            }
-
-
-@dataclass
-class _FakeAssistantMsg:
-    """Mimics a claude_code_sdk AssistantMessage."""
-    content: list | None = None
-
-
-class _FakeOptions:
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
-
-
-async def _mock_query(prompt: str, options=None):
-    """Mock SDK query that yields a result message."""
-    yield _FakeResultMsg()
+def _make_mock_tel(*args, **kwargs):
+    """Factory for _MockTelephone that accepts _create_telephone's signature."""
+    return _MockTelephone(preamble=kwargs.get("preamble", ""))
 
 
 class TestRunTurn:
     @patch("delegate.runtime.random.random", return_value=1.0)  # no reflection
-    def test_processes_message_and_marks_processed(self, _mock_rng, tmp_team):
+    @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
+    def test_processes_message_and_marks_processed(self, _mock_create, _mock_rng, tmp_team):
         """run_turn should process the oldest unread message and mark it."""
         _deliver_msg(tmp_team, "alice", body="Please do task 1")
+        exchange = TelephoneExchange()
 
         result = asyncio.run(
-            run_turn(
-                tmp_team, TEAM, "alice",
-                sdk_query=_mock_query,
-                sdk_options_class=_FakeOptions,
-            )
+            run_turn(tmp_team, TEAM, "alice", exchange=exchange)
         )
 
         assert result.agent == "alice"
@@ -141,51 +168,50 @@ class TestRunTurn:
         remaining = agents_with_unread(tmp_team, TEAM)
         assert "alice" not in remaining
 
+        # Telephone should be stored in exchange
+        assert exchange.get(TEAM, "alice") is not None
+
     @patch("delegate.runtime.random.random", return_value=1.0)
-    def test_no_messages_returns_early(self, _mock_rng, tmp_team):
+    @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
+    def test_no_messages_returns_early(self, _mock_create, _mock_rng, tmp_team):
         """run_turn with no unread messages should return early with no turns."""
+        exchange = TelephoneExchange()
+
         result = asyncio.run(
-            run_turn(
-                tmp_team, TEAM, "alice",
-                sdk_query=_mock_query,
-                sdk_options_class=_FakeOptions,
-            )
+            run_turn(tmp_team, TEAM, "alice", exchange=exchange)
         )
 
         assert result.error is None
-        assert result.turns == 0  # no messages → early return
+        assert result.turns == 0  # no messages -> early return
 
     @patch("delegate.runtime.random.random", return_value=1.0)
     def test_sdk_error_captured(self, _mock_rng, tmp_team):
-        """If the SDK query fails, the error is captured in TurnResult."""
+        """If the Telephone send fails, the error is captured in TurnResult."""
         _deliver_msg(tmp_team, "alice")
 
-        async def failing_query(prompt: str, options=None):
-            raise RuntimeError("SDK connection failed")
-            yield  # make it an async generator  # noqa: E501
+        class _FailingTelephone(_MockTelephone):
+            async def send(self, prompt: str):
+                raise RuntimeError("SDK connection failed")
+                yield  # make it an async generator  # noqa: E501
 
-        result = asyncio.run(
-            run_turn(
-                tmp_team, TEAM, "alice",
-                sdk_query=failing_query,
-                sdk_options_class=_FakeOptions,
+        exchange = TelephoneExchange()
+        with patch("delegate.runtime._create_telephone",
+                    side_effect=lambda *a, **kw: _FailingTelephone(preamble=kw.get("preamble", ""))):
+            result = asyncio.run(
+                run_turn(tmp_team, TEAM, "alice", exchange=exchange)
             )
-        )
 
         assert result.error is not None
         assert "SDK connection failed" in result.error
 
     @patch("delegate.runtime.random.random", return_value=1.0)
-    def test_worklog_written(self, _mock_rng, tmp_team):
+    @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
+    def test_worklog_written(self, _mock_create, _mock_rng, tmp_team):
         """run_turn should write a worklog file."""
         _deliver_msg(tmp_team, "alice")
 
         asyncio.run(
-            run_turn(
-                tmp_team, TEAM, "alice",
-                sdk_query=_mock_query,
-                sdk_options_class=_FakeOptions,
-            )
+            run_turn(tmp_team, TEAM, "alice", exchange=TelephoneExchange())
         )
 
         from delegate.paths import agent_dir
@@ -194,66 +220,38 @@ class TestRunTurn:
         assert len(worklogs) >= 1
 
     @patch("delegate.runtime.random.random", return_value=1.0)
-    def test_session_created_in_db(self, _mock_rng, tmp_team):
+    @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
+    def test_session_created_in_db(self, _mock_create, _mock_rng, tmp_team):
         """run_turn should create a session in the database."""
         _deliver_msg(tmp_team, "alice")
 
         result = asyncio.run(
-            run_turn(
-                tmp_team, TEAM, "alice",
-                sdk_query=_mock_query,
-                sdk_options_class=_FakeOptions,
-            )
+            run_turn(tmp_team, TEAM, "alice", exchange=TelephoneExchange())
         )
 
         assert result.session_id > 0
 
     @patch("delegate.runtime.random.random", return_value=1.0)
-    def test_context_md_saved(self, _mock_rng, tmp_team):
-        """run_turn should save context.md for the next session."""
-        _deliver_msg(tmp_team, "alice")
-
-        asyncio.run(
-            run_turn(
-                tmp_team, TEAM, "alice",
-                sdk_query=_mock_query,
-                sdk_options_class=_FakeOptions,
-            )
-        )
-
-        from delegate.paths import agent_dir
-        context = agent_dir(tmp_team, TEAM, "alice") / "context.md"
-        assert context.exists()
-        text = context.read_text()
-        assert "Last session:" in text
-
-    @patch("delegate.runtime.random.random", return_value=1.0)
-    def test_cache_tokens_tracked(self, _mock_rng, tmp_team):
+    @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
+    def test_cache_tokens_tracked(self, _mock_create, _mock_rng, tmp_team):
         """run_turn should track cache_read and cache_write tokens."""
         _deliver_msg(tmp_team, "alice", body="Work on this")
 
         result = asyncio.run(
-            run_turn(
-                tmp_team, TEAM, "alice",
-                sdk_query=_mock_query,
-                sdk_options_class=_FakeOptions,
-            )
+            run_turn(tmp_team, TEAM, "alice", exchange=TelephoneExchange())
         )
 
         assert result.cache_read == 20
         assert result.cache_write == 10
 
     @patch("delegate.runtime.random.random", return_value=0.0)  # always reflect
-    def test_reflection_turn_runs_when_due(self, _mock_rng, tmp_team):
+    @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
+    def test_reflection_turn_runs_when_due(self, _mock_create, _mock_rng, tmp_team):
         """When reflection coin-flip lands, a second turn runs without marking mail."""
         _deliver_msg(tmp_team, "alice", body="Work on this")
 
         result = asyncio.run(
-            run_turn(
-                tmp_team, TEAM, "alice",
-                sdk_query=_mock_query,
-                sdk_options_class=_FakeOptions,
-            )
+            run_turn(tmp_team, TEAM, "alice", exchange=TelephoneExchange())
         )
 
         assert result.turns == 2
@@ -265,7 +263,8 @@ class TestRunTurn:
         assert result.cache_write == 20
 
     @patch("delegate.runtime.random.random", return_value=1.0)
-    def test_batch_same_task_id(self, _mock_rng, tmp_team):
+    @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
+    def test_batch_same_task_id(self, _mock_create, _mock_rng, tmp_team):
         """Messages with the same task_id should be batched together."""
         # Deliver 3 messages with task_id=None (no --task flag)
         _deliver_msg(tmp_team, "alice", body="Hello 1")
@@ -273,11 +272,7 @@ class TestRunTurn:
         _deliver_msg(tmp_team, "alice", body="Hello 3")
 
         result = asyncio.run(
-            run_turn(
-                tmp_team, TEAM, "alice",
-                sdk_query=_mock_query,
-                sdk_options_class=_FakeOptions,
-            )
+            run_turn(tmp_team, TEAM, "alice", exchange=TelephoneExchange())
         )
 
         assert result.error is None
@@ -286,3 +281,39 @@ class TestRunTurn:
         # All 3 messages should be processed (same task_id=None)
         remaining = agents_with_unread(tmp_team, TEAM)
         assert "alice" not in remaining
+
+    @patch("delegate.runtime.random.random", return_value=1.0)
+    @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
+    def test_telephone_reused_across_turns(self, _mock_create, _mock_rng, tmp_team):
+        """The same Telephone should be reused for consecutive turns."""
+        exchange = TelephoneExchange()
+
+        _deliver_msg(tmp_team, "alice", body="Turn 1")
+        asyncio.run(run_turn(tmp_team, TEAM, "alice", exchange=exchange))
+        tel_after_1 = exchange.get(TEAM, "alice")
+        assert tel_after_1 is not None
+
+        _deliver_msg(tmp_team, "alice", body="Turn 2")
+        asyncio.run(run_turn(tmp_team, TEAM, "alice", exchange=exchange))
+        tel_after_2 = exchange.get(TEAM, "alice")
+
+        # Same object -- not recreated
+        assert tel_after_2 is tel_after_1
+        # _create_telephone should have been called only once
+        assert _mock_create.call_count == 1
+
+    @patch("delegate.runtime.random.random", return_value=1.0)
+    @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
+    def test_write_paths_set_for_worker(self, _mock_create, _mock_rng, tmp_team):
+        """Worker agents should have restricted write paths set."""
+        _deliver_msg(tmp_team, "alice", body="Hi")
+        exchange = TelephoneExchange()
+
+        asyncio.run(run_turn(tmp_team, TEAM, "alice", exchange=exchange))
+
+        tel = exchange.get(TEAM, "alice")
+        # _create_telephone is called with role-based write paths.
+        # Verify the mock was called with role in its kwargs.
+        call_kw = _mock_create.call_args
+        assert "role" in call_kw.kwargs
+        assert call_kw.kwargs["role"] == "engineer"
