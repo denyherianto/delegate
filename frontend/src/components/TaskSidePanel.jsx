@@ -766,7 +766,11 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
 
 // ── Main TaskSidePanel ──
 export function TaskSidePanel() {
-  const id = taskPanelId.value;
+  const [id, setId] = useState(() => taskPanelId.peek());
+  useEffect(() => {
+    const dispose = effect(() => { setId(taskPanelId.value); });
+    return dispose;
+  }, []);
   // NOTE: Do NOT read tasks.value here in the render body.
   // Doing so subscribes this component to the `tasks` signal,
   // which the polling loop updates every 2 s with a new array ref.
@@ -776,7 +780,10 @@ export function TaskSidePanel() {
   // effects / callbacks (which don't create signal subscriptions)
   // and use tasks.peek() for the one render-time read (panelTitle).
 
-  const [task, setTask] = useState(null);
+  const [task, setTask] = useState(() => {
+    const c = _getCache(id);
+    return c.task || null;
+  });
   const [stats, setStats] = useState(null);
   const [activeTab, setActiveTab] = useState(() => {
     const saved = _tabState.get(id);
@@ -842,7 +849,10 @@ export function TaskSidePanel() {
     }
 
     const cached = tasks.value.find(t => t.id === id);
-    if (cached) setTask(cached);
+    if (cached) {
+      setTask(cached);
+      _setCache(id, { task: cached });
+    }
 
     // ── Revalidate in background ──
     // Parallelize stats + reviews loading
@@ -908,7 +918,10 @@ export function TaskSidePanel() {
     const dispose = effect(() => {
       const allTasks = tasks.value;  // auto-tracked by effect()
       const updated = allTasks.find(t => t.id === id);
-      if (updated) setTask(prev => prev ? { ...prev, ...updated } : updated);
+      if (updated) {
+        _setCache(id, { task: updated });
+        setTask(prev => prev ? { ...prev, ...updated } : updated);
+      }
     });
     return dispose;
   }, [id]);
