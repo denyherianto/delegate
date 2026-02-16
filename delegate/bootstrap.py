@@ -236,6 +236,12 @@ def bootstrap(
     hc_home.mkdir(parents=True, exist_ok=True)
     ensure_protected(hc_home)
 
+    # Generate bootstrap_id if it doesn't exist
+    bootstrap_id_path = hc_home / "bootstrap_id"
+    if not bootstrap_id_path.exists():
+        bootstrap_id = uuid.uuid4().hex
+        bootstrap_id_path.write_text(bootstrap_id + "\n")
+
     # Generate a unique team UUID if not already registered.
     # Must happen BEFORE creating directories so that team_dir() / protected_team_dir()
     # resolve to UUID-based paths from the start.

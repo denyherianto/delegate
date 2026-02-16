@@ -57,6 +57,7 @@ from delegate.paths import (
     teams_dir as _teams_dir,
     resolve_team_uuid as _resolve_team,
     list_team_names as _list_team_names,
+    get_bootstrap_id as _get_bootstrap_id,
 )
 from delegate.config import get_default_human
 from delegate.task import list_tasks as _list_tasks, get_task as _get_task, get_task_diff as _get_task_diff, get_task_merge_preview as _get_merge_preview, get_task_commit_diffs as _get_commit_diffs, update_task as _update_task, change_status as _change_status, VALID_STATUSES, format_task_id
@@ -1037,6 +1038,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             "boss_name": human,  # backward compat
             "human_name": human,
             "hc_home": str(hc_home),
+            "bootstrap_id": _get_bootstrap_id(hc_home),
         }
 
     # --- Bootstrap endpoint (all initial data in one call) ---
@@ -1115,6 +1117,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 "boss_name": human,
                 "human_name": human,
                 "hc_home": str(hc_home),
+                "bootstrap_id": _get_bootstrap_id(hc_home),
             },
             "teams": team_list,
             "initial_team": initial_team,
