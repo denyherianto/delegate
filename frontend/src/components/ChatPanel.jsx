@@ -412,7 +412,7 @@ export function ChatPanel() {
       const tokens = result.uploaded.map(f => `[file:${f.url}]`).join(' ');
       if (inputRef.current) {
         const currentText = inputRef.current.textContent || '';
-        const newText = currentText ? `${currentText} ${tokens}` : tokens;
+        const newText = currentText ? `${currentText}\n${tokens}\n` : `${tokens}\n`;
         inputRef.current.textContent = newText;
 
         // Trigger input event to update state

@@ -135,15 +135,12 @@ export function AgentsPanel() {
         {showLine2 && (
           <div class="agent-row-line2">
             {currentTask ? (
-              <>
-                <span
-                  class="agent-task-id"
-                  onClick={(e) => { e.stopPropagation(); openPanel("task", currentTask.id); }}
-                >
-                  {taskIdStr(currentTask.id)}
-                </span>
-                <span class="agent-task-title">{currentTask.title}</span>
-              </>
+              <span
+                class="agent-task-id"
+                onClick={(e) => { e.stopPropagation(); openPanel("task", currentTask.id); }}
+              >
+                {taskIdStr(currentTask.id)}
+              </span>
             ) : (
               <span class="agent-task-title" style="color: var(--text-muted);">
                 {a.role === "manager" ? "Managing tasks" : "Working"}
