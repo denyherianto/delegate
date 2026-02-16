@@ -893,6 +893,14 @@ async def _lifespan(app: FastAPI):
             except Exception:
                 logger.exception("Error closing Telephone conversations")
 
+    # Clean up PID file (background daemon may exit without going through
+    # stop_daemon — e.g. port conflict, crash, OS signal).
+    if enable:
+        from delegate.paths import daemon_pid_path
+        pid_path = daemon_pid_path(hc_home)
+        pid_path.unlink(missing_ok=True)
+        logger.info("Cleaned up daemon PID file")
+
     # Release daemon singleton lock
     if daemon_lock_fd is not None:
         from delegate.daemon import _release_lock

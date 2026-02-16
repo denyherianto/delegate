@@ -32,9 +32,8 @@ from delegate.logging_setup import configure_logging, log_file_path
 
 logger = logging.getLogger(__name__)
 
-# Module-level file descriptor for the daemon lock — kept open for the
-# lifetime of the foreground process so flock() holds.
-_lock_fd: int | None = None
+# _acquire_lock / _release_lock are called by the lifespan in web.py
+# to hold the singleton lock for the daemon's lifetime.
 
 
 def _acquire_lock(hc_home: Path) -> int:
@@ -127,6 +126,18 @@ def start_daemon(
     if alive:
         raise RuntimeError(f"Daemon already running with PID {existing_pid}")
 
+    # Check port availability early so the user gets a clear error
+    # instead of a silent background failure.
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("0.0.0.0", port))
+        except OSError:
+            raise RuntimeError(
+                f"Port {port} is already in use. "
+                f"Stop the other process or use --port to pick a different port."
+            )
+
     # Set environment variables for the web app
     env = os.environ.copy()
     env["DELEGATE_HOME"] = str(hc_home)
@@ -140,10 +151,10 @@ def start_daemon(
         env["DELEGATE_DEV"] = "1"
 
     if foreground:
-        global _lock_fd
-        _lock_fd = _acquire_lock(hc_home)
-
-        # Run in current process (blocking)
+        # Run in current process (blocking).
+        # Lock acquisition and PID cleanup are handled by the lifespan
+        # in web.py — don't duplicate here or the lock will be acquired
+        # twice in the same process.
         os.environ.update(env)
         configure_logging(hc_home, console=True)
         import uvicorn
@@ -162,9 +173,6 @@ def start_daemon(
             )
         finally:
             pid_path.unlink(missing_ok=True)
-            if _lock_fd is not None:
-                _release_lock(_lock_fd)
-                _lock_fd = None
         return None
 
     # Spawn background process — redirect stderr to the log file
