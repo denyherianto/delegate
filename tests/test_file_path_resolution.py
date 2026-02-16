@@ -1,9 +1,8 @@
 """Tests for file path resolution in delegate/web.py.
 
 Verifies that the backend _resolve_file_path() correctly handles:
-1. Absolute paths (start with /)
-2. Delegate-relative paths (no leading /)
-3. Edge cases with accidental leading slashes on delegate-relative paths
+1. Absolute paths (start with /) - used directly
+2. Delegate-relative paths (no leading /) - resolved from ~/.delegate
 """
 
 import pytest
@@ -56,8 +55,8 @@ class TestFilePathResolution:
         assert "Test content for path resolution" in data["content"]
 
     def test_team_relative_path(self, client, test_file):
-        """Paths like 'shared/foo.md' should be prefixed with teams/{team}/ by frontend."""
-        # This tests the backend behavior when frontend sends the prefixed path
+        """Delegate-relative paths starting with teams/{team}/ should resolve correctly."""
+        # Full delegate-relative path including team
         rel_path = f"teams/{TEAM}/shared/test-path-resolution.md"
         r = client.get(f"/teams/{TEAM}/files/content", params={"path": rel_path})
         assert r.status_code == 200

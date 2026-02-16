@@ -254,28 +254,9 @@ export function toApiPath(raw, team) {
     p = p.substring(home.length + 1);
   }
 
-  // Known delegate-relative prefixes with accidental leading / → strip it
-  const relPrefixes = ["shared/", "agents/", "teams/", "worktrees/", "uploads/"];
-  if (p.startsWith("/")) {
-    const stripped = p.substring(1);
-    if (relPrefixes.some(pre => stripped.startsWith(pre))) {
-      p = stripped;  // Treat as delegate-relative, not absolute
-    }
-  }
-
-  // Still absolute → outside delegate tree, pass through for direct use.
-  if (p.startsWith("/")) return p;
-
-  // Already delegate-relative (teams/…) → pass through.
-  if (p.startsWith("teams/")) return p;
-
-  // Legacy relative: shared/foo, agents/foo, worktrees/foo → prefix with teams/{team}/
-  if (p.startsWith("shared/") || p.startsWith("agents/") || p.startsWith("worktrees/") || p.startsWith("uploads/")) {
-    return `teams/${team}/${p}`;
-  }
-
-  // Unknown relative → assume team's shared/ dir.
-  return `teams/${team}/shared/${p}`;
+  // Path is either absolute (starts with /) or delegate-relative (no leading /).
+  // Pass through as-is — backend resolves relative paths from ~/.delegate.
+  return p;
 }
 
 /**
@@ -302,17 +283,8 @@ export function linkifyFilePaths(html) {
   //  2. Absolute paths with extensions, optionally followed by more path segments
   return html.replace(/(^[^<]+|>[^<]*)/g, match =>
     match.replace(/(?:\b(?:teams|shared|agents|worktrees)\/[\w\-\.\/]+\w|\/[\w\-\.\/]+\.[\w]+(?:\/[\w\-\.\/]*\w)*\/?)/g, path => {
-      // Strip leading / from known delegate-relative prefixes
-      let normalizedPath = path;
-      const relPrefixes = ["shared/", "agents/", "teams/", "worktrees/", "uploads/"];
-      if (path.startsWith("/")) {
-        const stripped = path.substring(1);
-        if (relPrefixes.some(pre => stripped.startsWith(pre))) {
-          normalizedPath = stripped;
-        }
-      }
-      const display = displayFilePath(normalizedPath);
-      return '<span class="file-link copyable" data-file-path="' + esc(normalizedPath) + '">' + esc(display) + copyBtnHtml(normalizedPath) + "</span>";
+      const display = displayFilePath(path);
+      return '<span class="file-link copyable" data-file-path="' + esc(path) + '">' + esc(display) + copyBtnHtml(path) + "</span>";
     })
   );
 }
