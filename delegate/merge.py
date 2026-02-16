@@ -608,7 +608,10 @@ def merge_task(
                                reason=MergeFailureReason.WORKTREE_ERROR)
         repo_dirs[repo_name] = str(real_repo)
 
-    log_event(hc_home, team, f"{format_task_id(task_id)} merge started ({branch})", task_id=task_id)
+    # Log merge started with attempt number for clarity on retries
+    merge_attempts = task.get("merge_attempts", 0)
+    attempt_num = merge_attempts + 1
+    log_event(hc_home, team, f"{format_task_id(task_id)} merge started ({branch}), attempt #{attempt_num}", task_id=task_id)
 
     base_sha_dict: dict = task.get("base_sha", {})
     merge_base_dict: dict[str, str] = {}
@@ -747,7 +750,7 @@ def merge_task(
             _remove_temp_worktree(repo_str, wt_path, temp_branch)
             log_event(
                 hc_home, team,
-                f"{format_task_id(task_id)} merge failed ({repo_name})",
+                f"{format_task_id(task_id)} merge failed ({repo_name}), attempt #{attempt_num}",
                 task_id=task_id,
             )
             # Classify the ff-merge failure
