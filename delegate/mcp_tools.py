@@ -73,6 +73,9 @@ def build_agent_tools(hc_home: Path, team: str, agent: str) -> list:
             recipient = args["recipient"]
             message = args["message"]
             task_id = args.get("task_id")
+            # Convert 0 to None since task IDs start at 1
+            if task_id == 0:
+                task_id = None
 
             send(
                 hc_home,
