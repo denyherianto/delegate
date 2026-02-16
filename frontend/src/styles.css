@@ -654,13 +654,13 @@ body {
   border-left-color: var(--accent);
 }
 
-/* Boss vs non-boss content hierarchy (color-based, no opacity) */
+/* Boss vs non-boss content hierarchy (opacity-based) */
 .msg-content.content-boss {
-  color: var(--text-primary);
+  opacity: 1;
 }
 
 .msg-content.content-regular {
-  color: var(--text-muted);
+  opacity: 0.5;
 }
 
 .msg-body { min-width: 0; }
