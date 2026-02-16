@@ -56,6 +56,7 @@ from delegate.paths import (
     team_dir as _team_dir,
     teams_dir as _teams_dir,
     resolve_team_uuid as _resolve_team,
+    list_team_names as _list_team_names,
 )
 from delegate.config import get_default_human
 from delegate.task import list_tasks as _list_tasks, get_task as _get_task, get_task_diff as _get_task_diff, get_task_merge_preview as _get_merge_preview, get_task_commit_diffs as _get_commit_diffs, update_task as _update_task, change_status as _change_status, VALID_STATUSES, format_task_id
@@ -69,11 +70,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _list_teams(hc_home: Path) -> list[str]:
-    """List all team names under hc_home/teams/."""
-    td = _teams_dir(hc_home)
-    if not td.is_dir():
-        return []
-    return sorted(d.name for d in td.iterdir() if d.is_dir())
+    """List all team names (human-readable, from the team name → UUID map)."""
+    return sorted(_list_team_names(hc_home))
 
 
 def _first_team(hc_home: Path) -> str:
@@ -2269,6 +2267,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     @app.get("/teams/{team}/agents/{name}/inbox")
     def get_agent_inbox(team: str, name: str):
         """Return all messages in the agent's inbox with lifecycle status."""
+        from delegate.config import SYSTEM_USER
         all_msgs = _read_inbox(hc_home, team, name, unread_only=False)
         result = [
             {
@@ -2282,6 +2281,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 "processed_at": m.processed_at,
             }
             for m in all_msgs
+            if m.sender != SYSTEM_USER
         ]
         result.sort(key=lambda x: x["time"], reverse=True)
         return result[:100]

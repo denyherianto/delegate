@@ -127,9 +127,12 @@ def start_daemon(
         raise RuntimeError(f"Daemon already running with PID {existing_pid}")
 
     # Check port availability early so the user gets a clear error
-    # instead of a silent background failure.
+    # instead of a silent background failure.  SO_REUSEADDR matches
+    # uvicorn's behaviour — without it we'd reject ports in TIME_WAIT
+    # (e.g. immediately after a SIGKILL stop).
     import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             s.bind(("0.0.0.0", port))
         except OSError:

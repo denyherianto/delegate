@@ -47,14 +47,18 @@ def get_messages(
     """
     team_uuid = _team(hc_home, team)
     conn = get_connection(hc_home, team)
+    # Hide system→agent chat messages from the UI (e.g. daemon startup
+    # notifications, merge results).  Events (type='event') from system
+    # are still shown — they're the activity feed.
     query = """
         SELECT
             id, timestamp, sender, recipient, content, type, task_id,
             delivered_at, seen_at, processed_at, result
         FROM messages
         WHERE team_uuid = ?
+          AND NOT (sender = ? AND type = 'chat')
     """
-    params: list = [team_uuid]
+    params: list = [team_uuid, SYSTEM_USER]
 
     if since:
         query += " AND timestamp > ?"
