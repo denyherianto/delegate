@@ -112,7 +112,7 @@ There's no magic. You can `ls` into any agent's directory and see exactly what t
 
 ## Sandboxing & Permissions
 
-Delegate restricts what agents can do through four independent layers — defense-in-depth so no single bypass compromises the system:
+Delegate restricts what agents can do through six independent layers — defense-in-depth so no single bypass compromises the system:
 
 **1. Write-path isolation (`can_use_tool` callback)**
 
@@ -125,13 +125,22 @@ Every agent turn runs with a programmatic guard that inspects each tool call bef
 
 Writes outside these paths are denied with an error message — the model sees the denial and can adjust.
 
+The same guard also enforces a **bash deny-list** — commands containing dangerous substrings are blocked before execution:
+
+```
+sqlite3, DROP TABLE, DELETE FROM, rm -rf .git
+```
+
+This prevents agents from directly manipulating the database or destroying git metadata, even if they attempt it via bash.
+
 **2. Disallowed git commands (`disallowed_tools`)**
 
-Several git commands that could change branch topology or pull in external state are hidden from agents entirely at the SDK level:
+Git commands that could change branch topology, interact with remotes, or rewrite history are hidden from agents entirely at the SDK level:
 
 ```
 git rebase, git merge, git pull, git push, git fetch,
-git checkout, git switch, git reset --hard, git worktree
+git checkout, git switch, git reset --hard, git worktree,
+git branch, git remote, git filter-branch, git reflog expire
 ```
 
 Agents never see these tools and cannot invoke them — branch management is handled by Delegate's merge worker instead.
@@ -140,17 +149,32 @@ Agents never see these tools and cannot invoke them — branch management is han
 
 All bash commands run inside an OS-level sandbox provided by Claude Code's native sandboxing. The sandbox restricts filesystem writes to:
 
-- `DELEGATE_HOME` (`~/.delegate/` by default) — all team data lives here
+- The team's working directory (`~/.delegate/teams/<uuid>/`) — not the entire `DELEGATE_HOME`, so `protected/` and other teams' directories are never writable from bash
 - Platform temp directory (`/tmp` on Unix, `%TEMP%` on Windows)
-- Each registered repo's `.git/` directory — so `git add` / `git commit` work inside worktrees without opening the repo working tree to arbitrary bash writes
+- Each registered repo's `.git/` directory (workers only) — so `git add` / `git commit` work inside worktrees without opening the repo working tree to arbitrary bash writes. Managers do NOT get `.git/` access since they don't work in worktrees.
 
 Even if the model crafts a bash command that bypasses the tool-level guards, the kernel blocks the write. Agents cannot `git` into unregistered repos (the sandbox blocks writes to their `.git/`), and they cannot write to the working tree of any repo via bash (only `.git/` is allowed).
 
-**4. Daemon-managed worktree lifecycle**
+**4. Network domain allowlist**
+
+Agents' network access is controlled via a domain allowlist stored in `protected/network.yaml` (outside the sandbox, so agents can't tamper with it). By default, all domains are allowed (`*`). When restricted to specific domains, the sandbox blocks outbound connections to anything not on the list.
+
+```bash
+delegate network show                    # View current allowlist
+delegate network allow api.github.com    # Add a domain
+delegate network disallow example.com    # Remove a domain
+delegate network reset                   # Reset to wildcard (allow all)
+```
+
+**5. In-process MCP tools (protected data access)**
+
+Agents interact with the database, task system, and mailbox through in-process MCP tools that run inside the daemon (outside the agent sandbox). This means agents never need shell access to `protected/` — all operations go through validated code paths. Agent identity is baked into each tool closure, preventing impersonation: an agent cannot send messages as another agent or access data outside its team.
+
+**6. Daemon-managed worktree lifecycle**
 
 Git operations that modify branch topology — `git worktree add`, `git worktree remove`, branch creation, rebase, and merge — run exclusively in the **daemon process**, which is unsandboxed. Agents never run these commands directly. When a manager creates a task with `--repo`, only the DB record and branch name are saved; the daemon creates the actual worktree before dispatching any turns to the assigned worker. This clean separation means agents can write code and commit inside their worktrees but cannot create, remove, or manipulate worktrees or branches.
 
-Together these four layers mean: the model can only write to directories Delegate explicitly allows, cannot touch your git branch topology, cannot escape the sandbox even through creative bash commands, and all infrastructure operations happen in a controlled daemon context.
+Together these six layers mean: the model can only write to directories Delegate explicitly allows, cannot touch your git branch topology, cannot access the database directly, cannot contact unauthorized domains, cannot escape the sandbox even through creative bash commands, and all infrastructure operations happen in a controlled daemon context.
 
 ## Configuration
 
@@ -178,6 +202,11 @@ delegate agent add myteam carol --role engineer
 
 delegate workflow init myteam                     # Register default workflow
 delegate workflow add myteam ./my-workflow.py     # Register custom workflow
+
+delegate network show                             # View network allowlist
+delegate network allow api.github.com             # Allow a domain
+delegate network disallow example.com             # Remove a domain
+delegate network reset                            # Reset to allow all
 ```
 
 ### Set Auto Approval
