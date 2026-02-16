@@ -254,6 +254,15 @@ export function toApiPath(raw, team) {
     p = p.substring(home.length + 1);
   }
 
+  // Known delegate-relative prefixes with accidental leading / → strip it
+  const relPrefixes = ["shared/", "agents/", "teams/", "worktrees/", "uploads/"];
+  if (p.startsWith("/")) {
+    const stripped = p.substring(1);
+    if (relPrefixes.some(pre => stripped.startsWith(pre))) {
+      p = stripped;  // Treat as delegate-relative, not absolute
+    }
+  }
+
   // Still absolute → outside delegate tree, pass through for direct use.
   if (p.startsWith("/")) return p;
 
@@ -293,8 +302,17 @@ export function linkifyFilePaths(html) {
   //  2. Absolute paths with extensions, optionally followed by more path segments
   return html.replace(/(^[^<]+|>[^<]*)/g, match =>
     match.replace(/(?:\b(?:teams|shared|agents|worktrees)\/[\w\-\.\/]+\w|\/[\w\-\.\/]+\.[\w]+(?:\/[\w\-\.\/]*\w)*\/?)/g, path => {
-      const display = displayFilePath(path);
-      return '<span class="file-link copyable" data-file-path="' + esc(path) + '">' + esc(display) + copyBtnHtml(path) + "</span>";
+      // Strip leading / from known delegate-relative prefixes
+      let normalizedPath = path;
+      const relPrefixes = ["shared/", "agents/", "teams/", "worktrees/", "uploads/"];
+      if (path.startsWith("/")) {
+        const stripped = path.substring(1);
+        if (relPrefixes.some(pre => stripped.startsWith(pre))) {
+          normalizedPath = stripped;
+        }
+      }
+      const display = displayFilePath(normalizedPath);
+      return '<span class="file-link copyable" data-file-path="' + esc(normalizedPath) + '">' + esc(display) + copyBtnHtml(normalizedPath) + "</span>";
     })
   );
 }
