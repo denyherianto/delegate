@@ -31,7 +31,7 @@ import threading
 import uuid as uuid_module
 from pathlib import Path
 
-from delegate.paths import db_path, global_db_path, protected_dir, resolve_team_uuid
+from delegate.paths import global_db_path, protected_dir, resolve_team_uuid
 
 logger = logging.getLogger(__name__)
 
