@@ -24,6 +24,7 @@ from delegate.paths import (
     roster_path as _roster_path,
     members_dir as _members_dir,
     base_charter_dir,
+    protected_dir,
     ensure_protected,
     ensure_protected_team,
     register_team_path,
@@ -237,7 +238,7 @@ def bootstrap(
     ensure_protected(hc_home)
 
     # Generate bootstrap_id if it doesn't exist
-    bootstrap_id_path = hc_home / "bootstrap_id"
+    bootstrap_id_path = protected_dir(hc_home) / "bootstrap_id"
     if not bootstrap_id_path.exists():
         bootstrap_id = uuid.uuid4().hex
         bootstrap_id_path.write_text(bootstrap_id + "\n")

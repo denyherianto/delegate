@@ -420,3 +420,55 @@ def test_get_all_member_names(hc):
 
     all_members = get_all_member_names(hc)
     assert all_members == {"nikhil", "sarah", "john"}
+
+
+def test_bootstrap_id_stable_on_rerun(hc):
+    """Bootstrap ID is not modified when bootstrap is called again (idempotent)."""
+    from delegate.paths import get_bootstrap_id, protected_dir
+
+    # First bootstrap
+    bootstrap(hc, TEAM, manager="mgr", agents=["a", "b"])
+    first_id = get_bootstrap_id(hc)
+    assert first_id is not None, "bootstrap_id should be created on first bootstrap"
+    assert len(first_id) == 32, "bootstrap_id should be a 32-char hex UUID"
+
+    # Verify file exists in protected/
+    bootstrap_id_path = protected_dir(hc) / "bootstrap_id"
+    assert bootstrap_id_path.exists(), "bootstrap_id should be in protected/"
+
+    # Second bootstrap with a DIFFERENT team (to avoid register_team idempotency bug)
+    bootstrap(hc, "team2", manager="mgr2", agents=["c"])
+    second_id = get_bootstrap_id(hc)
+
+    assert second_id == first_id, "bootstrap_id should not change when bootstrapping another team"
+
+
+def test_bootstrap_id_changes_after_nuke(tmp_path):
+    """Bootstrap ID changes when all data is deleted and bootstrap is called again."""
+    import shutil
+    from delegate.paths import get_bootstrap_id, protected_dir
+
+    # First install
+    hc1 = tmp_path / "hc1"
+    hc1.mkdir()
+    add_member(hc1, "nikhil")
+    bootstrap(hc1, TEAM, manager="mgr", agents=["a"])
+    first_id = get_bootstrap_id(hc1)
+    assert first_id is not None
+    assert len(first_id) == 32
+
+    # Verify bootstrap_id is in protected/
+    bootstrap_id_path = protected_dir(hc1) / "bootstrap_id"
+    assert bootstrap_id_path.exists()
+
+    # Simulate a fresh install by using a completely different directory
+    # (this is what happens when a user deletes ~/.delegate and starts over)
+    hc2 = tmp_path / "hc2"
+    hc2.mkdir()
+    add_member(hc2, "nikhil")
+    bootstrap(hc2, TEAM, manager="mgr", agents=["a"])
+    second_id = get_bootstrap_id(hc2)
+
+    assert second_id is not None
+    assert len(second_id) == 32
+    assert second_id != first_id, "bootstrap_id should be different for fresh install"

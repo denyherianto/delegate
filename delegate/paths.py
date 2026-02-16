@@ -98,9 +98,9 @@ def get_bootstrap_id(hc_home: Path) -> str | None:
     """Return the bootstrap ID for this installation, or None if not set.
 
     The bootstrap_id is a UUID generated on first bootstrap, stored in
-    ``<home>/bootstrap_id``. Used by the frontend to namespace localStorage keys.
+    ``protected/bootstrap_id``. Used by the frontend to namespace localStorage keys.
     """
-    bootstrap_id_path = hc_home / "bootstrap_id"
+    bootstrap_id_path = protected_dir(hc_home) / "bootstrap_id"
     if not bootstrap_id_path.exists():
         return None
     return bootstrap_id_path.read_text().strip()
