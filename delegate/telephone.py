@@ -281,6 +281,7 @@ class Telephone:
         permission_mode: str = "bypassPermissions",
         disallowed_tools: list[str] | None = None,
         sandbox_enabled: bool = False,
+        mcp_servers: dict[str, Any] | None = None,
     ):
         # Stable identity
         self.id: str = uuid.uuid4().hex
@@ -296,6 +297,7 @@ class Telephone:
         self.add_dirs = [Path(p).resolve() for p in (add_dirs or [])]
         self.disallowed_tools = list(disallowed_tools or [])
         self.sandbox_enabled = sandbox_enabled
+        self.mcp_servers: dict[str, Any] = dict(mcp_servers or {})
 
         # Permission configuration
         self._allowed_write_paths: list[Path] | None = (
@@ -599,6 +601,10 @@ class Telephone:
                 "autoAllowBashIfSandboxed": True,
                 "allowUnsandboxedCommands": False,
             }
+
+        # In-process MCP servers (run in daemon process, outside sandbox)
+        if self.mcp_servers:
+            kw["mcp_servers"] = dict(self.mcp_servers)
 
         return ClaudeAgentOptions(**kw)
 

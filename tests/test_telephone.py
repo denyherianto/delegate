@@ -365,6 +365,25 @@ class TestTelephoneUnit:
         t.reset()
         assert not t.needs_rotation  # usage zeroed → back under budget
 
+    def test_build_options_mcp_servers(self, tmp_path):
+        """mcp_servers are passed through to ClaudeAgentOptions."""
+        fake_server = {"type": "sdk", "name": "test", "instance": None}
+        t = Telephone(
+            preamble="hello",
+            cwd=tmp_path,
+            mcp_servers={"test_server": fake_server},
+        )
+        opts = t._build_options()
+        assert hasattr(opts, "mcp_servers")
+        assert "test_server" in opts.mcp_servers
+
+    def test_build_options_no_mcp_servers_by_default(self, tmp_path):
+        """No mcp_servers key when none provided."""
+        t = Telephone(preamble="hello", cwd=tmp_path)
+        opts = t._build_options()
+        # mcp_servers should not be set when empty
+        assert not hasattr(opts, "mcp_servers") or not opts.mcp_servers
+
     def test_sandbox_add_dirs_includes_tmpdir(self, tmp_path):
         """When sandbox is enabled, add_dirs should include tmpdir for platform compat."""
         import tempfile
@@ -680,6 +699,135 @@ class TestTelephoneLive:
                 )
                 assert target.exists(), (
                     f"Sandbox should have allowed bash write to {target}"
+                )
+            finally:
+                await t.close()
+
+        asyncio.run(_run())
+
+    def test_mcp_tool_writes_outside_sandbox(self, tmp_path):
+        """PHASE 0 — MCP tools can write to directories NOT in add_dirs.
+
+        This validates the core architectural assumption: in-process MCP
+        tools run in the daemon's Python process, outside the OS-level
+        bash sandbox.  If this test fails, the entire protected-directory
+        design must change to a daemon-IPC model.
+        """
+        async def _run():
+            from claude_agent_sdk import create_sdk_mcp_server, tool
+
+            # Two directories: agent can bash-write to 'allowed' only.
+            # 'protected' is NOT in add_dirs.
+            allowed = tmp_path / "allowed"
+            allowed.mkdir()
+            protected = tmp_path / "protected"
+            protected.mkdir()
+
+            target_file = protected / "data.txt"
+
+            # MCP tool that writes to the protected directory.
+            @tool(
+                "write_protected_file",
+                "Write content to a protected file outside the sandbox",
+                {"content": str},
+            )
+            async def write_protected_file(args):
+                target_file.write_text(args["content"])
+                return {
+                    "content": [
+                        {"type": "text", "text": f"Wrote to {target_file}"}
+                    ]
+                }
+
+            mcp_server = create_sdk_mcp_server(
+                "protected_writer",
+                tools=[write_protected_file],
+            )
+
+            t = Telephone(
+                preamble=(
+                    "You are a test agent. When asked, use the "
+                    "write_protected_file MCP tool to write content."
+                ),
+                cwd=str(allowed),
+                add_dirs=[str(allowed)],
+                sandbox_enabled=True,
+                mcp_servers={"protected_writer": mcp_server},
+            )
+            try:
+                await _send_and_collect(
+                    t,
+                    "Use the write_protected_file tool to write "
+                    "'hello from mcp' as the content.",
+                )
+                assert target_file.exists(), (
+                    "MCP tool should be able to write outside sandbox add_dirs"
+                )
+                assert target_file.read_text() == "hello from mcp"
+            finally:
+                await t.close()
+
+        asyncio.run(_run())
+
+    def test_can_use_tool_not_invoked_for_mcp(self, tmp_path):
+        """can_use_tool guard is NOT invoked for MCP tool calls.
+
+        If this test fails, we need to whitelist MCP tools in the guard.
+        """
+        async def _run():
+            from claude_agent_sdk import create_sdk_mcp_server, tool
+
+            guard_calls: list[str] = []
+
+            safe = tmp_path / "safe"
+            safe.mkdir()
+
+            @tool("ping", "Return pong", {"message": str})
+            async def ping(args):
+                return {
+                    "content": [
+                        {"type": "text", "text": f"pong: {args['message']}"}
+                    ]
+                }
+
+            mcp_server = create_sdk_mcp_server("pinger", tools=[ping])
+
+            t = Telephone(
+                preamble=(
+                    "You are a test agent. When asked, use the ping MCP tool."
+                ),
+                cwd=str(safe),
+                allowed_write_paths=[str(safe)],
+                sandbox_enabled=True,
+                mcp_servers={"pinger": mcp_server},
+            )
+
+            # Monkey-patch the guard to record calls
+            original_guard = t._make_guard()
+            if original_guard:
+                async def tracking_guard(tool_name, tool_input, context):
+                    guard_calls.append(tool_name)
+                    return await original_guard(tool_name, tool_input, context)
+                # Override the guard that will be used by _build_options
+                t._allowed_write_paths = t._allowed_write_paths  # keep the same
+                # We need to intercept at the options level — rebuild
+                orig_build = t._build_options
+                def patched_build():
+                    opts = orig_build()
+                    opts.can_use_tool = tracking_guard
+                    return opts
+                t._build_options = patched_build
+
+            try:
+                await _send_and_collect(
+                    t, "Use the ping tool with message 'test'.",
+                )
+                # If can_use_tool is invoked for MCP tools, "ping" will
+                # appear in guard_calls.  We expect it NOT to.
+                mcp_tool_calls = [c for c in guard_calls if c == "ping"]
+                assert len(mcp_tool_calls) == 0, (
+                    f"can_use_tool was invoked for MCP tool 'ping': "
+                    f"guard_calls={guard_calls}"
                 )
             finally:
                 await t.close()
