@@ -336,6 +336,133 @@ def build_agent_tools(hc_home: Path, team: str, agent: str) -> list:
             logger.exception("repo_list failed")
             return _error_result(str(e))
 
+    # -----------------------------------------------------------------------
+    # Git tools
+    # -----------------------------------------------------------------------
+
+    @tool(
+        "rebase_to_main",
+        "Rebase the current task branch onto latest main. Performs git reset "
+        "--soft main, updates the task's base_sha to the new main HEAD. Does "
+        "NOT auto-commit -- you must stage and commit changes yourself after "
+        "resolving any conflicts. Fails if the working tree is dirty.",
+        {"task_id": int},
+    )
+    async def rebase_to_main(args: dict) -> dict:
+        try:
+            import subprocess
+            from delegate.task import get_task, update_task, format_task_id
+            from delegate.repo import get_task_worktree_path, get_repo_path
+
+            task_id = args["task_id"]
+            task = get_task(hc_home, team, task_id)
+
+            branch = task.get("branch")
+            if not branch:
+                return _error_result(f"Task {format_task_id(task_id)} has no branch")
+
+            repos = task.get("repo", [])
+            if not repos:
+                return _error_result(f"Task {format_task_id(task_id)} has no repos")
+
+            result_data = {
+                "task_id": task_id,
+                "branch": branch,
+                "repos": {},
+            }
+
+            for repo_name in repos:
+                # Get paths
+                worktree_path = get_task_worktree_path(hc_home, team, repo_name, task_id)
+                if not worktree_path.exists():
+                    return _error_result(
+                        f"Worktree not found for {repo_name}: {worktree_path}"
+                    )
+
+                repo_path = get_repo_path(hc_home, team, repo_name)
+                wt_str = str(worktree_path)
+
+                # Check for uncommitted changes
+                diff_check = subprocess.run(
+                    ["git", "diff", "--name-only", "HEAD"],
+                    cwd=wt_str,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if diff_check.stdout.strip():
+                    return _error_result(
+                        f"Working tree is dirty in {repo_name}. "
+                        f"Commit or stash changes before rebasing."
+                    )
+
+                # Check for staged changes
+                staged_check = subprocess.run(
+                    ["git", "diff", "--cached", "--name-only"],
+                    cwd=wt_str,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if staged_check.stdout.strip():
+                    return _error_result(
+                        f"Working tree has staged changes in {repo_name}. "
+                        f"Commit or unstage changes before rebasing."
+                    )
+
+                # Get current main HEAD
+                main_sha_result = subprocess.run(
+                    ["git", "rev-parse", "main"],
+                    cwd=wt_str,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if main_sha_result.returncode != 0:
+                    return _error_result(
+                        f"Failed to get main HEAD in {repo_name}: "
+                        f"{main_sha_result.stderr}"
+                    )
+
+                new_main_sha = main_sha_result.stdout.strip()
+
+                # Perform git reset --soft main
+                reset_result = subprocess.run(
+                    ["git", "reset", "--soft", "main"],
+                    cwd=wt_str,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if reset_result.returncode != 0:
+                    return _error_result(
+                        f"git reset --soft main failed in {repo_name}: "
+                        f"{reset_result.stderr}"
+                    )
+
+                result_data["repos"][repo_name] = {
+                    "new_base_sha": new_main_sha,
+                    "status": "reset_complete",
+                }
+
+            # Update task base_sha for all repos
+            base_sha_dict = {
+                repo_name: data["new_base_sha"]
+                for repo_name, data in result_data["repos"].items()
+            }
+            update_task(hc_home, team, task_id, base_sha=base_sha_dict)
+
+            result_data["message"] = (
+                f"Successfully reset {format_task_id(task_id)} to main. "
+                f"Changes are staged. Review with 'git status' and commit when ready."
+            )
+
+            return _json_result(result_data)
+
+        except Exception as e:
+            logger.exception("rebase_to_main failed")
+            return _error_result(str(e))
+
     return [
         mailbox_send,
         mailbox_inbox,
@@ -349,6 +476,7 @@ def build_agent_tools(hc_home: Path, team: str, agent: str) -> list:
         task_attach,
         task_detach,
         repo_list,
+        rebase_to_main,
     ]
 
 
