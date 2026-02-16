@@ -64,6 +64,23 @@ export async function prefetchTaskPanelData(taskIds) {
   }
 }
 
+// ── Prefetch all tab data for a single task (called from SSE) ──
+// Eagerly refreshes cache for all tabs when a task updates via SSE.
+// Fire-and-forget parallel fetches to ensure panel opens instantly.
+export function prefetchTaskData(taskId) {
+  if (!taskId) return;
+
+  Promise.allSettled([
+    api.fetchTaskStatsGlobal(taskId).then(s => s && _setCache(taskId, { stats: s })),
+    api.fetchTaskDiffGlobal(taskId).then(d => {
+      if (!d) return;
+      _setCache(taskId, { diffRaw: flattenDiffDict(d.diff) });
+    }),
+    api.fetchTaskActivityGlobal(taskId, 50).then(a => a && _setCache(taskId, { activityRaw: a })),
+    api.fetchCurrentReviewGlobal(taskId).then(r => r && _setCache(taskId, { currentReview: r })),
+  ]).catch(() => {});  // allSettled won't reject, but safety net
+}
+
 // ── Panel title helper (for back-bar) ──
 function panelTitle(entry, allTasks) {
   if (!entry) return "";
@@ -455,8 +472,13 @@ function ChangesTab({ task, diffRaw, currentReview, oldComments, stats }) {
     if (!commitsExpanded || commitsData !== null) return;
     setCommitsLoading(true);
     api.fetchTaskCommitsGlobal(t.id).then(data => {
+      if (!data) {
+        setCommitsData({ commit_diffs: {} });
+        return;
+      }
       setCommitsData(data);
-    }).catch(() => {
+    }).catch((err) => {
+      console.warn('Failed to fetch commits for task', t.id, err);
       setCommitsData({ commit_diffs: {} });
     }).finally(() => {
       setCommitsLoading(false);
@@ -862,13 +884,16 @@ export function TaskSidePanel() {
     // ── Revalidate in background ──
     // Fetch fresh task list to catch any updates that may have been missed
     api.fetchAllTasks().then(taskData => {
+      if (!taskData) return;
       tasks.value = taskData;
       const fresh = taskData.find(t => t.id === id);
       if (fresh) {
         setTask(fresh);
         _setCache(id, { task: fresh });
       }
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn('Failed to fetch all tasks on panel open:', err);
+    });
 
     // Parallelize stats + reviews loading
     (async () => {
@@ -907,20 +932,31 @@ export function TaskSidePanel() {
 
       // Eagerly start loading diff and activity in background (non-blocking)
       api.fetchTaskDiffGlobal(id).then(data => {
+        if (!data) return;
         const raw = flattenDiffDict(data.diff);
         setDiffRaw(raw);
         setDiffLoaded(true);
         _setCache(id, { diffRaw: raw });
-      }).catch(() => {});
+      }).catch((err) => {
+        console.warn('Failed to prefetch diff for task', id, err);
+      });
 
       api.fetchTaskActivityGlobal(id, 50).then(raw => {
+        if (!raw) {
+          setActivityRaw([]);
+          return;
+        }
         setActivityRaw(raw);
         setActivityLoaded(true);
         _setCache(id, { activityRaw: raw });
-      }).catch(() => {
+      }).catch((err) => {
+        console.warn('Failed to prefetch activity for task', id, err);
         setActivityRaw([]);
       });
     })();
+
+    // Always revalidate all data in background (not just current tab)
+    prefetchTaskData(id);
   }, [id]);
 
   // Sync task from signal when SSE pushes updates.
@@ -950,18 +986,24 @@ export function TaskSidePanel() {
     if (diffLoaded && _getCache(id).diffRaw) {
       // Already showing stale data — revalidate in background
       api.fetchTaskDiffGlobal(id).then(data => {
+        if (!data) return;
         const raw = flattenDiffDict(data.diff);
         setDiffRaw(raw);
         _setCache(id, { diffRaw: raw });
-      }).catch(() => {});
+      }).catch((err) => {
+        console.warn('Failed to revalidate diff for task', id, err);
+      });
       return;
     }
     setDiffLoaded(true);
     api.fetchTaskDiffGlobal(id).then(data => {
+      if (!data) return;
       const raw = flattenDiffDict(data.diff);
       setDiffRaw(raw);
       _setCache(id, { diffRaw: raw });
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn('Failed to fetch diff for task', id, err);
+    });
   }, [visitedTabs.changes, diffLoaded, id]);
 
   // Lazy load merge preview when Merge Preview tab first visited — stale-while-revalidate
@@ -969,27 +1011,38 @@ export function TaskSidePanel() {
     if (!visitedTabs.merge || id === null) return;
     if (mergePreviewLoaded && _getCache(id).mergePreviewRaw) {
       api.fetchTaskMergePreviewGlobal(id).then(data => {
+        if (!data) return;
         const raw = flattenDiffDict(data.diff);
         setMergePreviewRaw(raw);
         _setCache(id, { mergePreviewRaw: raw });
-      }).catch(() => {});
+      }).catch((err) => {
+        console.warn('Failed to revalidate merge preview for task', id, err);
+      });
       return;
     }
     setMergePreviewLoaded(true);
     api.fetchTaskMergePreviewGlobal(id).then(data => {
+      if (!data) return;
       const raw = flattenDiffDict(data.diff);
       setMergePreviewRaw(raw);
       _setCache(id, { mergePreviewRaw: raw });
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn('Failed to fetch merge preview for task', id, err);
+    });
   }, [visitedTabs.merge, mergePreviewLoaded, id]);
 
   // Lazy load activity when Activity tab first visited — stale-while-revalidate
   const loadActivity = useCallback(() => {
     if (id === null) return;
     api.fetchTaskActivityGlobal(id, 50).then(raw => {
+      if (!raw) {
+        setActivityRaw([]);
+        return;
+      }
       setActivityRaw(raw);
       _setCache(id, { activityRaw: raw });
-    }).catch(() => {
+    }).catch((err) => {
+      console.warn('Failed to load activity for task', id, err);
       setActivityRaw([]);
     });
   }, [id]);

@@ -20,7 +20,7 @@ import { Sidebar } from "./components/Sidebar.jsx";
 import { ChatPanel } from "./components/ChatPanel.jsx";
 import { TasksPanel } from "./components/TasksPanel.jsx";
 import { AgentsPanel } from "./components/AgentsPanel.jsx";
-import { TaskSidePanel, prefetchTaskPanelData, invalidateTaskCache } from "./components/TaskSidePanel.jsx";
+import { TaskSidePanel, prefetchTaskPanelData, invalidateTaskCache, prefetchTaskData } from "./components/TaskSidePanel.jsx";
 import { DiffPanel } from "./components/DiffPanel.jsx";
 import { ToastContainer } from "./components/Toast.jsx";
 import { HelpOverlay } from "./components/HelpOverlay.jsx";
@@ -617,6 +617,8 @@ function App() {
 
             // Invalidate task panel cache so reopening shows fresh data
             invalidateTaskCache(tid);
+            // Prefetch fresh data for all tabs
+            prefetchTaskData(tid);
 
             const human = humanName.value;
 
