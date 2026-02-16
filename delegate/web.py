@@ -70,14 +70,102 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _list_teams(hc_home: Path) -> list[str]:
-    """List all team names (human-readable, from the team name → UUID map)."""
-    return sorted(_list_team_names(hc_home))
+    """List all team names from the DB teams table (authoritative source).
+
+    Falls back to team_map.json if the DB table is empty or inaccessible,
+    then to a filesystem scan as a last resort.
+    """
+    # Primary: DB teams table
+    try:
+        from delegate.db import get_connection
+        conn = get_connection(hc_home)
+        try:
+            rows = conn.execute("SELECT name FROM teams ORDER BY name").fetchall()
+            names = [r["name"] for r in rows]
+            if names:
+                return names
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    # Fallback: team_map.json
+    names = _list_team_names(hc_home)
+    if names:
+        return sorted(names)
+    # Last resort: filesystem scan of team dirs
+    td = _teams_dir(hc_home)
+    if td.is_dir():
+        from delegate.paths import resolve_team_name as _rtn
+        return sorted({_rtn(hc_home, d.name) for d in td.iterdir() if d.is_dir()})
+    return []
 
 
 def _first_team(hc_home: Path) -> str:
     """Return the first team name (for single-team operations)."""
     teams = _list_teams(hc_home)
     return teams[0] if teams else "default"
+
+
+def _reconcile_team_map(hc_home: Path) -> None:
+    """Ensure team_map.json and the DB teams table are in sync.
+
+    Runs once at daemon startup.  Handles three failure modes:
+
+    1. **team_map.json missing** — rebuilt from DB teams table.
+    2. **DB teams table empty** — populated from team_map.json.
+    3. **Both have entries** — merged (union); each source may have
+       entries the other lacks.
+
+    This makes the system self-healing after partial data loss (e.g. a
+    user deletes protected/ but not teams/, or vice-versa).
+    """
+    from delegate.paths import (
+        register_team_path,
+        list_team_names,
+        resolve_team_uuid,
+    )
+    from delegate.db import get_connection
+
+    # Read both sources
+    map_data: dict[str, str] = {}
+    for name in list_team_names(hc_home):
+        uid = resolve_team_uuid(hc_home, name)
+        if uid != name:  # only include real mappings
+            map_data[name] = uid
+
+    db_data: dict[str, str] = {}
+    try:
+        conn = get_connection(hc_home)
+        try:
+            for row in conn.execute("SELECT name, team_id FROM teams").fetchall():
+                db_data[row["name"]] = row["team_id"]
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    # Reconcile: DB → team_map.json
+    for name, uid in db_data.items():
+        if name not in map_data:
+            logger.info("Reconcile: adding team '%s' to team_map.json from DB", name)
+            register_team_path(hc_home, name, uid)
+
+    # Reconcile: team_map.json → DB
+    for name, uid in map_data.items():
+        if name not in db_data:
+            logger.info("Reconcile: adding team '%s' to DB from team_map.json", name)
+            try:
+                conn = get_connection(hc_home)
+                try:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO teams (name, team_id) VALUES (?, ?)",
+                        (name, uid),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception:
+                logger.warning("Could not reconcile team '%s' into DB", name, exc_info=True)
 
 
 def _agent_last_active_at(agent_dir: Path) -> str | None:
@@ -771,6 +859,12 @@ async def _lifespan(app: FastAPI):
         token_budget = int(budget_str) if budget_str else None
 
         exchange = TelephoneExchange()
+
+        # Reconcile team_map.json with the DB teams table.
+        # If either source is incomplete (e.g. after a partial nuke),
+        # this ensures both are in sync so resolve_team_uuid() and
+        # _list_teams() work correctly.
+        _reconcile_team_map(hc_home)
 
         task = asyncio.create_task(
             _daemon_loop(hc_home, interval, max_concurrent, token_budget, exchange=exchange)

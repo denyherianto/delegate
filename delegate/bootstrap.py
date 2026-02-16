@@ -260,19 +260,21 @@ def bootstrap(
         tid_path.parent.mkdir(parents=True, exist_ok=True)
         tid_path.write_text(team_uuid[:6] + "\n")
 
-        # Register team in global teams table and team_ids translation table
-        from delegate.db import get_connection
-        from delegate.db_ids import register_team
-        conn = get_connection(hc_home, "")
-        try:
-            conn.execute(
-                "INSERT OR IGNORE INTO teams (name, team_id) VALUES (?, ?)",
-                (team_name, team_uuid),
-            )
-            register_team(conn, team_name, team_uuid=team_uuid)
-            conn.commit()
-        finally:
-            conn.close()
+    # Register team in global teams table and team_ids translation table.
+    # Always runs (INSERT OR IGNORE is idempotent) — even if the tid file
+    # already exists the DB row may be missing (e.g. after a DB wipe).
+    from delegate.db import get_connection
+    from delegate.db_ids import register_team
+    conn = get_connection(hc_home, "")
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO teams (name, team_id) VALUES (?, ?)",
+            (team_name, team_uuid),
+        )
+        register_team(conn, team_name, team_uuid=team_uuid)
+        conn.commit()
+    finally:
+        conn.close()
 
     # Per-team repos directory
     _repos_dir(hc_home, team_name).mkdir(parents=True, exist_ok=True)
