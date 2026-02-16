@@ -655,11 +655,11 @@ body {
 }
 
 /* Boss vs non-boss content hierarchy (color-based, no opacity) */
-.content-boss {
+.msg-content.content-boss {
   color: var(--text-primary);
 }
 
-.content-regular {
+.msg-content.content-regular {
   color: var(--text-muted);
 }
 
