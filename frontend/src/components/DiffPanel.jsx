@@ -221,9 +221,9 @@ function AgentView({ agentName }) {
           // Render turn separator
           if (e.type === "turn_separator") {
             let label = "Turn ended";
-            if (e.sender && e.task_id != null) {
+            if (e.sender && e.task_id > 0) {
               label = `Responding to ${e.sender} about ${taskIdStr(e.task_id)}`;
-            } else if (e.task_id != null) {
+            } else if (e.task_id > 0) {
               label = `Working on ${taskIdStr(e.task_id)}`;
             } else if (e.sender) {
               label = `Responding to ${e.sender}`;
@@ -243,7 +243,7 @@ function AgentView({ agentName }) {
           return (
             <div key={i} class="agent-activity-entry">
               <span class="agent-activity-ts">{ts}</span>
-              {e.task_id != null && (
+              {e.task_id > 0 && (
                 <span
                   class="agent-activity-task"
                   onClick={(ev) => { ev.stopPropagation(); pushPanel("task", e.task_id); }}
