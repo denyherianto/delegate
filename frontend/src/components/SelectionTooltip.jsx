@@ -13,6 +13,7 @@ export function SelectionTooltip({ containerRef, chatInputRef }) {
   const [selectedText, setSelectedText] = useState("");
   const [copied, setCopied] = useState(false);
   const tooltipRef = useRef();
+  const lastMouseUpTime = useRef(0);
 
   const hideTooltip = useCallback(() => {
     setVisible(false);
@@ -134,8 +135,9 @@ export function SelectionTooltip({ containerRef, chatInputRef }) {
 
     // Listen for mouseup to detect selection
     const onMouseUp = () => {
-      // Small delay to let selection complete
-      setTimeout(handleSelection, 10);
+      lastMouseUpTime.current = Date.now();
+      // Fallback with increased timeout for browsers that don't fire selectionchange reliably
+      setTimeout(handleSelection, 50);
     };
 
     // Hide tooltip when clicking outside or selection changes
@@ -147,8 +149,17 @@ export function SelectionTooltip({ containerRef, chatInputRef }) {
 
     const onSelectionChange = () => {
       const selection = window.getSelection();
-      if (!selection.toString().trim()) {
+      const text = selection.toString().trim();
+
+      if (!text) {
         hideTooltip();
+        return;
+      }
+
+      // If there was a recent mouseup (within 200ms), show the tooltip
+      const timeSinceMouseUp = Date.now() - lastMouseUpTime.current;
+      if (timeSinceMouseUp < 200) {
+        handleSelection();
       }
     };
 
