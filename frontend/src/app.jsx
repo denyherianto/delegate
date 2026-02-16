@@ -13,6 +13,7 @@ import {
   fetchWorkflows,
   isInputFocused,
   allTeamsAgents, allTeamsTurnState,
+  applyBootstrapId, lsKey,
 } from "./state.js";
 import * as api from "./api.js";
 import { Sidebar } from "./components/Sidebar.jsx";
@@ -138,7 +139,7 @@ function App() {
       // Tab navigation and sidebar toggle work even with side panels open
       if (e.key === "s" && !e.metaKey && !e.ctrlKey && !e.altKey && !isHelpOpen()) {
         sidebarCollapsed.value = !sidebarCollapsed.value;
-        localStorage.setItem("delegate-sidebar-collapsed", sidebarCollapsed.value ? "true" : "false");
+        localStorage.setItem(lsKey("sidebar-collapsed"), sidebarCollapsed.value ? "true" : "false");
         return;
       }
       if (e.key === "n" && !e.metaKey && !e.ctrlKey && !e.altKey && !isHelpOpen()) {
@@ -178,15 +179,19 @@ function App() {
   const bootstrapTeamRef = useRef(null);  // team whose data was pre-loaded
 
   useEffect(() => {
-    const lastTeam = localStorage.getItem("delegate-last-team");
-
     // Fallback: individual fetches (used when /bootstrap isn't available)
     const _fallbackInit = async () => {
       try {
         const cfg = await api.fetchConfig().catch(() => ({}));
+        // Apply bootstrap_id FIRST, before any localStorage reads
+        if (cfg.bootstrap_id) applyBootstrapId(cfg.bootstrap_id);
         if (cfg.human_name) humanName.value = cfg.human_name;
         if (cfg.hc_home) hcHome.value = cfg.hc_home;
       } catch (e) { }
+
+      // Now safe to read from localStorage
+      const lastTeam = localStorage.getItem(lsKey("last-team"));
+
       try {
         const teamList = await api.fetchTeams().catch(() => []);
         teams.value = teamList;
@@ -200,8 +205,11 @@ function App() {
     (async () => {
       // Try the single-request bootstrap first
       let boot = null;
+      // Read lastTeam early but will re-read after bootstrapId is known
+      const earlyLastTeam = localStorage.getItem("delegate-last-team");
+
       try {
-        boot = await api.fetchBootstrap(lastTeam);
+        boot = await api.fetchBootstrap(earlyLastTeam);
       } catch (e) {
         // /bootstrap failed or returned non-JSON — fall back to individual fetches
         console.warn("Bootstrap failed, using fallback:", e.message || e);
@@ -212,11 +220,17 @@ function App() {
         return;
       }
 
-      // Apply config
+      // Apply bootstrap_id FIRST, before any other localStorage reads
       const cfg = boot.config || {};
+      if (cfg.bootstrap_id) applyBootstrapId(cfg.bootstrap_id);
+
+      // Now apply rest of config
       if (cfg.human_name) humanName.value = cfg.human_name;
       else if (cfg.boss_name) humanName.value = cfg.boss_name;
       if (cfg.hc_home) hcHome.value = cfg.hc_home;
+
+      // Re-read lastTeam with the correct namespace
+      const lastTeam = localStorage.getItem(lsKey("last-team"));
 
       // Apply teams
       teams.value = boot.teams || [];
@@ -329,7 +343,7 @@ function App() {
     if (!t) return;
 
     // Persist last-selected team to localStorage
-    localStorage.setItem("delegate-last-team", t);
+    localStorage.setItem(lsKey("last-team"), t);
 
     // If this team was pre-loaded by /bootstrap, skip the fetch — data is
     // already in the signals.  Only do lightweight housekeeping.

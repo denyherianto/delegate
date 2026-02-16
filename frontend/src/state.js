@@ -12,6 +12,29 @@ export const humanName = signal("human");
 export const bossName = humanName;
 export const hcHome = signal("");   // absolute path to delegate home (e.g. /Users/x/.delegate)
 
+// ── Installation identity (bootstrap_id) ──
+export const bootstrapId = signal(null);
+
+/**
+ * Generate a namespaced localStorage key.
+ * Uses the first 8 chars of bootstrap_id as a prefix to scope keys per installation.
+ * Falls back to un-prefixed keys if bootstrapId is not set (backward compat).
+ */
+export function lsKey(key) {
+  return bootstrapId.value ? `delegate-${bootstrapId.value.slice(0, 8)}-${key}` : `delegate-${key}`;
+}
+
+/**
+ * Apply the bootstrap_id and re-read all localStorage values.
+ * Must be called before any localStorage reads during app initialization.
+ */
+export function applyBootstrapId(id) {
+  bootstrapId.value = id;
+  // Re-read UI state from localStorage with the correct key namespace
+  isMuted.value = localStorage.getItem(lsKey("muted")) === "true";
+  sidebarCollapsed.value = localStorage.getItem(lsKey("sidebar-collapsed")) === "true";
+}
+
 // ── Task team filter ──
 export const taskTeamFilter = signal("all"); // "current" | "all" | specific team name
 
@@ -25,8 +48,9 @@ export const allTeamsTurnState = signal({}); // { teamName: { agentName: { inTur
 
 // ── UI state ──
 export const activeTab = signal("chat");
-export const isMuted = signal(localStorage.getItem("delegate-muted") === "true");
-export const sidebarCollapsed = signal(localStorage.getItem("delegate-sidebar-collapsed") === "true");
+// Initialize with defaults; will be re-read from localStorage after bootstrapId is known
+export const isMuted = signal(false);
+export const sidebarCollapsed = signal(false);
 
 // ── URL-based navigation ──
 // URL format: /{tab}  e.g. /chat, /tasks, /agents
@@ -183,13 +207,12 @@ export const commandMode = signal(false);
 export const commandCwd = signal('');  // current working directory for shell commands
 
 // ── Per-team CWD persistence ──
-const CWD_STORAGE_KEY = "delegate_cwds";
 
 /** Load CWD for a team from localStorage. */
 export function loadTeamCwd(team) {
   if (!team) return '';
   try {
-    const stored = localStorage.getItem(CWD_STORAGE_KEY);
+    const stored = localStorage.getItem(lsKey("cwd"));
     if (!stored) return '';
     const cwds = JSON.parse(stored);
     return cwds[team] || '';
@@ -202,24 +225,23 @@ export function loadTeamCwd(team) {
 export function saveTeamCwd(team, cwd) {
   if (!team) return;
   try {
-    const stored = localStorage.getItem(CWD_STORAGE_KEY);
+    const stored = localStorage.getItem(lsKey("cwd"));
     const cwds = stored ? JSON.parse(stored) : {};
     cwds[team] = cwd;
-    localStorage.setItem(CWD_STORAGE_KEY, JSON.stringify(cwds));
+    localStorage.setItem(lsKey("cwd"), JSON.stringify(cwds));
   } catch {
     // Silently fail
   }
 }
 
 // ── Per-team command history ──
-const HISTORY_STORAGE_PREFIX = "delegate_cmd_history_";
 const MAX_HISTORY_SIZE = 50;
 
 /** Load command history for a team from localStorage. */
 export function loadTeamHistory(team) {
   if (!team) return [];
   try {
-    const stored = localStorage.getItem(HISTORY_STORAGE_PREFIX + team);
+    const stored = localStorage.getItem(lsKey(`cmd-history-${team}`));
     if (!stored) return [];
     return JSON.parse(stored);
   } catch {
@@ -231,7 +253,7 @@ export function loadTeamHistory(team) {
 export function saveTeamHistory(team, history) {
   if (!team) return;
   try {
-    localStorage.setItem(HISTORY_STORAGE_PREFIX + team, JSON.stringify(history));
+    localStorage.setItem(lsKey(`cmd-history-${team}`), JSON.stringify(history));
   } catch {
     // Silently fail
   }
@@ -312,25 +334,23 @@ export const bellPopoverOpen = signal(false);
 export const awaySummary = signal(null);
 
 // ── Last-seen tracking (localStorage) ──
-const LS_KEY = "delegate-last-seen";
 
 export function getLastSeen() {
-  return localStorage.getItem(LS_KEY) || null;
+  return localStorage.getItem(lsKey("last-seen")) || null;
 }
 
 export function updateLastSeen() {
-  localStorage.setItem(LS_KEY, new Date().toISOString());
+  localStorage.setItem(lsKey("last-seen"), new Date().toISOString());
 }
 
 // ── Last-greeted tracking (localStorage) ──
-const LS_GREETED_KEY = "delegate-last-greeted";
 
 export function getLastGreeted() {
-  return localStorage.getItem(LS_GREETED_KEY) || null;
+  return localStorage.getItem(lsKey("last-greeted")) || null;
 }
 
 export function updateLastGreeted() {
-  localStorage.setItem(LS_GREETED_KEY, new Date().toISOString());
+  localStorage.setItem(lsKey("last-greeted"), new Date().toISOString());
 }
 
 // ── Keyboard helpers ──
