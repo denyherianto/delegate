@@ -233,22 +233,27 @@ def bootstrap(
     td = _team_dir(hc_home, team_name)
     td.mkdir(parents=True, exist_ok=True)
 
-    # Generate a unique team instance ID (6-char hex) if not already present.
-    # This ID is embedded in branch names to avoid collisions when a team
+    # Generate a unique team instance ID (full UUID) if not already present.
+    # This ID is embedded in branch names ([:6]) to avoid collisions when a team
     # is deleted and recreated with the same name.
     tid_path = _team_id_path(hc_home, team_name)
     if not tid_path.exists():
-        team_id = uuid.uuid4().hex[:6]
-        tid_path.write_text(team_id + "\n")
+        team_uuid = uuid.uuid4().hex
+        # Write first 6 chars to file for branch name compatibility
+        tid_path.write_text(team_uuid[:6] + "\n")
 
-        # Register team in global teams table
+        # Register team in global teams table and team_ids translation table
         from delegate.db import get_connection
+        from delegate.db_ids import register_team
         conn = get_connection(hc_home, "")
         try:
+            # Store full UUID in teams.team_id column
             conn.execute(
                 "INSERT OR IGNORE INTO teams (name, team_id) VALUES (?, ?)",
-                (team_name, team_id),
+                (team_name, team_uuid),
             )
+            # Register in team_ids translation table with the same UUID
+            register_team(conn, team_name, team_uuid=team_uuid)
             conn.commit()
         finally:
             conn.close()
@@ -422,6 +427,17 @@ def add_agent(
     (member_dir / "state.yaml").write_text(
         yaml.dump(_default_state(role, seniority), default_flow_style=False)
     )
+
+    # --- register agent in member_ids translation table ---
+    from delegate.db import get_connection
+    from delegate.db_ids import register_member, resolve_team
+    conn = get_connection(hc_home, "")
+    try:
+        team_uuid = resolve_team(conn, team_name)
+        register_member(conn, "agent", team_uuid, agent_name)
+        conn.commit()
+    finally:
+        conn.close()
 
     # --- append to roster.md ---
     rp = _roster_path(hc_home, team_name)

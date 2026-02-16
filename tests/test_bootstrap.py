@@ -126,16 +126,19 @@ def test_db_schema_created(tmp_team):
     msg_columns = {row[1] for row in cursor.fetchall()}
     # V9 added delivered_at, seen_at, processed_at for unified mailbox/messages table
     # V10 added result for magic commands support
-    # V11 added team for multi-team support
-    assert msg_columns == {"id", "timestamp", "sender", "recipient", "content", "type", "task_id", "delivered_at", "seen_at", "processed_at", "result", "team"}
+    # V12 added team for multi-team support
+    # V16 added team_uuid, sender_uuid, recipient_uuid for UUID translation
+    assert msg_columns == {"id", "timestamp", "sender", "recipient", "content", "type", "task_id", "delivered_at", "seen_at", "processed_at", "result", "team", "team_uuid", "sender_uuid", "recipient_uuid"}
 
     cursor = conn.execute("PRAGMA table_info(sessions)")
     sess_columns = {row[1] for row in cursor.fetchall()}
-    # V11 added team for multi-team support
+    # V12 added team for multi-team support
+    # V16 added team_uuid, agent_uuid for UUID translation
     assert sess_columns == {
         "id", "agent", "task_id", "started_at", "ended_at",
         "duration_seconds", "tokens_in", "tokens_out", "cost_usd",
         "cache_read_tokens", "cache_write_tokens", "team",
+        "team_uuid", "agent_uuid",
     }
 
     conn.close()

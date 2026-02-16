@@ -21,6 +21,7 @@ import json
 import logging
 import sqlite3
 import threading
+import uuid as uuid_module
 from pathlib import Path
 
 from delegate.paths import db_path, global_db_path
@@ -449,6 +450,69 @@ CREATE INDEX IF NOT EXISTS idx_tasks_workflow ON tasks(workflow);
 ALTER TABLE tasks ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';
 UPDATE tasks SET workflow = 'default' WHERE workflow = 'standard';
 """,
+
+    # --- V15: UUID translation tables (team_ids, member_ids) ---
+    """\
+CREATE TABLE IF NOT EXISTS team_ids (
+    uuid TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    deleted INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_team_ids_active ON team_ids(name) WHERE deleted = 0;
+
+CREATE TABLE IF NOT EXISTS member_ids (
+    uuid TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK(kind IN ('agent', 'human')),
+    team_uuid TEXT,
+    name TEXT NOT NULL,
+    deleted INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_member_ids_active
+    ON member_ids(kind, team_uuid, name) WHERE deleted = 0;
+
+-- Update teams.team_id to store full UUID (pad existing 6-char values to 32 chars)
+UPDATE teams SET team_id = team_id || '00000000000000000000000000' WHERE length(team_id) = 6;
+""",
+
+    # --- V16: UUID columns on all data tables ---
+    """\
+-- messages
+ALTER TABLE messages ADD COLUMN team_uuid TEXT NOT NULL DEFAULT '';
+ALTER TABLE messages ADD COLUMN sender_uuid TEXT NOT NULL DEFAULT '';
+ALTER TABLE messages ADD COLUMN recipient_uuid TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_messages_team_uuid ON messages(team_uuid);
+CREATE INDEX IF NOT EXISTS idx_messages_team_uuid_recipient_uuid ON messages(team_uuid, recipient_uuid);
+CREATE INDEX IF NOT EXISTS idx_messages_recipient_uuid_unread ON messages(recipient_uuid, delivered_at) WHERE type='chat' AND processed_at IS NULL;
+
+-- sessions
+ALTER TABLE sessions ADD COLUMN team_uuid TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN agent_uuid TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_sessions_team_uuid_agent_uuid ON sessions(team_uuid, agent_uuid);
+
+-- tasks
+ALTER TABLE tasks ADD COLUMN team_uuid TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN dri_uuid TEXT NOT NULL DEFAULT '';
+ALTER TABLE tasks ADD COLUMN assignee_uuid TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_tasks_team_uuid_status ON tasks(team_uuid, status);
+CREATE INDEX IF NOT EXISTS idx_tasks_team_uuid_id ON tasks(team_uuid, id);
+
+-- task_comments
+ALTER TABLE task_comments ADD COLUMN team_uuid TEXT NOT NULL DEFAULT '';
+ALTER TABLE task_comments ADD COLUMN author_uuid TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_task_comments_team_uuid_task_id ON task_comments(team_uuid, task_id);
+
+-- reviews
+ALTER TABLE reviews ADD COLUMN team_uuid TEXT NOT NULL DEFAULT '';
+ALTER TABLE reviews ADD COLUMN reviewer_uuid TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_reviews_team_uuid_task_id ON reviews(team_uuid, task_id);
+
+-- review_comments
+ALTER TABLE review_comments ADD COLUMN team_uuid TEXT NOT NULL DEFAULT '';
+ALTER TABLE review_comments ADD COLUMN author_uuid TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_review_comments_team_uuid ON review_comments(team_uuid, task_id, attempt);
+""",
 ]
 
 # Columns that store JSON arrays and need parse/serialize on read/write.
@@ -471,6 +535,337 @@ def _current_version(conn: sqlite3.Connection) -> int:
         "SELECT MAX(version) FROM schema_meta"
     ).fetchone()
     return row[0] or 0
+
+
+def _backfill_uuid_tables(conn: sqlite3.Connection, hc_home: Path) -> None:
+    """Backfill team_ids and member_ids tables from existing data.
+
+    This function is idempotent and safe to call multiple times.
+    It populates:
+    1. team_ids from the teams table
+    2. member_ids from filesystem (agents) and members/*.yaml (humans)
+    3. *_uuid columns in all data tables
+
+    Args:
+        conn: Database connection (should be in autocommit mode)
+        hc_home: Delegate home directory
+    """
+    # Check if team_ids table exists (V15 applied)
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='team_ids'"
+    ).fetchone()
+    if not row:
+        # V15 not yet applied, skip backfill
+        return
+
+    # -------------------------------------------------------------------------
+    # Part 1: Backfill team_ids from teams table
+    # -------------------------------------------------------------------------
+    teams_rows = conn.execute("SELECT name, team_id FROM teams").fetchall()
+    for team_name, team_id in teams_rows:
+        # INSERT OR IGNORE to handle re-runs
+        conn.execute(
+            "INSERT OR IGNORE INTO team_ids (uuid, name) VALUES (?, ?)",
+            (team_id, team_name)
+        )
+
+    # -------------------------------------------------------------------------
+    # Part 2: Backfill member_ids from filesystem
+    # -------------------------------------------------------------------------
+    teams_dir = hc_home / "teams"
+    if teams_dir.is_dir():
+        for team_dir in teams_dir.iterdir():
+            if not team_dir.is_dir():
+                continue
+            team_name = team_dir.name
+
+            # Get team UUID
+            team_row = conn.execute(
+                "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0",
+                (team_name,)
+            ).fetchone()
+            if not team_row:
+                continue
+            team_uuid = team_row[0]
+
+            # Scan agents
+            agents_dir = team_dir / "agents"
+            if agents_dir.is_dir():
+                for agent_dir in agents_dir.iterdir():
+                    if not agent_dir.is_dir():
+                        continue
+                    agent_name = agent_dir.name
+                    conn.execute(
+                        "INSERT OR IGNORE INTO member_ids (uuid, kind, team_uuid, name) VALUES (?, ?, ?, ?)",
+                        (uuid_module.uuid4().hex, "agent", team_uuid, agent_name)
+                    )
+
+    # Scan humans
+    members_dir = hc_home / "members"
+    if members_dir.is_dir():
+        for member_file in members_dir.glob("*.yaml"):
+            human_name = member_file.stem
+            conn.execute(
+                "INSERT OR IGNORE INTO member_ids (uuid, kind, team_uuid, name) VALUES (?, ?, ?, ?)",
+                (uuid_module.uuid4().hex, "human", None, human_name)
+            )
+
+    # -------------------------------------------------------------------------
+    # Part 3: Backfill *_uuid columns in data tables (only if V16 applied)
+    # -------------------------------------------------------------------------
+    # Check if messages has team_uuid column
+    cursor = conn.execute("PRAGMA table_info(messages)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "team_uuid" not in columns:
+        # V16 not yet applied, skip UUID column backfill
+        return
+
+    # Messages table
+    conn.execute("""
+        UPDATE messages
+        SET team_uuid = COALESCE(
+            (SELECT uuid FROM team_ids WHERE name = messages.team AND deleted = 0),
+            ''
+        )
+        WHERE team_uuid = ''
+    """)
+
+    # For sender_uuid and recipient_uuid, we need to try agent first then human
+    # This is complex in SQL, so we'll do it row by row in Python for the backfill
+    messages_to_update = conn.execute(
+        "SELECT id, team, sender, recipient FROM messages WHERE sender_uuid = ''"
+    ).fetchall()
+    for msg_id, team, sender, recipient in messages_to_update:
+        # Get team UUID
+        team_uuid_row = conn.execute(
+            "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0", (team,)
+        ).fetchone()
+        if not team_uuid_row:
+            continue
+        team_uuid = team_uuid_row[0]
+
+        # Resolve sender (try agent first, then human)
+        sender_uuid = None
+        row = conn.execute(
+            "SELECT uuid FROM member_ids WHERE kind = 'agent' AND team_uuid = ? AND name = ? AND deleted = 0",
+            (team_uuid, sender)
+        ).fetchone()
+        if row:
+            sender_uuid = row[0]
+        else:
+            row = conn.execute(
+                "SELECT uuid FROM member_ids WHERE kind = 'human' AND team_uuid IS NULL AND name = ? AND deleted = 0",
+                (sender,)
+            ).fetchone()
+            if row:
+                sender_uuid = row[0]
+
+        # Resolve recipient
+        recipient_uuid = None
+        row = conn.execute(
+            "SELECT uuid FROM member_ids WHERE kind = 'agent' AND team_uuid = ? AND name = ? AND deleted = 0",
+            (team_uuid, recipient)
+        ).fetchone()
+        if row:
+            recipient_uuid = row[0]
+        else:
+            row = conn.execute(
+                "SELECT uuid FROM member_ids WHERE kind = 'human' AND team_uuid IS NULL AND name = ? AND deleted = 0",
+                (recipient,)
+            ).fetchone()
+            if row:
+                recipient_uuid = row[0]
+
+        # Update message
+        if sender_uuid and recipient_uuid:
+            conn.execute(
+                "UPDATE messages SET sender_uuid = ?, recipient_uuid = ? WHERE id = ?",
+                (sender_uuid, recipient_uuid, msg_id)
+            )
+
+    # Sessions table
+    conn.execute("""
+        UPDATE sessions
+        SET team_uuid = COALESCE(
+            (SELECT uuid FROM team_ids WHERE name = sessions.team AND deleted = 0),
+            ''
+        ),
+        agent_uuid = COALESCE(
+            (SELECT m.uuid FROM member_ids m
+             JOIN team_ids t ON m.team_uuid = t.uuid
+             WHERE m.kind = 'agent' AND t.name = sessions.team AND m.name = sessions.agent AND m.deleted = 0),
+            ''
+        )
+        WHERE team_uuid = ''
+    """)
+
+    # Tasks table
+    tasks_to_update = conn.execute(
+        "SELECT id, team, dri, assignee FROM tasks WHERE team_uuid = ''"
+    ).fetchall()
+    for task_id, team, dri, assignee in tasks_to_update:
+        team_uuid_row = conn.execute(
+            "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0", (team,)
+        ).fetchone()
+        if not team_uuid_row:
+            continue
+        team_uuid = team_uuid_row[0]
+
+        # Resolve DRI (flexible)
+        dri_uuid = ''
+        if dri:
+            row = conn.execute(
+                "SELECT uuid FROM member_ids WHERE kind = 'agent' AND team_uuid = ? AND name = ? AND deleted = 0",
+                (team_uuid, dri)
+            ).fetchone()
+            if row:
+                dri_uuid = row[0]
+            else:
+                row = conn.execute(
+                    "SELECT uuid FROM member_ids WHERE kind = 'human' AND team_uuid IS NULL AND name = ? AND deleted = 0",
+                    (dri,)
+                ).fetchone()
+                if row:
+                    dri_uuid = row[0]
+
+        # Resolve assignee (flexible)
+        assignee_uuid = ''
+        if assignee:
+            row = conn.execute(
+                "SELECT uuid FROM member_ids WHERE kind = 'agent' AND team_uuid = ? AND name = ? AND deleted = 0",
+                (team_uuid, assignee)
+            ).fetchone()
+            if row:
+                assignee_uuid = row[0]
+            else:
+                row = conn.execute(
+                    "SELECT uuid FROM member_ids WHERE kind = 'human' AND team_uuid IS NULL AND name = ? AND deleted = 0",
+                    (assignee,)
+                ).fetchone()
+                if row:
+                    assignee_uuid = row[0]
+
+        conn.execute(
+            "UPDATE tasks SET team_uuid = ?, dri_uuid = ?, assignee_uuid = ? WHERE id = ?",
+            (team_uuid, dri_uuid, assignee_uuid, task_id)
+        )
+
+    # Task comments table
+    conn.execute("""
+        UPDATE task_comments
+        SET team_uuid = COALESCE(
+            (SELECT t.uuid FROM tasks tk
+             JOIN team_ids t ON t.name = tk.team
+             WHERE tk.id = task_comments.task_id AND t.deleted = 0),
+            ''
+        )
+        WHERE team_uuid = ''
+    """)
+
+    # For author_uuid, need flexible resolution
+    comments_to_update = conn.execute(
+        "SELECT task_comments.id, tasks.team, task_comments.author FROM task_comments "
+        "JOIN tasks ON task_comments.task_id = tasks.id "
+        "WHERE task_comments.author_uuid = ''"
+    ).fetchall()
+    for comment_id, team, author in comments_to_update:
+        team_uuid_row = conn.execute(
+            "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0", (team,)
+        ).fetchone()
+        if not team_uuid_row:
+            continue
+        team_uuid = team_uuid_row[0]
+
+        author_uuid = ''
+        row = conn.execute(
+            "SELECT uuid FROM member_ids WHERE kind = 'agent' AND team_uuid = ? AND name = ? AND deleted = 0",
+            (team_uuid, author)
+        ).fetchone()
+        if row:
+            author_uuid = row[0]
+        else:
+            row = conn.execute(
+                "SELECT uuid FROM member_ids WHERE kind = 'human' AND team_uuid IS NULL AND name = ? AND deleted = 0",
+                (author,)
+            ).fetchone()
+            if row:
+                author_uuid = row[0]
+
+        if author_uuid:
+            conn.execute(
+                "UPDATE task_comments SET author_uuid = ? WHERE id = ?",
+                (author_uuid, comment_id)
+            )
+
+    # Reviews table
+    reviews_to_update = conn.execute(
+        "SELECT reviews.id, tasks.team, reviews.reviewer FROM reviews "
+        "JOIN tasks ON reviews.task_id = tasks.id "
+        "WHERE reviews.team_uuid = ''"
+    ).fetchall()
+    for review_id, team, reviewer in reviews_to_update:
+        team_uuid_row = conn.execute(
+            "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0", (team,)
+        ).fetchone()
+        if not team_uuid_row:
+            continue
+        team_uuid = team_uuid_row[0]
+
+        reviewer_uuid = ''
+        if reviewer:
+            row = conn.execute(
+                "SELECT uuid FROM member_ids WHERE kind = 'agent' AND team_uuid = ? AND name = ? AND deleted = 0",
+                (team_uuid, reviewer)
+            ).fetchone()
+            if row:
+                reviewer_uuid = row[0]
+            else:
+                row = conn.execute(
+                    "SELECT uuid FROM member_ids WHERE kind = 'human' AND team_uuid IS NULL AND name = ? AND deleted = 0",
+                    (reviewer,)
+                ).fetchone()
+                if row:
+                    reviewer_uuid = row[0]
+
+        conn.execute(
+            "UPDATE reviews SET team_uuid = ?, reviewer_uuid = ? WHERE id = ?",
+            (team_uuid, reviewer_uuid, review_id)
+        )
+
+    # Review comments table
+    review_comments_to_update = conn.execute(
+        "SELECT review_comments.id, tasks.team, review_comments.author FROM review_comments "
+        "JOIN tasks ON review_comments.task_id = tasks.id "
+        "WHERE review_comments.team_uuid = ''"
+    ).fetchall()
+    for rc_id, team, author in review_comments_to_update:
+        team_uuid_row = conn.execute(
+            "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0", (team,)
+        ).fetchone()
+        if not team_uuid_row:
+            continue
+        team_uuid = team_uuid_row[0]
+
+        author_uuid = ''
+        row = conn.execute(
+            "SELECT uuid FROM member_ids WHERE kind = 'agent' AND team_uuid = ? AND name = ? AND deleted = 0",
+            (team_uuid, author)
+        ).fetchone()
+        if row:
+            author_uuid = row[0]
+        else:
+            row = conn.execute(
+                "SELECT uuid FROM member_ids WHERE kind = 'human' AND team_uuid IS NULL AND name = ? AND deleted = 0",
+                (author,)
+            ).fetchone()
+            if row:
+                author_uuid = row[0]
+
+        if author_uuid:
+            conn.execute(
+                "UPDATE review_comments SET author_uuid = ? WHERE id = ?",
+                (author_uuid, rc_id)
+            )
 
 
 def ensure_schema(hc_home: Path, team: str = "") -> None:
@@ -544,6 +939,10 @@ def ensure_schema(hc_home: Path, team: str = "") -> None:
             conn.execute("ROLLBACK")
             raise
         logger.info("Migration V%d applied", i)
+
+    # Backfill UUID tables after migrations complete
+    # This is idempotent and safe to run on every startup
+    _backfill_uuid_tables(conn, hc_home)
 
     # Update cache to avoid redundant checks on subsequent calls
     with _schema_lock:

@@ -131,6 +131,20 @@ def add_member(hc_home: Path, name: str, **extra) -> dict:
     data.update(extra)
     if not mp.exists():
         mp.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
+
+        # Register human in member_ids translation table
+        from delegate.db import get_connection
+        from delegate.db_ids import register_member
+        conn = get_connection(hc_home, "")
+        try:
+            # Use INSERT OR IGNORE to handle re-runs
+            register_member(conn, "human", None, name)
+            conn.commit()
+        except Exception:
+            # If registration fails (e.g., duplicate), ignore and continue
+            pass
+        finally:
+            conn.close()
     else:
         data = yaml.safe_load(mp.read_text()) or {}
         data.setdefault("name", name)
