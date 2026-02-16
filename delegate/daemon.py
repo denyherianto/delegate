@@ -19,7 +19,7 @@ import sys
 import time
 from pathlib import Path
 
-from delegate.paths import daemon_pid_path
+from delegate.paths import daemon_pid_path, ensure_protected
 from delegate.logging_setup import configure_logging, log_file_path
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,7 @@ def start_daemon(
         raise RuntimeError(f"Daemon already running with PID {existing_pid}")
 
     hc_home.mkdir(parents=True, exist_ok=True)
+    ensure_protected(hc_home)
 
     # Set environment variables for the web app
     env = os.environ.copy()

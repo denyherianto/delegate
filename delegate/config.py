@@ -1,15 +1,15 @@
 """Configuration management for Delegate.
 
-Global config lives in ``~/.delegate/config.yaml`` (source_repo, etc.).
-Human members live in ``~/.delegate/members/<name>.yaml``.
-Per-team repo config lives in ``~/.delegate/teams/<team>/repos.yaml``.
+Global config lives in ``~/.delegate/protected/config.yaml``.
+Human members live in ``~/.delegate/protected/members/<name>.yaml``.
+Per-team repo config lives in ``~/.delegate/protected/teams/<team>/repos.yaml``.
 """
 
 from pathlib import Path
 
 import yaml
 
-from delegate.paths import config_path, team_dir, members_dir, member_path
+from delegate.paths import config_path, members_dir, member_path, repos_config_path
 
 # ---------------------------------------------------------------------------
 # Well-known identities
@@ -206,11 +206,11 @@ def set_source_repo(hc_home: Path, path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Per-team repo config (teams/<team>/repos.yaml)
+# Per-team repo config (protected/teams/<team>/repos.yaml)
 # ---------------------------------------------------------------------------
 
 def _repos_config_path(hc_home: Path, team: str) -> Path:
-    return team_dir(hc_home, team) / "repos.yaml"
+    return repos_config_path(hc_home, team)
 
 
 def _read_repos(hc_home: Path, team: str) -> dict:

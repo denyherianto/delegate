@@ -62,11 +62,11 @@ def test_state_yaml_has_role(tmp_team):
     assert state["role"] == "engineer"
 
 
-def test_boss_directory_created(tmp_team):
-    """The boss's global directory is created outside any team."""
+def test_protected_directory_created(tmp_team):
+    """The protected/ directory is created at bootstrap time."""
     hc_home = tmp_team
-    bd = boss_person_dir(hc_home)
-    assert bd.is_dir()
+    from delegate.paths import protected_dir
+    assert protected_dir(hc_home).is_dir()
 
 
 def test_roster_contains_all_members(tmp_team):

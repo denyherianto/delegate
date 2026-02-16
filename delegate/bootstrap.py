@@ -22,9 +22,10 @@ from delegate.paths import (
     agents_dir as _agents_dir,
     repos_dir as _repos_dir,
     roster_path as _roster_path,
-    boss_person_dir as _boss_person_dir,
     members_dir as _members_dir,
     base_charter_dir,
+    ensure_protected,
+    ensure_protected_team,
 )
 from delegate.config import get_boss, get_default_human, add_member, get_human_members
 
@@ -228,10 +229,14 @@ def bootstrap(
 
     # Ensure top-level directories exist
     hc_home.mkdir(parents=True, exist_ok=True)
+    ensure_protected(hc_home)
 
-    # Team directory
+    # Team directory (working data)
     td = _team_dir(hc_home, team_name)
     td.mkdir(parents=True, exist_ok=True)
+
+    # Protected team directory (metadata)
+    ensure_protected_team(hc_home, team_name)
 
     # Generate a unique team instance ID (full UUID) if not already present.
     # This ID is embedded in branch names ([:6]) to avoid collisions when a team
@@ -328,9 +333,7 @@ def bootstrap(
     # Ensure member file exists (idempotent)
     add_member(hc_home, human_name)
 
-    # Legacy: keep boss dir for backward compat (will be removed in future)
-    dd = _boss_person_dir(hc_home)
-    dd.mkdir(parents=True, exist_ok=True)
+    # (Legacy boss dir creation removed — no backward compatibility needed.)
 
 
 def add_agent(

@@ -54,13 +54,10 @@ def hc(tmp_path):
 class TestBossyStructure:
     """Verify the bootstrapped directory layout."""
 
-    def test_boss_dir_is_global(self, hc):
-        """Boss directory lives at hc/boss/, outside any team."""
-        dd = boss_person_dir(hc)
-        assert dd.is_dir()
-        # NOT inside any team
-        assert not (agents_dir(hc, TEAM_A) / DIRECTOR).exists()
-        assert not (agents_dir(hc, TEAM_B) / DIRECTOR).exists()
+    def test_protected_dir_exists(self, hc):
+        """Protected directory exists at hc/protected/."""
+        from delegate.paths import protected_dir
+        assert protected_dir(hc).is_dir()
 
     def test_team_agents_exist(self, hc):
         """Each team's agents have their own bossies."""

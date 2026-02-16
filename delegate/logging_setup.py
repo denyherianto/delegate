@@ -75,8 +75,10 @@ def configure_logging(
 
     # File handler (rotated)
     if hc_home is not None:
-        hc_home.mkdir(parents=True, exist_ok=True)
-        log_path = hc_home / "delegate.log"
+        from delegate.paths import protected_dir
+        pdir = protected_dir(hc_home)
+        pdir.mkdir(parents=True, exist_ok=True)
+        log_path = pdir / "delegate.log"
         fh = logging.handlers.RotatingFileHandler(
             str(log_path),
             maxBytes=max_bytes,
@@ -98,4 +100,5 @@ def configure_logging(
 
 def log_file_path(hc_home: Path) -> Path:
     """Return the path to the log file (for daemon stderr redirect)."""
-    return hc_home / "delegate.log"
+    from delegate.paths import protected_dir
+    return protected_dir(hc_home) / "delegate.log"
