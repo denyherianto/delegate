@@ -649,23 +649,33 @@ async def _daemon_loop(
         except Exception:
             logger.debug("Could not notify manager for team %s", team, exc_info=True)
 
-    # --- Startup notification ---
-    try:
-        teams = _list_teams(hc_home)
-        for team in teams:
-            from delegate.task import list_tasks as _list_tasks_all
-            try:
-                all_tasks = _list_tasks_all(hc_home, team)
-                active = [t for t in all_tasks if t.get("status") not in ("done", "cancelled")]
-                summary = (
-                    f"Daemon started. Team '{team}' has {len(all_tasks)} total tasks "
-                    f"({len(active)} active)."
-                )
-                _notify_manager(team, summary)
-            except Exception:
-                _notify_manager(team, f"Daemon started for team '{team}'.")
-    except Exception:
-        logger.debug("Startup notification failed", exc_info=True)
+    # --- Delayed startup notification ---
+    async def _delayed_startup_notification() -> None:
+        """Send startup notification after 60s delay, only if there are active tasks."""
+        await asyncio.sleep(60)
+        try:
+            teams = _list_teams(hc_home)
+            for team in teams:
+                from delegate.task import list_tasks as _list_tasks_all
+                try:
+                    all_tasks = _list_tasks_all(hc_home, team)
+                    active = [t for t in all_tasks if t.get("status") not in ("done", "cancelled")]
+                    # Skip notification if no active tasks
+                    if not active:
+                        continue
+                    summary = (
+                        f"Daemon started. Team '{team}' has {len(all_tasks)} total tasks "
+                        f"({len(active)} active)."
+                    )
+                    _notify_manager(team, summary)
+                except Exception:
+                    # Only notify if there might be active tasks (can't determine due to error)
+                    _notify_manager(team, f"Daemon started for team '{team}'.")
+        except Exception:
+            logger.debug("Startup notification failed", exc_info=True)
+
+    # Start the delayed notification task in the background
+    asyncio.create_task(_delayed_startup_notification())
 
     async def _dispatch_turn(team: str, agent: str) -> None:
         """Dispatch and run one turn, then remove from in_flight."""
