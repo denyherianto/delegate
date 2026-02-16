@@ -665,12 +665,16 @@ async def _daemon_loop(
                         continue
                     summary = (
                         f"Daemon started. Team '{team}' has {len(all_tasks)} total tasks "
-                        f"({len(active)} active)."
+                        f"({len(active)} active).\n"
+                        f"Check status of all tasks and agents -- assign/reassign as needed and send messages to wake up relevant agents."
                     )
                     _notify_manager(team, summary)
                 except Exception:
                     # Only notify if there might be active tasks (can't determine due to error)
-                    _notify_manager(team, f"Daemon started for team '{team}'.")
+                    _notify_manager(
+                        team,
+                        f"Daemon started for team '{team}'. Check status of all tasks and agents -- assign/reassign as needed and send messages to wake up relevant agents."
+                    )
         except Exception:
             logger.debug("Startup notification failed", exc_info=True)
 
@@ -769,7 +773,7 @@ async def _daemon_loop(
                                     # Notify manager of task completion
                                     _notify_manager(
                                         t,
-                                        f"Task {format_task_id(mr.task_id)} has been merged successfully. {mr.message}",
+                                        f"Task {format_task_id(mr.task_id)} has been merged successfully. Check status of tasks and agents -- make any necessary assignment decisions.",
                                     )
                                 else:
                                     logger.warning("Merge failed %s in %s: %s", mr.task_id, t, mr.message)
