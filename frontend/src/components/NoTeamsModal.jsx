@@ -14,7 +14,7 @@ export function NoTeamsModal() {
         <div class="no-teams-body">
           <p>Create a team to get started:</p>
           <div class="no-teams-commands">
-            <code>delegate team create &lt;name&gt;</code>
+            <code>delegate team add &lt;name&gt;</code>
             <code>delegate agent add &lt;team&gt; &lt;name&gt;</code>
           </div>
           <p class="no-teams-hint">The page will update automatically once a team is created.</p>
