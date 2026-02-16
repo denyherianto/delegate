@@ -26,6 +26,9 @@ from delegate.paths import (
     base_charter_dir,
     ensure_protected,
     ensure_protected_team,
+    register_team_path,
+    resolve_team_uuid,
+    resolve_team_name,
 )
 from delegate.config import get_boss, get_default_human, add_member, get_human_members
 
@@ -51,7 +54,9 @@ def get_all_agent_names(hc_home: Path) -> dict[str, list[str]]:
             agent_name = agent_dir_obj.name
             if agent_name not in result:
                 result[agent_name] = []
-            result[agent_name].append(team_dir_obj.name)
+            result[agent_name].append(
+                resolve_team_name(hc_home, team_dir_obj.name)
+            )
     return result
 
 
@@ -231,20 +236,28 @@ def bootstrap(
     hc_home.mkdir(parents=True, exist_ok=True)
     ensure_protected(hc_home)
 
-    # Team directory (working data)
+    # Generate a unique team UUID if not already registered.
+    # Must happen BEFORE creating directories so that team_dir() / protected_team_dir()
+    # resolve to UUID-based paths from the start.
+    existing_uuid = resolve_team_uuid(hc_home, team_name)
+    if existing_uuid == team_name:
+        # No UUID mapping yet — generate one
+        team_uuid = uuid.uuid4().hex
+        register_team_path(hc_home, team_name, team_uuid)
+    else:
+        team_uuid = existing_uuid
+
+    # Team directory (working data) — now UUID-resolved
     td = _team_dir(hc_home, team_name)
     td.mkdir(parents=True, exist_ok=True)
 
     # Protected team directory (metadata)
     ensure_protected_team(hc_home, team_name)
 
-    # Generate a unique team instance ID (full UUID) if not already present.
-    # This ID is embedded in branch names ([:6]) to avoid collisions when a team
-    # is deleted and recreated with the same name.
+    # Write short team ID for branch name compatibility
     tid_path = _team_id_path(hc_home, team_name)
     if not tid_path.exists():
-        team_uuid = uuid.uuid4().hex
-        # Write first 6 chars to file for branch name compatibility
+        tid_path.parent.mkdir(parents=True, exist_ok=True)
         tid_path.write_text(team_uuid[:6] + "\n")
 
         # Register team in global teams table and team_ids translation table
@@ -252,12 +265,10 @@ def bootstrap(
         from delegate.db_ids import register_team
         conn = get_connection(hc_home, "")
         try:
-            # Store full UUID in teams.team_id column
             conn.execute(
                 "INSERT OR IGNORE INTO teams (name, team_id) VALUES (?, ?)",
                 (team_name, team_uuid),
             )
-            # Register in team_ids translation table with the same UUID
             register_team(conn, team_name, team_uuid=team_uuid)
             conn.commit()
         finally:

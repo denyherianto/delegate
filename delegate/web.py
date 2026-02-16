@@ -55,6 +55,7 @@ from delegate.paths import (
     shared_dir as _shared_dir,
     team_dir as _team_dir,
     teams_dir as _teams_dir,
+    resolve_team_uuid as _resolve_team,
 )
 from delegate.config import get_default_human
 from delegate.task import list_tasks as _list_tasks, get_task as _get_task, get_task_diff as _get_task_diff, get_task_merge_preview as _get_merge_preview, get_task_commit_diffs as _get_commit_diffs, update_task as _update_task, change_status as _change_status, VALID_STATUSES, format_task_id
@@ -318,6 +319,19 @@ def _build_greeting(
 # Auto-stage processing (workflow engine)
 # ---------------------------------------------------------------------------
 
+def _notify_manager_sync(hc_home: Path, team: str, body: str) -> None:
+    """Send a system notification to the team's manager (synchronous helper)."""
+    from delegate.bootstrap import get_member_by_role
+    from delegate.mailbox import send as send_message
+
+    try:
+        manager = get_member_by_role(hc_home, team, "manager")
+        if manager:
+            send_message(hc_home, team, "system", manager, body)
+    except Exception:
+        logger.debug("Could not notify manager for team %s", team, exc_info=True)
+
+
 def _process_auto_stages(hc_home: Path, team: str) -> None:
     """Find tasks in auto stages and run their action() hooks.
 
@@ -372,6 +386,12 @@ def _process_auto_stages(hc_home: Path, team: str) -> None:
                     "Auto-stage %s → %s for %s",
                     current, next_stage_cls._key, format_task_id(task_id),
                 )
+                # Notify manager when a task reaches a terminal state
+                if wf.is_terminal(next_stage_cls._key):
+                    _notify_manager_sync(
+                        hc_home, team,
+                        f"Task {format_task_id(task_id)} completed (status: {next_stage_cls._key}).",
+                    )
         except ActionError as exc:
             # Unrecoverable error → transition to 'error' state
             logger.error(
@@ -410,11 +430,16 @@ def _ensure_task_infra(
     team: str,
     infra_ready: set[tuple[str, int]],
 ) -> None:
-    """Ensure worktrees exist for all active tasks that have repos.
+    """Ensure worktrees exist for active tasks with resolved dependencies.
 
     Called from the daemon loop (in a thread) **before** dispatching
     agent turns.  This guarantees that an agent never receives a turn
     for a task whose worktree hasn't been created yet.
+
+    **Dependency gating**: Worktrees are only created for tasks whose
+    ``depends_on`` dependencies are ALL resolved (done/cancelled).
+    This prevents agents from starting work before prerequisite tasks
+    are complete.
 
     Worktree creation runs in the daemon process — which is **not**
     sandboxed — so it can write to the real repo's ``.git/`` directory.
@@ -425,6 +450,7 @@ def _ensure_task_infra(
     """
     from delegate.repo import create_task_worktree
     from delegate.repo import get_task_worktree_path
+    from delegate.task import _all_deps_resolved
 
     # Active statuses that need worktrees
     active_statuses = ("todo", "in_progress")
@@ -446,6 +472,14 @@ def _ensure_task_infra(
             if not repos or not branch:
                 # No repos or no branch — nothing to set up
                 infra_ready.add(key)
+                continue
+
+            # --- Dependency gating: skip tasks with unresolved deps ---
+            if not _all_deps_resolved(hc_home, team, task):
+                logger.debug(
+                    "Skipping worktree for %s/%s — dependencies not resolved",
+                    team, format_task_id(task_id),
+                )
                 continue
 
             # Check if ALL worktrees exist
@@ -507,6 +541,7 @@ async def _daemon_loop(
     from delegate.merge import merge_once
     from delegate.bootstrap import get_member_by_role
     from delegate.mailbox import send as send_message, agents_with_unread
+    from delegate.task import format_task_id
 
     logger.info("Daemon loop started — polling every %.1fs", interval)
 
@@ -517,6 +552,33 @@ async def _daemon_loop(
     # In-memory cache: (team, task_id) pairs whose worktrees are confirmed.
     # Cleared when tasks transition to done/cancelled.
     infra_ready: set[tuple[str, int]] = set()
+
+    def _notify_manager(team: str, body: str) -> None:
+        """Send a system notification to the team's manager (if any)."""
+        try:
+            manager = get_member_by_role(hc_home, team, "manager")
+            if manager:
+                send_message(hc_home, team, "system", manager, body)
+        except Exception:
+            logger.debug("Could not notify manager for team %s", team, exc_info=True)
+
+    # --- Startup notification ---
+    try:
+        teams = _list_teams(hc_home)
+        for team in teams:
+            from delegate.task import list_tasks as _list_tasks_all
+            try:
+                all_tasks = _list_tasks_all(hc_home, team)
+                active = [t for t in all_tasks if t.get("status") not in ("done", "cancelled")]
+                summary = (
+                    f"Daemon started. Team '{team}' has {len(all_tasks)} total tasks "
+                    f"({len(active)} active)."
+                )
+                _notify_manager(team, summary)
+            except Exception:
+                _notify_manager(team, f"Daemon started for team '{team}'.")
+    except Exception:
+        logger.debug("Startup notification failed", exc_info=True)
 
     async def _dispatch_turn(team: str, agent: str) -> None:
         """Dispatch and run one turn, then remove from in_flight."""
@@ -607,8 +669,17 @@ async def _daemon_loop(
                                     logger.info("Merged %s in %s: %s", mr.task_id, t, mr.message)
                                     # Clear infra_ready for done tasks
                                     infra_ready.discard((t, mr.task_id))
+                                    # Notify manager of task completion
+                                    _notify_manager(
+                                        t,
+                                        f"Task {format_task_id(mr.task_id)} has been merged successfully. {mr.message}",
+                                    )
                                 else:
                                     logger.warning("Merge failed %s in %s: %s", mr.task_id, t, mr.message)
+                                    _notify_manager(
+                                        t,
+                                        f"Task {format_task_id(mr.task_id)} merge failed: {mr.message}",
+                                    )
 
                             # Workflow auto-stage processing
                             await asyncio.to_thread(_process_auto_stages, hc_home, t)
@@ -684,8 +755,18 @@ async def _lifespan(app: FastAPI):
     task = None
     esbuild_proc: subprocess.Popen | None = None
     exchange: TelephoneExchange | None = None
+    daemon_lock_fd: int | None = None
 
     if enable:
+        # Acquire the daemon singleton lock.  In foreground mode the lock
+        # is acquired by daemon.py directly; for background mode (spawned
+        # via subprocess) we acquire it here — inside the child process.
+        from delegate.daemon import _acquire_lock, _release_lock
+        try:
+            daemon_lock_fd = _acquire_lock(hc_home)
+        except RuntimeError:
+            logger.error("Another daemon is already running — refusing to start")
+            raise
         interval = float(os.environ.get("DELEGATE_INTERVAL", "1.0"))
         max_concurrent = int(os.environ.get("DELEGATE_MAX_CONCURRENT", "256"))
         budget_str = os.environ.get("DELEGATE_TOKEN_BUDGET")
@@ -812,6 +893,12 @@ async def _lifespan(app: FastAPI):
             except Exception:
                 logger.exception("Error closing Telephone conversations")
 
+    # Release daemon singleton lock
+    if daemon_lock_fd is not None:
+        from delegate.daemon import _release_lock
+        _release_lock(daemon_lock_fd)
+        logger.info("Released daemon singleton lock")
+
 
 # ---------------------------------------------------------------------------
 # App factory
@@ -891,12 +978,14 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                                 human_count += 1
                             else:
                                 agent_count += 1
+                # task_counts is keyed by the team column value which is now a UUID
+                team_uuid = row["team_id"]
                 result.append({
                     "name": team_name,
-                    "team_id": row["team_id"],
+                    "team_id": team_uuid,
                     "created_at": row["created_at"],
                     "agent_count": agent_count,
-                    "task_count": task_counts.get(team_name, 0),
+                    "task_count": task_counts.get(team_uuid, task_counts.get(team_name, 0)),
                     "human_count": human_count,
                 })
             return result
@@ -1579,6 +1668,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     def get_cost_summary(team: str):
         """Return cost analytics: today, this week, and top tasks by cost."""
         from delegate.db import get_connection
+        t = _resolve_team(hc_home, team)
         conn = get_connection(hc_home, team)
         now_utc = datetime.now(timezone.utc)
 
@@ -1598,7 +1688,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 COUNT(DISTINCT task_id) as task_count
             FROM sessions
             WHERE started_at >= ? AND team = ?
-        """, (midnight_today.isoformat(), team)).fetchone()
+        """, (midnight_today.isoformat(), t)).fetchone()
 
         today_cost = today_rows[0] or 0.0
         today_task_count = today_rows[1] or 0
@@ -1611,7 +1701,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 COUNT(DISTINCT task_id) as task_count
             FROM sessions
             WHERE started_at >= ? AND team = ?
-        """, (monday_this_week.isoformat(), team)).fetchone()
+        """, (monday_this_week.isoformat(), t)).fetchone()
 
         week_cost = week_rows[0] or 0.0
         week_task_count = week_rows[1] or 0
@@ -1629,7 +1719,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             GROUP BY s.task_id
             ORDER BY total_cost DESC
             LIMIT 3
-        """, (team,)).fetchall()
+        """, (t,)).fetchall()
 
         top_tasks = [
             {
@@ -1781,11 +1871,12 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
         human_name = get_default_human(hc_home)
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        t = _resolve_team(hc_home, team)
 
         conn = get_connection(hc_home, team)
         cursor = conn.execute(
-            "INSERT INTO messages (sender, recipient, content, type, result, delivered_at) VALUES (?, ?, ?, 'command', ?, ?)",
-            (human_name, human_name, msg.command, json.dumps(msg.result), now)
+            "INSERT INTO messages (sender, recipient, content, type, result, delivered_at, team, team_uuid) VALUES (?, ?, ?, 'command', ?, ?, ?, ?)",
+            (human_name, human_name, msg.command, json.dumps(msg.result), now, t, t)
         )
         conn.commit()
         msg_id = cursor.lastrowid

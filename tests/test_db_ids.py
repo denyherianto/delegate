@@ -237,10 +237,11 @@ def test_backfill_from_filesystem(temp_hc_home):
     agent2_dir = agents_dir / "agent-2"
     agent2_dir.mkdir()
 
-    # Create members dir with human
-    members_dir = temp_hc_home / "members"
-    members_dir.mkdir(parents=True, exist_ok=True)
-    (members_dir / "alice.yaml").write_text("name: alice\nkind: human\n")
+    # Create members dir with human (in protected/)
+    from delegate.paths import members_dir as _members_dir
+    mdir = _members_dir(temp_hc_home)
+    mdir.mkdir(parents=True, exist_ok=True)
+    (mdir / "alice.yaml").write_text("name: alice\nkind: human\n")
 
     # Insert team into teams table
     conn = get_connection(temp_hc_home, "")

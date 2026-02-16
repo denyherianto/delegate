@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from delegate.db import get_connection, task_row_to_dict, _JSON_COLUMNS
+from delegate.paths import resolve_team_uuid as _team
 
 _log = logging.getLogger(__name__)
 
@@ -135,6 +136,7 @@ def create_task(
         workflow_version = get_latest_version(hc_home, team, workflow_name) or 1
 
     now = _now()
+    team_uuid = _team(hc_home, team)
     conn = get_connection(hc_home, team)
     try:
         cursor = conn.execute(
@@ -145,32 +147,33 @@ def create_task(
                 created_at, updated_at, completed_at,
                 depends_on, branch, base_sha, commits,
                 rejection_reason, approval_status, merge_base, merge_tip, team,
-                workflow, workflow_version, metadata
+                workflow, workflow_version, metadata, team_uuid
             ) VALUES (
                 ?, ?, 'todo', ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, '',
                 ?, '', '{}', '{}',
                 '', '', '{}', '{}', ?,
-                ?, ?, ?
+                ?, ?, ?, ?
             )""",
             (
                 title, description, assignee, assignee,
                 project, priority,
                 json.dumps(repo_list),
-                json.dumps([str(t) for t in tags] if tags else []),
+                json.dumps([str(tg) for tg in tags] if tags else []),
                 now, now,
                 json.dumps([int(d) for d in depends_on] if depends_on else []),
-                team,
+                team,  # human-readable name in 'team' column
                 workflow_name, workflow_version,
                 json.dumps(metadata or {}),
+                team_uuid,  # UUID in 'team_uuid' column
             ),
         )
         conn.commit()
         task_id = cursor.lastrowid
 
         # Read back the full row to return
-        row = conn.execute("SELECT * FROM tasks WHERE team = ? AND id = ?", (team, task_id)).fetchone()
+        row = conn.execute("SELECT * FROM tasks WHERE team_uuid = ? AND id = ?", (team_uuid, task_id)).fetchone()
         task = task_row_to_dict(row)
     finally:
         conn.close()
@@ -197,9 +200,10 @@ def get_task(hc_home: Path, team: str, task_id: int) -> dict:
     Raises ``FileNotFoundError`` if the task does not exist (preserves
     the same exception type used by the previous YAML implementation).
     """
+    team_uuid = _team(hc_home, team)
     conn = get_connection(hc_home, team)
     try:
-        row = conn.execute("SELECT * FROM tasks WHERE team = ? AND id = ?", (team, task_id)).fetchone()
+        row = conn.execute("SELECT * FROM tasks WHERE team_uuid = ? AND id = ?", (team_uuid, task_id)).fetchone()
     finally:
         conn.close()
 
@@ -209,6 +213,41 @@ def get_task(hc_home: Path, team: str, task_id: int) -> dict:
     return task_row_to_dict(row)
 
 
+def _all_deps_resolved(hc_home: Path, team: str, task: dict) -> bool:
+    """Check whether ALL depends_on tasks are in a terminal status.
+
+    Returns True if:
+    - depends_on is empty (no deps), or
+    - every dep task is in a terminal status (done/cancelled or
+      workflow terminal stage).
+    """
+    deps = task.get("depends_on", [])
+    if not deps:
+        return True
+
+    terminal_statuses = {"done", "cancelled"}
+
+    for dep_id in deps:
+        try:
+            dep_task = get_task(hc_home, team, dep_id)
+        except Exception:
+            # Dep task doesn't exist — treat as unresolved
+            return False
+        dep_status = dep_task.get("status", "")
+        if dep_status in terminal_statuses:
+            continue
+        # Check workflow-aware terminal status
+        try:
+            from delegate.workflow import load_workflow
+            wf = load_workflow(hc_home, team)
+            if wf and wf.is_terminal(dep_status):
+                continue
+        except Exception:
+            pass
+        return False
+    return True
+
+
 def update_task(hc_home: Path, team: str, task_id: int, **updates) -> dict:
     """Update fields on an existing task. Returns the updated task."""
     # Validate field names
@@ -216,8 +255,24 @@ def update_task(hc_home: Path, team: str, task_id: int, **updates) -> dict:
         if key not in _TASK_FIELDS:
             raise ValueError(f"Unknown task field: '{key}'")
 
-    # Verify task exists
-    get_task(hc_home, team, task_id)
+    # Verify task exists and check depends_on freeze
+    current_task = get_task(hc_home, team, task_id)
+
+    # --- depends_on freeze: disallow adding new deps when all current deps
+    # are resolved (work may have started) ---
+    if "depends_on" in updates:
+        new_deps = set(int(d) for d in updates["depends_on"]) if updates["depends_on"] else set()
+        old_deps = set(int(d) for d in current_task.get("depends_on", []))
+
+        added_deps = new_deps - old_deps
+        if added_deps and _all_deps_resolved(hc_home, team, current_task):
+            raise ValueError(
+                f"Cannot add dependencies {sorted(added_deps)} to task "
+                f"{format_task_id(task_id)} — all existing dependencies are "
+                f"already resolved and work may have started. Consider "
+                f"cancelling this task and creating a new one with the correct "
+                f"dependencies."
+            )
 
     updates["updated_at"] = _now()
 
@@ -246,16 +301,17 @@ def update_task(hc_home: Path, team: str, task_id: int, **updates) -> dict:
                 params.append(json.dumps(value) if value else "{}")
         else:
             params.append(value)
-    params.extend([team, task_id])
+    team_uuid = _team(hc_home, team)
+    params.extend([team_uuid, task_id])
 
     conn = get_connection(hc_home, team)
     try:
         conn.execute(
-            f"UPDATE tasks SET {', '.join(set_parts)} WHERE team = ? AND id = ?",
+            f"UPDATE tasks SET {', '.join(set_parts)} WHERE team_uuid = ? AND id = ?",
             params,
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM tasks WHERE team = ? AND id = ?", (team, task_id)).fetchone()
+        row = conn.execute("SELECT * FROM tasks WHERE team_uuid = ? AND id = ?", (team_uuid, task_id)).fetchone()
         task = task_row_to_dict(row)
     finally:
         conn.close()
@@ -722,11 +778,12 @@ def add_comment(hc_home: Path, team: str, task_id: int, author: str, body: str) 
     """
     get_task(hc_home, team, task_id)  # Verify task exists
 
+    team_uuid = _team(hc_home, team)
     conn = get_connection(hc_home, team)
     try:
         cursor = conn.execute(
-            "INSERT INTO task_comments (task_id, author, body, team) VALUES (?, ?, ?, ?)",
-            (task_id, author, body, team),
+            "INSERT INTO task_comments (task_id, author, body, team, team_uuid) VALUES (?, ?, ?, ?, ?)",
+            (task_id, author, body, team, team_uuid),
         )
         conn.commit()
         comment_id = cursor.lastrowid
@@ -982,10 +1039,11 @@ def list_tasks(
 
     *tag* filters to tasks whose ``tags`` JSON array contains the given value.
     """
+    team_uuid = _team(hc_home, team)
     conn = get_connection(hc_home, team)
     try:
-        query = "SELECT * FROM tasks WHERE team = ?"
-        params: list = [team]
+        query = "SELECT * FROM tasks WHERE team_uuid = ?"
+        params: list = [team_uuid]
 
         if status:
             query += " AND status = ?"

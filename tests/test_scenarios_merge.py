@@ -21,6 +21,7 @@ from delegate.config import add_repo, set_boss
 from delegate.merge import merge_task, MergeResult, MergeFailureReason
 from delegate.repo import create_task_worktree
 from delegate.bootstrap import bootstrap
+from delegate.paths import team_dir as _team_dir
 
 
 TEAM = "myteam"
@@ -115,7 +116,7 @@ class TestMergeScenarios:
 
         # Create worktree (simulating agent work)
         task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
-        wt_path = hc_home / "teams" / TEAM / "worktrees" / "myrepo" / f"T{task['id']:04d}"
+        wt_path = _team_dir(hc_home, TEAM) / "worktrees" / "myrepo" / f"T{task['id']:04d}"
         wt_path.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(
             ["git", "worktree", "add", str(wt_path), branch],
@@ -258,7 +259,7 @@ class TestMergeScenarios:
         assert branch in branch_result.stdout, "Feature branch should remain after conflict"
 
         # Verify temp worktree cleaned up (no _merge directories)
-        merge_wt_dir = hc_home / "teams" / TEAM / "worktrees" / "_merge"
+        merge_wt_dir = _team_dir(hc_home, TEAM) / "worktrees" / "_merge"
         if merge_wt_dir.exists():
             remaining = list(merge_wt_dir.rglob("*"))
             assert len(remaining) == 0, f"Temp worktree should be cleaned up, found: {remaining}"

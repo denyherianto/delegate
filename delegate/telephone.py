@@ -282,6 +282,7 @@ class Telephone:
         disallowed_tools: list[str] | None = None,
         sandbox_enabled: bool = False,
         mcp_servers: dict[str, Any] | None = None,
+        allowed_domains: list[str] | None = None,
     ):
         # Stable identity
         self.id: str = uuid.uuid4().hex
@@ -298,6 +299,7 @@ class Telephone:
         self.disallowed_tools = list(disallowed_tools or [])
         self.sandbox_enabled = sandbox_enabled
         self.mcp_servers: dict[str, Any] = dict(mcp_servers or {})
+        self.allowed_domains: list[str] = list(allowed_domains or ["*"])
 
         # Permission configuration
         self._allowed_write_paths: list[Path] | None = (
@@ -596,11 +598,21 @@ class Telephone:
 
         # OS-level sandbox for bash commands
         if self.sandbox_enabled:
-            kw["sandbox"] = {
+            sandbox_config: dict[str, Any] = {
                 "enabled": True,
                 "autoAllowBashIfSandboxed": True,
                 "allowUnsandboxedCommands": False,
             }
+            # Network restriction: when the allowlist is not wildcard ("*"),
+            # we set network config to restrict network access.  The SDK's
+            # SandboxNetworkConfig uses proxy-based filtering; full domain
+            # filtering requires a proxy.  For now, we disable general
+            # network binding when specific domains are configured.
+            if self.allowed_domains and "*" not in self.allowed_domains:
+                sandbox_config["network"] = {
+                    "allowLocalBinding": False,
+                }
+            kw["sandbox"] = sandbox_config
 
         # In-process MCP servers (run in daemon process, outside sandbox)
         if self.mcp_servers:

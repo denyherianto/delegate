@@ -1,8 +1,13 @@
-"""Per-team SQLite database with versioned migrations.
+"""Global SQLite database with file-based versioned migrations.
 
-Each team has its own database at ``~/.delegate/teams/<team>/db.sqlite``.
+All teams share one database at ``<DELEGATE_HOME>/protected/db.sqlite``.
 On first access the ``schema_meta`` table is created and pending migrations
 are applied in order.  Each migration is idempotent (uses ``IF NOT EXISTS``).
+
+Migrations live as numbered SQL files in ``delegate/migrations/V001.sql``,
+``V002.sql``, etc.  ``ensure_schema()`` discovers them at import time,
+creates an automatic backup before applying new ones, runs an integrity
+check afterwards, and restores the backup on failure.
 
 Usage::
 
@@ -19,12 +24,14 @@ Usage::
 
 import json
 import logging
+import re
+import shutil
 import sqlite3
 import threading
 import uuid as uuid_module
 from pathlib import Path
 
-from delegate.paths import db_path, global_db_path
+from delegate.paths import db_path, global_db_path, protected_dir, resolve_team_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -34,486 +41,42 @@ _schema_verified: dict[str, int] = {}
 _schema_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
-# Migration registry
+# Migration registry  (file-based)
 # ---------------------------------------------------------------------------
-# Each entry is a SQL script.  Migrations are numbered starting at 1.
-# To add a new migration, append a new string to this list.
-# NEVER reorder or modify existing entries — only append.
+# Migrations live in delegate/migrations/V{NNN}.sql.  They are loaded once
+# at import time and cached in MIGRATIONS.  To add a new migration, create
+# a new V{N+1}.sql file — NEVER reorder or modify existing files.
 
-MIGRATIONS: list[str] = [
-    # --- V1: messages + sessions ---
-    """\
-CREATE TABLE IF NOT EXISTS messages (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    sender      TEXT    NOT NULL,
-    recipient   TEXT    NOT NULL,
-    content     TEXT    NOT NULL,
-    type        TEXT    NOT NULL CHECK(type IN ('chat', 'event'))
-);
+def _load_migrations() -> list[str]:
+    """Load migration SQL from delegate/migrations/V{NNN}.sql files.
 
-CREATE TABLE IF NOT EXISTS sessions (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    agent            TEXT    NOT NULL,
-    task_id          INTEGER,
-    started_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    ended_at         TEXT,
-    duration_seconds REAL    DEFAULT 0.0,
-    tokens_in        INTEGER DEFAULT 0,
-    tokens_out       INTEGER DEFAULT 0,
-    cost_usd         REAL    DEFAULT 0.0
-);
+    Files are discovered by scanning the migrations package directory and
+    sorted numerically by version number.  Returns a list of SQL strings
+    where index 0 is V001, index 1 is V002, etc.
+    """
+    migrations_dir = Path(__file__).parent / "migrations"
+    if not migrations_dir.is_dir():
+        return []
 
-CREATE INDEX IF NOT EXISTS idx_messages_type
-    ON messages(type);
-CREATE INDEX IF NOT EXISTS idx_messages_timestamp
-    ON messages(timestamp);
-CREATE INDEX IF NOT EXISTS idx_messages_sender_recipient
-    ON messages(sender, recipient);
-CREATE INDEX IF NOT EXISTS idx_sessions_agent
-    ON sessions(agent);
-CREATE INDEX IF NOT EXISTS idx_sessions_task_id
-    ON sessions(task_id);
-""",
+    files: list[tuple[int, Path]] = []
+    for p in migrations_dir.iterdir():
+        m = re.match(r"^V(\d+)\.sql$", p.name)
+        if m:
+            files.append((int(m.group(1)), p))
 
-    # --- V2: tasks table ---
-    """\
-CREATE TABLE IF NOT EXISTS tasks (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    title            TEXT    NOT NULL,
-    description      TEXT    NOT NULL DEFAULT '',
-    status           TEXT    NOT NULL DEFAULT 'todo',
-    dri              TEXT    NOT NULL DEFAULT '',
-    assignee         TEXT    NOT NULL DEFAULT '',
-    project          TEXT    NOT NULL DEFAULT '',
-    priority         TEXT    NOT NULL DEFAULT 'medium',
-    repo             TEXT    NOT NULL DEFAULT '',
-    tags             TEXT    NOT NULL DEFAULT '[]',
-    created_at       TEXT    NOT NULL,
-    updated_at       TEXT    NOT NULL,
-    completed_at     TEXT    NOT NULL DEFAULT '',
-    depends_on       TEXT    NOT NULL DEFAULT '[]',
-    branch           TEXT    NOT NULL DEFAULT '',
-    base_sha         TEXT    NOT NULL DEFAULT '',
-    commits          TEXT    NOT NULL DEFAULT '[]',
-    rejection_reason TEXT    NOT NULL DEFAULT '',
-    approval_status  TEXT    NOT NULL DEFAULT '',
-    merge_base       TEXT    NOT NULL DEFAULT '',
-    merge_tip        TEXT    NOT NULL DEFAULT '',
-    attachments      TEXT    NOT NULL DEFAULT '[]'
-);
+    files.sort(key=lambda t: t[0])
 
-CREATE INDEX IF NOT EXISTS idx_tasks_status
-    ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_assignee
-    ON tasks(assignee);
-CREATE INDEX IF NOT EXISTS idx_tasks_dri
-    ON tasks(dri);
-CREATE INDEX IF NOT EXISTS idx_tasks_repo
-    ON tasks(repo);
-CREATE INDEX IF NOT EXISTS idx_tasks_branch
-    ON tasks(branch);
-CREATE INDEX IF NOT EXISTS idx_tasks_project
-    ON tasks(project);
-""",
+    # Verify no gaps
+    for idx, (version, _path) in enumerate(files, start=1):
+        if version != idx:
+            raise RuntimeError(
+                f"Migration gap: expected V{idx:03d}.sql but found V{version:03d}.sql"
+            )
 
-    # --- V3: mailbox table ---
-    """\
-CREATE TABLE IF NOT EXISTS mailbox (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    sender         TEXT    NOT NULL,
-    recipient      TEXT    NOT NULL,
-    body           TEXT    NOT NULL,
-    created_at     TEXT    NOT NULL,
-    delivered_at   TEXT,
-    seen_at        TEXT,
-    processed_at   TEXT
-);
+    return [p.read_text() for _, p in files]
 
-CREATE INDEX IF NOT EXISTS idx_mailbox_recipient_unread
-    ON mailbox(recipient, delivered_at)
-    WHERE processed_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_mailbox_sender
-    ON mailbox(sender);
-CREATE INDEX IF NOT EXISTS idx_mailbox_undelivered
-    ON mailbox(id)
-    WHERE delivered_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_mailbox_recipient_processed
-    ON mailbox(recipient, processed_at)
-    WHERE processed_at IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_mailbox_recipient_sender_processed
-    ON mailbox(recipient, sender, processed_at)
-    WHERE processed_at IS NOT NULL;
-""",
 
-    # --- V4: task_id on mailbox + messages ---
-    """\
-ALTER TABLE mailbox ADD COLUMN task_id INTEGER;
-CREATE INDEX IF NOT EXISTS idx_mailbox_task_id
-    ON mailbox(task_id);
-ALTER TABLE messages ADD COLUMN task_id INTEGER;
-CREATE INDEX IF NOT EXISTS idx_messages_task_id
-    ON messages(task_id);
-""",
-
-    # --- V5: reviews + review_comments tables, review_attempt on tasks ---
-    """\
-ALTER TABLE tasks ADD COLUMN review_attempt INTEGER NOT NULL DEFAULT 0;
-
-CREATE TABLE IF NOT EXISTS reviews (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id    INTEGER NOT NULL,
-    attempt    INTEGER NOT NULL,
-    verdict    TEXT,
-    summary    TEXT    NOT NULL DEFAULT '',
-    reviewer   TEXT    NOT NULL DEFAULT '',
-    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    decided_at TEXT,
-    UNIQUE(task_id, attempt)
-);
-
-CREATE INDEX IF NOT EXISTS idx_reviews_task_id
-    ON reviews(task_id);
-
-CREATE TABLE IF NOT EXISTS review_comments (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id    INTEGER NOT NULL,
-    attempt    INTEGER NOT NULL,
-    file       TEXT    NOT NULL,
-    line       INTEGER,
-    body       TEXT    NOT NULL,
-    author     TEXT    NOT NULL,
-    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_review_comments_task_attempt
-    ON review_comments(task_id, attempt);
-""",
-
-    # --- V6: cache token columns on sessions ---
-    """\
-ALTER TABLE sessions ADD COLUMN cache_read_tokens INTEGER DEFAULT 0;
-ALTER TABLE sessions ADD COLUMN cache_write_tokens INTEGER DEFAULT 0;
-""",
-
-    # --- V7: merge failure tracking ---
-    """\
-ALTER TABLE tasks ADD COLUMN status_detail TEXT NOT NULL DEFAULT '';
-ALTER TABLE tasks ADD COLUMN merge_attempts INTEGER NOT NULL DEFAULT 0;
-""",
-
-    # --- V8: task_comments table ---
-    """\
-CREATE TABLE IF NOT EXISTS task_comments (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id    INTEGER NOT NULL,
-    author     TEXT    NOT NULL,
-    body       TEXT    NOT NULL,
-    created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-CREATE INDEX IF NOT EXISTS idx_task_comments_task_id ON task_comments(task_id);
-""",
-
-    # --- V9: merge mailbox into messages ---
-    """\
--- Add lifecycle columns to messages table
-ALTER TABLE messages ADD COLUMN delivered_at TEXT;
-ALTER TABLE messages ADD COLUMN seen_at TEXT;
-ALTER TABLE messages ADD COLUMN processed_at TEXT;
-
--- Copy lifecycle data from mailbox to messages for existing chat messages
--- Match on sender, recipient, content (body in mailbox, content in messages)
-UPDATE messages
-SET delivered_at = (
-    SELECT mb.delivered_at FROM mailbox mb
-    WHERE mb.sender = messages.sender
-      AND mb.recipient = messages.recipient
-      AND mb.body = messages.content
-      AND mb.task_id IS messages.task_id
-    LIMIT 1
-),
-seen_at = (
-    SELECT mb.seen_at FROM mailbox mb
-    WHERE mb.sender = messages.sender
-      AND mb.recipient = messages.recipient
-      AND mb.body = messages.content
-      AND mb.task_id IS messages.task_id
-    LIMIT 1
-),
-processed_at = (
-    SELECT mb.processed_at FROM mailbox mb
-    WHERE mb.sender = messages.sender
-      AND mb.recipient = messages.recipient
-      AND mb.body = messages.content
-      AND mb.task_id IS messages.task_id
-    LIMIT 1
-)
-WHERE type = 'chat';
-
--- Insert any mailbox-only rows (the deliver() bug where messages were not logged to chat)
-INSERT INTO messages (timestamp, sender, recipient, content, type, task_id, delivered_at, seen_at, processed_at)
-SELECT mb.created_at, mb.sender, mb.recipient, mb.body, 'chat', mb.task_id, mb.delivered_at, mb.seen_at, mb.processed_at
-FROM mailbox mb
-WHERE NOT EXISTS (
-    SELECT 1 FROM messages m
-    WHERE m.sender = mb.sender
-      AND m.recipient = mb.recipient
-      AND m.content = mb.body
-      AND m.task_id IS mb.task_id
-);
-
--- Create indexes for efficient unread queries (replicate mailbox indexes)
-CREATE INDEX IF NOT EXISTS idx_messages_recipient_unread
-    ON messages(recipient, delivered_at)
-    WHERE type = 'chat' AND processed_at IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_messages_sender
-    ON messages(sender)
-    WHERE type = 'chat';
-
-CREATE INDEX IF NOT EXISTS idx_messages_undelivered
-    ON messages(id)
-    WHERE type = 'chat' AND delivered_at IS NULL;
-
-CREATE INDEX IF NOT EXISTS idx_messages_recipient_processed
-    ON messages(recipient, processed_at)
-    WHERE type = 'chat' AND processed_at IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_messages_recipient_sender_processed
-    ON messages(recipient, sender, processed_at)
-    WHERE type = 'chat' AND processed_at IS NOT NULL;
-
--- Drop the mailbox table
-DROP TABLE IF EXISTS mailbox;
-""",
-
-    # --- V10: magic commands support ---
-    """\
--- Add 'result' column to store command output as JSON
-ALTER TABLE messages ADD COLUMN result TEXT;
-
--- Add 'command' to the allowed message types
--- SQLite doesn't support ALTER TABLE to modify CHECK constraints,
--- so we recreate the table with the updated constraint.
-CREATE TABLE messages_new (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    sender      TEXT    NOT NULL,
-    recipient   TEXT    NOT NULL,
-    content     TEXT    NOT NULL,
-    type        TEXT    NOT NULL CHECK(type IN ('chat', 'event', 'command')),
-    task_id     INTEGER,
-    delivered_at TEXT,
-    seen_at     TEXT,
-    processed_at TEXT,
-    result      TEXT
-);
-
--- Copy all data from old table to new table
-INSERT INTO messages_new (id, timestamp, sender, recipient, content, type, task_id, delivered_at, seen_at, processed_at, result)
-SELECT id, timestamp, sender, recipient, content, type, task_id, delivered_at, seen_at, processed_at, result
-FROM messages;
-
--- Drop old table
-DROP TABLE messages;
-
--- Rename new table to original name
-ALTER TABLE messages_new RENAME TO messages;
-
--- Recreate all indexes
-CREATE INDEX IF NOT EXISTS idx_messages_type
-    ON messages(type);
-CREATE INDEX IF NOT EXISTS idx_messages_timestamp
-    ON messages(timestamp);
-CREATE INDEX IF NOT EXISTS idx_messages_sender_recipient
-    ON messages(sender, recipient);
-CREATE INDEX IF NOT EXISTS idx_messages_task_id
-    ON messages(task_id);
-CREATE INDEX IF NOT EXISTS idx_messages_recipient_unread
-    ON messages(recipient, delivered_at)
-    WHERE type = 'chat' AND processed_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_messages_sender
-    ON messages(sender)
-    WHERE type = 'chat';
-CREATE INDEX IF NOT EXISTS idx_messages_undelivered
-    ON messages(id)
-    WHERE type = 'chat' AND delivered_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_messages_recipient_processed
-    ON messages(recipient, processed_at)
-    WHERE type = 'chat' AND processed_at IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_messages_recipient_sender_processed
-    ON messages(recipient, sender, processed_at)
-    WHERE type = 'chat' AND processed_at IS NOT NULL;
-""",
-
-    # --- V11: composite indexes for activity queries ---
-    """\
--- Composite indexes to optimize task activity timeline queries
-CREATE INDEX IF NOT EXISTS idx_messages_task_type
-    ON messages(task_id, type);
-CREATE INDEX IF NOT EXISTS idx_messages_task_ts
-    ON messages(task_id, timestamp);
-CREATE INDEX IF NOT EXISTS idx_task_comments_task_ts
-    ON task_comments(task_id, created_at);
-""",
-
-    # --- V12: Multi-team support ---
-    """\
--- Create teams metadata table
-CREATE TABLE IF NOT EXISTS teams (
-    name        TEXT PRIMARY KEY,
-    team_id     TEXT NOT NULL UNIQUE,
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-
--- Add team column to messages (requires table recreation since V10 just recreated it)
-CREATE TABLE messages_new (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    sender      TEXT    NOT NULL,
-    recipient   TEXT    NOT NULL,
-    content     TEXT    NOT NULL,
-    type        TEXT    NOT NULL CHECK(type IN ('chat', 'event', 'command')),
-    task_id     INTEGER,
-    delivered_at TEXT,
-    seen_at     TEXT,
-    processed_at TEXT,
-    result      TEXT,
-    team        TEXT    NOT NULL DEFAULT ''
-);
-
-INSERT INTO messages_new (id, timestamp, sender, recipient, content, type, task_id, delivered_at, seen_at, processed_at, result, team)
-SELECT id, timestamp, sender, recipient, content, type, task_id, delivered_at, seen_at, processed_at, result, ''
-FROM messages;
-
-DROP TABLE messages;
-ALTER TABLE messages_new RENAME TO messages;
-
--- Recreate all messages indexes with team
-CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type);
-CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
-CREATE INDEX IF NOT EXISTS idx_messages_sender_recipient ON messages(sender, recipient);
-CREATE INDEX IF NOT EXISTS idx_messages_task_id ON messages(task_id);
-CREATE INDEX IF NOT EXISTS idx_messages_recipient_unread
-    ON messages(recipient, delivered_at)
-    WHERE type = 'chat' AND processed_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_messages_sender
-    ON messages(sender)
-    WHERE type = 'chat';
-CREATE INDEX IF NOT EXISTS idx_messages_undelivered
-    ON messages(id)
-    WHERE type = 'chat' AND delivered_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_messages_recipient_processed
-    ON messages(recipient, processed_at)
-    WHERE type = 'chat' AND processed_at IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_messages_recipient_sender_processed
-    ON messages(recipient, sender, processed_at)
-    WHERE type = 'chat' AND processed_at IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_messages_task_type
-    ON messages(task_id, type);
-CREATE INDEX IF NOT EXISTS idx_messages_task_ts
-    ON messages(task_id, timestamp);
-CREATE INDEX IF NOT EXISTS idx_messages_team_recipient ON messages(team, recipient);
-
--- Add team column to sessions
-ALTER TABLE sessions ADD COLUMN team TEXT NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS idx_sessions_team_agent ON sessions(team, agent);
-CREATE INDEX IF NOT EXISTS idx_sessions_team_task_id ON sessions(team, task_id);
-
--- Add team column to tasks
-ALTER TABLE tasks ADD COLUMN team TEXT NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS idx_tasks_team_status ON tasks(team, status);
-CREATE INDEX IF NOT EXISTS idx_tasks_team_id ON tasks(team, id);
-
--- Add team column to reviews
-ALTER TABLE reviews ADD COLUMN team TEXT NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS idx_reviews_team_task_id ON reviews(team, task_id);
-
--- Add team column to review_comments
-ALTER TABLE review_comments ADD COLUMN team TEXT NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS idx_review_comments_team_task_attempt ON review_comments(team, task_id, attempt);
-
--- Add team column to task_comments
-ALTER TABLE task_comments ADD COLUMN team TEXT NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS idx_task_comments_team_task_id ON task_comments(team, task_id);
-""",
-
-    # --- V13: Workflow columns on tasks ---
-    """\
-ALTER TABLE tasks ADD COLUMN workflow TEXT NOT NULL DEFAULT 'default';
-ALTER TABLE tasks ADD COLUMN workflow_version INTEGER NOT NULL DEFAULT 1;
-CREATE INDEX IF NOT EXISTS idx_tasks_workflow ON tasks(workflow);
-""",
-
-    # --- V14: Free-form metadata JSON on tasks + rename standard→default workflow ---
-    """\
-ALTER TABLE tasks ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}';
-UPDATE tasks SET workflow = 'default' WHERE workflow = 'standard';
-""",
-
-    # --- V15: UUID translation tables (team_ids, member_ids) ---
-    """\
-CREATE TABLE IF NOT EXISTS team_ids (
-    uuid TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    deleted INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now'))
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_team_ids_active ON team_ids(name) WHERE deleted = 0;
-
-CREATE TABLE IF NOT EXISTS member_ids (
-    uuid TEXT PRIMARY KEY,
-    kind TEXT NOT NULL CHECK(kind IN ('agent', 'human')),
-    team_uuid TEXT,
-    name TEXT NOT NULL,
-    deleted INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now'))
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_member_ids_active
-    ON member_ids(kind, team_uuid, name) WHERE deleted = 0;
-
--- Update teams.team_id to store full UUID (pad existing 6-char values to 32 chars)
-UPDATE teams SET team_id = team_id || '00000000000000000000000000' WHERE length(team_id) = 6;
-""",
-
-    # --- V16: UUID columns on all data tables ---
-    """\
--- messages
-ALTER TABLE messages ADD COLUMN team_uuid TEXT NOT NULL DEFAULT '';
-ALTER TABLE messages ADD COLUMN sender_uuid TEXT NOT NULL DEFAULT '';
-ALTER TABLE messages ADD COLUMN recipient_uuid TEXT NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS idx_messages_team_uuid ON messages(team_uuid);
-CREATE INDEX IF NOT EXISTS idx_messages_team_uuid_recipient_uuid ON messages(team_uuid, recipient_uuid);
-CREATE INDEX IF NOT EXISTS idx_messages_recipient_uuid_unread ON messages(recipient_uuid, delivered_at) WHERE type='chat' AND processed_at IS NULL;
-
--- sessions
-ALTER TABLE sessions ADD COLUMN team_uuid TEXT NOT NULL DEFAULT '';
-ALTER TABLE sessions ADD COLUMN agent_uuid TEXT NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS idx_sessions_team_uuid_agent_uuid ON sessions(team_uuid, agent_uuid);
-
--- tasks
-ALTER TABLE tasks ADD COLUMN team_uuid TEXT NOT NULL DEFAULT '';
-ALTER TABLE tasks ADD COLUMN dri_uuid TEXT NOT NULL DEFAULT '';
-ALTER TABLE tasks ADD COLUMN assignee_uuid TEXT NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS idx_tasks_team_uuid_status ON tasks(team_uuid, status);
-CREATE INDEX IF NOT EXISTS idx_tasks_team_uuid_id ON tasks(team_uuid, id);
-
--- task_comments
-ALTER TABLE task_comments ADD COLUMN team_uuid TEXT NOT NULL DEFAULT '';
-ALTER TABLE task_comments ADD COLUMN author_uuid TEXT NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS idx_task_comments_team_uuid_task_id ON task_comments(team_uuid, task_id);
-
--- reviews
-ALTER TABLE reviews ADD COLUMN team_uuid TEXT NOT NULL DEFAULT '';
-ALTER TABLE reviews ADD COLUMN reviewer_uuid TEXT NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS idx_reviews_team_uuid_task_id ON reviews(team_uuid, task_id);
-
--- review_comments
-ALTER TABLE review_comments ADD COLUMN team_uuid TEXT NOT NULL DEFAULT '';
-ALTER TABLE review_comments ADD COLUMN author_uuid TEXT NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS idx_review_comments_team_uuid ON review_comments(team_uuid, task_id, attempt);
-""",
-]
+MIGRATIONS: list[str] = _load_migrations()
 
 # Columns that store JSON arrays and need parse/serialize on read/write.
 _JSON_LIST_COLUMNS = frozenset({"tags", "depends_on", "attachments", "repo"})
@@ -577,13 +140,20 @@ def _backfill_uuid_tables(conn: sqlite3.Connection, hc_home: Path) -> None:
         for team_dir in teams_dir.iterdir():
             if not team_dir.is_dir():
                 continue
-            team_name = team_dir.name
+            # Directory names are UUIDs (not human-readable team names)
+            dir_name = team_dir.name
 
-            # Get team UUID
+            # Try to match by UUID first (new layout), then by name (legacy)
             team_row = conn.execute(
-                "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0",
-                (team_name,)
+                "SELECT uuid FROM team_ids WHERE uuid = ? AND deleted = 0",
+                (dir_name,)
             ).fetchone()
+            if not team_row:
+                # Legacy fallback: directory might still be named by team name
+                team_row = conn.execute(
+                    "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0",
+                    (dir_name,)
+                ).fetchone()
             if not team_row:
                 continue
             team_uuid = team_row[0]
@@ -600,8 +170,9 @@ def _backfill_uuid_tables(conn: sqlite3.Connection, hc_home: Path) -> None:
                         (uuid_module.uuid4().hex, "agent", team_uuid, agent_name)
                     )
 
-    # Scan humans
-    members_dir = hc_home / "members"
+    # Scan humans (now in protected/members/)
+    from delegate.paths import members_dir as _members_dir
+    members_dir = _members_dir(hc_home)
     if members_dir.is_dir():
         for member_file in members_dir.glob("*.yaml"):
             human_name = member_file.stem
@@ -868,6 +439,43 @@ def _backfill_uuid_tables(conn: sqlite3.Connection, hc_home: Path) -> None:
             )
 
 
+def _backup_db(db_path: Path, version: int, hc_home: Path) -> Path | None:
+    """Create a backup of the DB before applying migration *version*.
+
+    Backup is stored under ``protected/db.sqlite.bak.V{version}``.
+    Returns the backup path, or None if the source DB doesn't exist yet.
+    """
+    if not db_path.exists():
+        return None
+
+    backup_dir = protected_dir(hc_home)
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / f"db.sqlite.bak.V{version}"
+    shutil.copy2(str(db_path), str(backup_path))
+    logger.info("DB backup created: %s", backup_path)
+    return backup_path
+
+
+def _verify_db_health(conn: sqlite3.Connection) -> None:
+    """Run a quick integrity check on the database.
+
+    Raises RuntimeError if the DB is corrupt.
+    """
+    result = conn.execute("PRAGMA integrity_check").fetchone()
+    if result[0] != "ok":
+        raise RuntimeError(f"DB integrity check failed: {result[0]}")
+
+    # Verify expected core tables exist
+    expected_tables = {"messages", "sessions", "tasks", "schema_meta"}
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"
+    ).fetchall()
+    actual_tables = {row[0] for row in rows}
+    missing = expected_tables - actual_tables
+    if missing:
+        raise RuntimeError(f"DB health check: missing tables {missing}")
+
+
 def ensure_schema(hc_home: Path, team: str = "") -> None:
     """Apply any pending migrations to the global database.
 
@@ -877,7 +485,14 @@ def ensure_schema(hc_home: Path, team: str = "") -> None:
     Each migration step is wrapped in an explicit transaction so that all
     statements (including DDL) plus the version bump are applied atomically.
     SQLite supports transactional DDL — if any statement fails the entire
-    migration is rolled back and no version is recorded.
+    migration is rolled back and the pre-migration backup is restored.
+
+    Before applying migrations, an automatic backup is created at
+    ``protected/db.sqlite.bak.V{N}`` where N is the first migration
+    being applied.
+
+    After all migrations succeed, a quick integrity + table-existence
+    check is performed.
 
     Note: team parameter is kept for backward compatibility but is no longer used.
     """
@@ -921,24 +536,42 @@ def ensure_schema(hc_home: Path, team: str = "") -> None:
         return
 
     pending = MIGRATIONS[current:]
+    first_pending_version = current + 1
 
-    for i, sql in enumerate(pending, start=current + 1):
-        logger.info("Applying migration V%d to global DB …", i)
-        stmts = [s.strip() for s in sql.split(";") if s.strip()]
-        try:
-            # BEGIN IMMEDIATE acquires a write-lock up front, preventing
-            # other writers from sneaking in between statements.
-            conn.execute("BEGIN IMMEDIATE")
-            for stmt in stmts:
-                conn.execute(stmt)
-            conn.execute(
-                "INSERT INTO schema_meta (version) VALUES (?)", (i,)
+    # --- Backup before applying migrations ---
+    backup_path = _backup_db(path, first_pending_version, hc_home)
+
+    try:
+        for i, sql in enumerate(pending, start=first_pending_version):
+            logger.info("Applying migration V%d to global DB …", i)
+            stmts = [s.strip() for s in sql.split(";") if s.strip()]
+            try:
+                # BEGIN IMMEDIATE acquires a write-lock up front, preventing
+                # other writers from sneaking in between statements.
+                conn.execute("BEGIN IMMEDIATE")
+                for stmt in stmts:
+                    conn.execute(stmt)
+                conn.execute(
+                    "INSERT INTO schema_meta (version) VALUES (?)", (i,)
+                )
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+            logger.info("Migration V%d applied", i)
+
+        # --- Health verification after all migrations ---
+        _verify_db_health(conn)
+
+    except Exception:
+        conn.close()
+        # Restore backup if it exists
+        if backup_path and backup_path.exists():
+            logger.error(
+                "Migration failed — restoring DB from backup %s", backup_path
             )
-            conn.execute("COMMIT")
-        except Exception:
-            conn.execute("ROLLBACK")
-            raise
-        logger.info("Migration V%d applied", i)
+            shutil.copy2(str(backup_path), str(path))
+        raise
 
     # Backfill UUID tables after migrations complete
     # This is idempotent and safe to run on every startup

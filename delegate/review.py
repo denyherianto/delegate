@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from delegate.db import get_connection
+from delegate.paths import resolve_team_uuid as _team
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +44,17 @@ def create_review(hc_home: Path, team: str, task_id: int, attempt: int, reviewer
     Called automatically when a task transitions to ``in_approval``.
     Returns the created review as a dict.
     """
+    team_uuid = _team(hc_home, team)
     conn = get_connection(hc_home, team)
     try:
         conn.execute(
-            "INSERT INTO reviews (task_id, attempt, reviewer, team) VALUES (?, ?, ?, ?)",
-            (task_id, attempt, reviewer, team),
+            "INSERT INTO reviews (task_id, attempt, reviewer, team, team_uuid) VALUES (?, ?, ?, ?, ?)",
+            (task_id, attempt, reviewer, team, team_uuid),
         )
         conn.commit()
         row = conn.execute(
-            "SELECT * FROM reviews WHERE task_id = ? AND attempt = ? AND team = ?",
-            (task_id, attempt, team),
+            "SELECT * FROM reviews WHERE task_id = ? AND attempt = ? AND team_uuid = ?",
+            (task_id, attempt, team_uuid),
         ).fetchone()
         return dict(row)
     finally:
@@ -61,11 +63,12 @@ def create_review(hc_home: Path, team: str, task_id: int, attempt: int, reviewer
 
 def get_reviews(hc_home: Path, team: str, task_id: int) -> list[dict]:
     """Return all review attempts for a task, oldest first."""
+    team_uuid = _team(hc_home, team)
     conn = get_connection(hc_home, team)
     try:
         rows = conn.execute(
-            "SELECT * FROM reviews WHERE task_id = ? AND team = ? ORDER BY attempt ASC",
-            (task_id, team),
+            "SELECT * FROM reviews WHERE task_id = ? AND team_uuid = ? ORDER BY attempt ASC",
+            (task_id, team_uuid),
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -74,11 +77,12 @@ def get_reviews(hc_home: Path, team: str, task_id: int) -> list[dict]:
 
 def get_current_review(hc_home: Path, team: str, task_id: int) -> dict | None:
     """Return the latest review attempt for a task, or None."""
+    team_uuid = _team(hc_home, team)
     conn = get_connection(hc_home, team)
     try:
         row = conn.execute(
-            "SELECT * FROM reviews WHERE task_id = ? AND team = ? ORDER BY attempt DESC LIMIT 1",
-            (task_id, team),
+            "SELECT * FROM reviews WHERE task_id = ? AND team_uuid = ? ORDER BY attempt DESC LIMIT 1",
+            (task_id, team_uuid),
         ).fetchone()
         if row is None:
             return None
@@ -112,19 +116,20 @@ def set_verdict(
         raise ValueError(f"Invalid verdict '{verdict}'. Must be 'approved' or 'rejected'.")
 
     now = _now()
+    team_uuid = _team(hc_home, team)
     conn = get_connection(hc_home, team)
     try:
         conn.execute(
             """\
             UPDATE reviews
                SET verdict = ?, summary = ?, reviewer = ?, decided_at = ?
-             WHERE task_id = ? AND attempt = ? AND team = ?""",
-            (verdict, summary, reviewer, now, task_id, attempt, team),
+             WHERE task_id = ? AND attempt = ? AND team_uuid = ?""",
+            (verdict, summary, reviewer, now, task_id, attempt, team_uuid),
         )
         conn.commit()
         row = conn.execute(
-            "SELECT * FROM reviews WHERE task_id = ? AND attempt = ? AND team = ?",
-            (task_id, attempt, team),
+            "SELECT * FROM reviews WHERE task_id = ? AND attempt = ? AND team_uuid = ?",
+            (task_id, attempt, team_uuid),
         ).fetchone()
         if row is None:
             raise ValueError(f"No review found for task {task_id} attempt {attempt}")
@@ -157,13 +162,14 @@ def add_comment(
 
     Returns the created comment as a dict.
     """
+    team_uuid = _team(hc_home, team)
     conn = get_connection(hc_home, team)
     try:
         cursor = conn.execute(
             """\
-            INSERT INTO review_comments (task_id, attempt, file, line, body, author, team)
-            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (task_id, attempt, file, line, body, author, team),
+            INSERT INTO review_comments (task_id, attempt, file, line, body, author, team, team_uuid)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (task_id, attempt, file, line, body, author, team, team_uuid),
         )
         conn.commit()
         row = conn.execute(
@@ -186,17 +192,18 @@ def get_comments(
     If ``attempt`` is None, returns comments across all attempts (for
     the "previous reviews" toggle).  Results are ordered by creation time.
     """
+    team_uuid = _team(hc_home, team)
     conn = get_connection(hc_home, team)
     try:
         if attempt is not None:
             rows = conn.execute(
-                "SELECT * FROM review_comments WHERE task_id = ? AND attempt = ? AND team = ? ORDER BY id ASC",
-                (task_id, attempt, team),
+                "SELECT * FROM review_comments WHERE task_id = ? AND attempt = ? AND team_uuid = ? ORDER BY id ASC",
+                (task_id, attempt, team_uuid),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM review_comments WHERE task_id = ? AND team = ? ORDER BY attempt ASC, id ASC",
-                (task_id, team),
+                "SELECT * FROM review_comments WHERE task_id = ? AND team_uuid = ? ORDER BY attempt ASC, id ASC",
+                (task_id, team_uuid),
             ).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -213,16 +220,17 @@ def update_comment(
 
     Returns the updated comment as a dict, or None if not found.
     """
+    team_uuid = _team(hc_home, team)
     conn = get_connection(hc_home, team)
     try:
         conn.execute(
-            "UPDATE review_comments SET body = ? WHERE id = ? AND team = ?",
-            (body, comment_id, team),
+            "UPDATE review_comments SET body = ? WHERE id = ? AND team_uuid = ?",
+            (body, comment_id, team_uuid),
         )
         conn.commit()
         row = conn.execute(
-            "SELECT * FROM review_comments WHERE id = ? AND team = ?",
-            (comment_id, team),
+            "SELECT * FROM review_comments WHERE id = ? AND team_uuid = ?",
+            (comment_id, team_uuid),
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -238,11 +246,12 @@ def delete_comment(
 
     Returns True if a row was deleted, False if not found.
     """
+    team_uuid = _team(hc_home, team)
     conn = get_connection(hc_home, team)
     try:
         cursor = conn.execute(
-            "DELETE FROM review_comments WHERE id = ? AND team = ?",
-            (comment_id, team),
+            "DELETE FROM review_comments WHERE id = ? AND team_uuid = ?",
+            (comment_id, team_uuid),
         )
         conn.commit()
         return cursor.rowcount > 0

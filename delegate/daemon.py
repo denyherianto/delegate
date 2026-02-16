@@ -3,7 +3,14 @@
 The daemon runs uvicorn serving the FastAPI app (delegate.web) with
 the message router and agent orchestrator running as background tasks.
 
-The daemon PID is written to ``~/.delegate/daemon.pid``.
+Singleton enforcement uses two complementary mechanisms:
+
+1. **PID file** (``protected/daemon.pid``) — human-readable, used for
+   ``stop_daemon`` and ``is_running``.
+2. **``fcntl.flock()``** (``protected/daemon.lock``) — advisory exclusive
+   lock held for the lifetime of the process.  The OS releases the lock
+   automatically when the process exits (even on SIGKILL), so stale PID
+   files cannot cause a new daemon to refuse to start.
 
 Functions:
     start_daemon(hc_home, port, ...) — start in background, write PID
@@ -11,6 +18,7 @@ Functions:
     is_running(hc_home) — check if the daemon PID is alive
 """
 
+import fcntl
 import logging
 import os
 import signal
@@ -19,10 +27,52 @@ import sys
 import time
 from pathlib import Path
 
-from delegate.paths import daemon_pid_path, ensure_protected
+from delegate.paths import daemon_pid_path, daemon_lock_path, ensure_protected
 from delegate.logging_setup import configure_logging, log_file_path
 
 logger = logging.getLogger(__name__)
+
+# Module-level file descriptor for the daemon lock — kept open for the
+# lifetime of the foreground process so flock() holds.
+_lock_fd: int | None = None
+
+
+def _acquire_lock(hc_home: Path) -> int:
+    """Acquire an exclusive lock on the daemon lock file.
+
+    Returns the file descriptor (must be kept open for the lock to hold).
+    Raises ``RuntimeError`` if another daemon already holds the lock.
+    """
+    lock_path = daemon_lock_path(hc_home)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, BlockingIOError):
+        os.close(fd)
+        raise RuntimeError(
+            "Another delegate daemon is already running "
+            "(could not acquire exclusive lock)."
+        )
+    # Write our PID into the lock file for debugging
+    os.ftruncate(fd, 0)
+    os.lseek(fd, 0, os.SEEK_SET)
+    os.write(fd, f"{os.getpid()}\n".encode())
+    return fd
+
+
+def _release_lock(fd: int) -> None:
+    """Release the daemon lock."""
+    if fd < 0:
+        return
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    except (OSError, ValueError):
+        pass
+    try:
+        os.close(fd)
+    except (OSError, ValueError):
+        pass
 
 
 def is_running(hc_home: Path) -> tuple[bool, int | None]:
@@ -66,12 +116,16 @@ def start_daemon(
 
     Returns the PID of the spawned process (or None if foreground).
     """
+    hc_home.mkdir(parents=True, exist_ok=True)
+    ensure_protected(hc_home)
+
+    # Attempt to acquire the exclusive flock first — this is the
+    # authoritative singleton check (survives stale PID files).
+    # For foreground mode we hold it ourselves; for background mode
+    # the child process will acquire its own lock.
     alive, existing_pid = is_running(hc_home)
     if alive:
         raise RuntimeError(f"Daemon already running with PID {existing_pid}")
-
-    hc_home.mkdir(parents=True, exist_ok=True)
-    ensure_protected(hc_home)
 
     # Set environment variables for the web app
     env = os.environ.copy()
@@ -86,6 +140,9 @@ def start_daemon(
         env["DELEGATE_DEV"] = "1"
 
     if foreground:
+        global _lock_fd
+        _lock_fd = _acquire_lock(hc_home)
+
         # Run in current process (blocking)
         os.environ.update(env)
         configure_logging(hc_home, console=True)
@@ -105,6 +162,9 @@ def start_daemon(
             )
         finally:
             pid_path.unlink(missing_ok=True)
+            if _lock_fd is not None:
+                _release_lock(_lock_fd)
+                _lock_fd = None
         return None
 
     # Spawn background process — redirect stderr to the log file

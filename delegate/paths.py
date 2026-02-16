@@ -25,7 +25,9 @@ Layout::
           worktrees/
 """
 
+import json
 import os
+import threading
 from pathlib import Path
 
 _DEFAULT_HOME = Path.home() / ".delegate"
@@ -57,8 +59,12 @@ def protected_dir(hc_home: Path) -> Path:
 
 
 def protected_team_dir(hc_home: Path, team: str) -> Path:
-    """Per-team metadata inside protected: ``protected/teams/<team>/``."""
-    return protected_dir(hc_home) / "teams" / team
+    """Per-team metadata inside protected: ``protected/teams/<team_uuid>/``.
+
+    Resolves *team* (name) to UUID via the team map.
+    Falls back to the name if no mapping exists.
+    """
+    return protected_dir(hc_home) / "teams" / resolve_team_uuid(hc_home, team)
 
 
 # --- Global infrastructure ---
@@ -71,6 +77,11 @@ def global_db_path(hc_home: Path) -> Path:
 def daemon_pid_path(hc_home: Path) -> Path:
     """Daemon PID file: ``protected/daemon.pid``."""
     return protected_dir(hc_home) / "daemon.pid"
+
+
+def daemon_lock_path(hc_home: Path) -> Path:
+    """Daemon lock file for ``fcntl.flock()``: ``protected/daemon.lock``."""
+    return protected_dir(hc_home) / "daemon.lock"
 
 
 def config_path(hc_home: Path) -> Path:
@@ -131,6 +142,98 @@ def get_team_id(hc_home: Path, team: str) -> str:
 
 
 # =========================================================================
+# Team name ↔ UUID resolution (file-based, no DB dependency)
+# =========================================================================
+
+_team_map_lock = threading.Lock()
+_team_map_cache: dict[str, dict[str, str]] = {}  # hc_home_str -> {name: uuid}
+
+
+def _team_map_path(hc_home: Path) -> Path:
+    """Path to the team name → UUID mapping file."""
+    return protected_dir(hc_home) / "team_map.json"
+
+
+def _load_team_map(hc_home: Path) -> dict[str, str]:
+    """Load the team name → UUID mapping (cached)."""
+    key = str(hc_home)
+    with _team_map_lock:
+        if key in _team_map_cache:
+            return _team_map_cache[key]
+    mp = _team_map_path(hc_home)
+    if mp.exists():
+        data = json.loads(mp.read_text())
+    else:
+        data = {}
+    with _team_map_lock:
+        _team_map_cache[key] = data
+    return data
+
+
+def _save_team_map(hc_home: Path, data: dict[str, str]) -> None:
+    """Persist the team name → UUID mapping."""
+    mp = _team_map_path(hc_home)
+    mp.parent.mkdir(parents=True, exist_ok=True)
+    mp.write_text(json.dumps(data, indent=2))
+    with _team_map_lock:
+        _team_map_cache[str(hc_home)] = dict(data)
+
+
+def register_team_path(hc_home: Path, team_name: str, team_uuid: str) -> None:
+    """Register a team name → UUID mapping for directory paths.
+
+    Called at bootstrap time.  The mapping is stored in
+    ``protected/team_map.json`` and cached in-process.
+    """
+    data = _load_team_map(hc_home)
+    data[team_name] = team_uuid
+    _save_team_map(hc_home, data)
+
+
+def unregister_team_path(hc_home: Path, team_name: str) -> None:
+    """Remove a team name → UUID mapping."""
+    data = _load_team_map(hc_home)
+    data.pop(team_name, None)
+    _save_team_map(hc_home, data)
+
+
+def resolve_team_uuid(hc_home: Path, team_name: str) -> str:
+    """Resolve a team name to its UUID for directory/DB usage.
+
+    Returns the UUID if a mapping exists, otherwise returns the
+    team name unchanged (fallback for tests and pre-UUID data).
+    """
+    data = _load_team_map(hc_home)
+    return data.get(team_name, team_name)
+
+
+def resolve_team_name(hc_home: Path, team_uuid: str) -> str:
+    """Resolve a UUID back to a team name.
+
+    Falls back to the UUID itself if no mapping is found.
+    """
+    data = _load_team_map(hc_home)
+    for name, uid in data.items():
+        if uid == team_uuid:
+            return name
+    return team_uuid
+
+
+def list_team_names(hc_home: Path) -> list[str]:
+    """Return all registered team names."""
+    return list(_load_team_map(hc_home).keys())
+
+
+def invalidate_team_map_cache(hc_home: Path | None = None) -> None:
+    """Clear the team map cache (for tests)."""
+    with _team_map_lock:
+        if hc_home is not None:
+            _team_map_cache.pop(str(hc_home), None)
+        else:
+            _team_map_cache.clear()
+
+
+# =========================================================================
 # Working data — teams directory (inside agent sandbox)
 # =========================================================================
 
@@ -139,7 +242,13 @@ def teams_dir(hc_home: Path) -> Path:
 
 
 def team_dir(hc_home: Path, team: str) -> Path:
-    return teams_dir(hc_home) / team
+    """Team working directory: ``teams/<team_uuid>/``.
+
+    Resolves *team* (a human-readable name) to its UUID for the
+    directory path.  Falls back to the name itself if no UUID
+    mapping exists (convenience for tests).
+    """
+    return teams_dir(hc_home) / resolve_team_uuid(hc_home, team)
 
 
 # --- Per-team paths (working data) ---

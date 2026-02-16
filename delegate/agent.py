@@ -379,7 +379,8 @@ def build_system_prompt(
 
     # --- 3. Team override charter ---
     override_block = ""
-    team_override = hc_home / "teams" / team / "override.md"
+    from delegate.paths import team_dir as _team_dir
+    team_override = _team_dir(hc_home, team) / "override.md"
     if team_override.exists():
         content = team_override.read_text().strip()
         if content:
@@ -458,37 +459,35 @@ def build_system_prompt(
 You are {agent} (role: {role}, seniority: {seniority}), a team member in the Delegate system.
 {human_name} is the human team member. You report to {manager_name} (manager).
 
-CRITICAL: You communicate ONLY by running shell commands. Your conversational
+CRITICAL: You communicate ONLY by using MCP tools. Your conversational
 replies are NOT seen by anyone — they only go to an internal log. To send a
-message that another agent or {human_name} will read, you MUST run:
+message that another agent or {human_name} will read, you MUST use the
+mailbox_send tool.
 
-    {python} -m delegate.mailbox send {hc_home} {team} {agent} <recipient> "<message>" --task <task_id>
+The task_id parameter is REQUIRED when the message relates to a specific task.
 
-The --task flag is REQUIRED when the message relates to a specific task. Omit it only for
-messages to/from {human_name} or general messages not tied to any task.
+=== AVAILABLE TOOLS ===
 
-Examples:
-    {python} -m delegate.mailbox send {hc_home} {team} {agent} {human_name} "Here is my update..."
-    {python} -m delegate.mailbox send {hc_home} {team} {agent} {manager_name} "Status update on T0042..." --task 42
+Communication:
+  mailbox_send(recipient, message, task_id) — send a message to a team member
+  mailbox_inbox() — check your unread messages
 
-Other commands:
-    # Task management
-    {python} -m delegate.task create {hc_home} {team} --title "..." [--description "..."] [--priority high] [--repo <repo_name>]
-    {python} -m delegate.task list {hc_home} {team} [--status open] [--assignee <name>]
-    {python} -m delegate.task assign {hc_home} {team} <task_id> <assignee>
-    {python} -m delegate.task status {hc_home} {team} <task_id> <new_status>
-    {python} -m delegate.task show {hc_home} {team} <task_id>
-    {python} -m delegate.task attach {hc_home} {team} <task_id> <file_path>
-    {python} -m delegate.task detach {hc_home} {team} <task_id> <file_path>
+Task management:
+  task_create(title, description?, priority?, repo?, depends_on?) — create a task
+  task_list(status?, assignee?) — list tasks with optional filters
+  task_show(task_id) — show task details
+  task_assign(task_id, assignee) — assign a task
+  task_status(task_id, new_status) — change task status
+  task_comment(task_id, body) — add a comment to a task
+  task_cancel(task_id) — cancel a task (manager only)
+  task_attach(task_id, file_path) — attach a file to a task
+  task_detach(task_id, file_path) — remove an attachment
 
-    # Task comments (durable notes on a task — specs, findings, decisions)
-    {python} -m delegate.task comment {hc_home} {team} <task_id> {agent} "<body>"
+Repository:
+  repo_list() — list registered repositories
 
-    # Cancel a task (manager only — cleans up worktrees and branches)
-    {python} -m delegate.task cancel {hc_home} {team} <task_id>
-
-    # Check your inbox
-    {python} -m delegate.mailbox inbox {hc_home} {team} {agent}
+Use these tools directly — do NOT run CLI commands for messaging or task management.
+For coding work, use standard bash, file editing, and git (add, commit, diff, log, status).
 {inlined_notes_block}
 
 REFERENCE FILES (read as needed):

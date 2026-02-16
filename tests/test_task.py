@@ -861,3 +861,95 @@ class TestCancelTask:
             assert "cancelled" in captured.out.lower()
         refreshed = get_task(tmp_team, TEAM, task["id"])
         assert refreshed["status"] == "cancelled"
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Dependency freeze + resolution helpers
+# ---------------------------------------------------------------------------
+
+
+class TestDependencyFreeze:
+    """Tests for depends_on freeze logic and _all_deps_resolved helper."""
+
+    def test_add_deps_to_unresolved_task_succeeds(self, tmp_team):
+        """Can add deps when existing deps are NOT all resolved."""
+        dep1 = create_task(tmp_team, TEAM, title="Dep 1", assignee="alice")
+        dep2 = create_task(tmp_team, TEAM, title="Dep 2", assignee="alice")
+        task = create_task(tmp_team, TEAM, title="Main", assignee="bob", depends_on=[dep1["id"]])
+        # dep1 is not done — so we can add dep2
+        updated = update_task(tmp_team, TEAM, task["id"], depends_on=[dep1["id"], dep2["id"]])
+        assert set(updated["depends_on"]) == {dep1["id"], dep2["id"]}
+
+    def test_add_deps_to_resolved_task_fails(self, tmp_team):
+        """Cannot add deps once all existing deps are resolved."""
+        dep1 = create_task(tmp_team, TEAM, title="Dep 1", assignee="alice")
+        task = create_task(tmp_team, TEAM, title="Main", assignee="bob", depends_on=[dep1["id"]])
+
+        # Resolve dep1 (cancelled is a terminal state accessible from todo)
+        cancel_task(tmp_team, TEAM, dep1["id"])
+
+        # Now try to add dep2
+        dep2 = create_task(tmp_team, TEAM, title="Dep 2", assignee="alice")
+        with pytest.raises(ValueError, match="Cannot add dependencies"):
+            update_task(tmp_team, TEAM, task["id"], depends_on=[dep1["id"], dep2["id"]])
+
+    def test_add_deps_to_no_deps_task_fails(self, tmp_team):
+        """Cannot add deps to task with no deps (all 0 deps are 'resolved')."""
+        task = create_task(tmp_team, TEAM, title="No deps", assignee="alice")
+        dep = create_task(tmp_team, TEAM, title="Dep", assignee="bob")
+        with pytest.raises(ValueError, match="Cannot add dependencies"):
+            update_task(tmp_team, TEAM, task["id"], depends_on=[dep["id"]])
+
+    def test_remove_deps_always_allowed(self, tmp_team):
+        """Removing deps is always allowed, even when all are resolved."""
+        dep1 = create_task(tmp_team, TEAM, title="Dep 1", assignee="alice")
+        dep2 = create_task(tmp_team, TEAM, title="Dep 2", assignee="alice")
+        task = create_task(tmp_team, TEAM, title="Main", assignee="bob", depends_on=[dep1["id"], dep2["id"]])
+
+        # Resolve both deps (cancelled is terminal from any state)
+        cancel_task(tmp_team, TEAM, dep1["id"])
+        cancel_task(tmp_team, TEAM, dep2["id"])
+
+        # Can still remove deps
+        updated = update_task(tmp_team, TEAM, task["id"], depends_on=[dep1["id"]])
+        assert updated["depends_on"] == [dep1["id"]]
+
+    def test_all_deps_resolved_empty(self, tmp_team):
+        """_all_deps_resolved returns True when depends_on is empty."""
+        from delegate.task import _all_deps_resolved
+
+        task = create_task(tmp_team, TEAM, title="No deps", assignee="alice")
+        assert _all_deps_resolved(tmp_team, TEAM, task) is True
+
+    def test_all_deps_resolved_with_done(self, tmp_team):
+        """_all_deps_resolved returns True when all deps are done."""
+        from delegate.task import _all_deps_resolved
+
+        dep = create_task(tmp_team, TEAM, title="Dep", assignee="alice")
+        task = create_task(tmp_team, TEAM, title="Main", assignee="bob", depends_on=[dep["id"]])
+
+        # Not resolved yet
+        assert _all_deps_resolved(tmp_team, TEAM, task) is False
+
+        # Resolve dep by walking the full transition chain to 'done'
+        change_status(tmp_team, TEAM, dep["id"], "in_progress")
+        change_status(tmp_team, TEAM, dep["id"], "in_review")
+        change_status(tmp_team, TEAM, dep["id"], "in_approval")
+        change_status(tmp_team, TEAM, dep["id"], "merging")
+        change_status(tmp_team, TEAM, dep["id"], "done")
+
+        # Now resolved — re-read task to get current state
+        task = get_task(tmp_team, TEAM, task["id"])
+        assert _all_deps_resolved(tmp_team, TEAM, task) is True
+
+    def test_all_deps_resolved_with_cancelled(self, tmp_team):
+        """_all_deps_resolved returns True when deps are cancelled."""
+        from delegate.task import _all_deps_resolved
+
+        dep = create_task(tmp_team, TEAM, title="Dep", assignee="alice")
+        task = create_task(tmp_team, TEAM, title="Main", assignee="bob", depends_on=[dep["id"]])
+
+        cancel_task(tmp_team, TEAM, dep["id"])
+
+        task = get_task(tmp_team, TEAM, task["id"])
+        assert _all_deps_resolved(tmp_team, TEAM, task) is True

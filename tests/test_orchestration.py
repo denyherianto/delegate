@@ -64,6 +64,7 @@ class _MockTelephone:
         self.allowed_write_paths: list[str] | None = None
         self._effective_write_paths: list[str] | None = None
         self.add_dirs: list = kwargs.get("add_dirs", [])
+        self.allowed_domains: list[str] = kwargs.get("allowed_domains", ["*"])
         self.turns = 0
 
     async def send(self, prompt: str):
@@ -400,6 +401,97 @@ class TestRepoGitDirs:
         assert "excludedCommands" not in sandbox
         assert sandbox["enabled"] is True
         assert sandbox["autoAllowBashIfSandboxed"] is True
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Narrow sandbox + denied bash patterns
+# ---------------------------------------------------------------------------
+
+
+class TestNarrowSandbox:
+    """Phase 3 — verify narrow add_dirs, role-aware .git/, and denied_bash_patterns."""
+
+    @patch("delegate.runtime.random.random", return_value=1.0)
+    def test_worker_add_dirs_excludes_hc_home(self, _mock_rng, tmp_team):
+        """Worker add_dirs should contain team dir + tmpdir + .git, NOT hc_home."""
+        from delegate.runtime import _create_telephone
+
+        tel = _create_telephone(
+            tmp_team, TEAM, "alice", preamble="test",
+        )
+        add_dirs_strs = [str(d) for d in tel.add_dirs]
+        # Should NOT include hc_home directly
+        assert str(tmp_team) not in add_dirs_strs
+        # Should include team working dir
+        from delegate.paths import team_dir as _td
+        assert str(_td(tmp_team, TEAM)) in add_dirs_strs
+
+    @patch("delegate.runtime.random.random", return_value=1.0)
+    def test_manager_no_git_dirs(self, _mock_rng, tmp_team):
+        """Manager add_dirs should NOT include .git/ paths."""
+        from delegate.repo import register_repo
+        from delegate.runtime import _create_telephone
+        from delegate.paths import agents_dir
+
+        # Register a repo
+        repo_path = tmp_team / "_test_repos" / "myrepo"
+        repo_path.mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo_path)], check=True,
+                       capture_output=True)
+        register_repo(tmp_team, TEAM, str(repo_path), name="myrepo")
+
+        # Create manager agent directory
+        mgr_dir = agents_dir(tmp_team, TEAM) / "delegate"
+        mgr_dir.mkdir(parents=True, exist_ok=True)
+
+        tel = _create_telephone(
+            tmp_team, TEAM, "delegate", preamble="test", role="manager",
+        )
+        add_dirs_strs = [str(d) for d in tel.add_dirs]
+        git_entries = [d for d in add_dirs_strs if d.endswith("/.git")]
+        assert git_entries == [], f"Manager should not get .git/ dirs: {git_entries}"
+
+    @patch("delegate.runtime.random.random", return_value=1.0)
+    def test_worker_gets_git_dirs(self, _mock_rng, tmp_team):
+        """Worker add_dirs SHOULD include .git/ paths when repos are registered."""
+        from delegate.repo import register_repo
+        from delegate.runtime import _create_telephone
+
+        repo_path = tmp_team / "_test_repos" / "myrepo"
+        repo_path.mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo_path)], check=True,
+                       capture_output=True)
+        register_repo(tmp_team, TEAM, str(repo_path), name="myrepo")
+
+        tel = _create_telephone(
+            tmp_team, TEAM, "alice", preamble="test", role="engineer",
+        )
+        add_dirs_strs = [str(d) for d in tel.add_dirs]
+        expected_git = str((repo_path / ".git").resolve())
+        assert expected_git in add_dirs_strs
+
+    @patch("delegate.runtime.random.random", return_value=1.0)
+    def test_denied_bash_patterns_wired(self, _mock_rng, tmp_team):
+        """_create_telephone should wire denied_bash_patterns."""
+        from delegate.runtime import _create_telephone, DENIED_BASH_PATTERNS
+
+        tel = _create_telephone(
+            tmp_team, TEAM, "alice", preamble="test",
+        )
+        assert tel._denied_bash_patterns == DENIED_BASH_PATTERNS
+        # Spot-check key patterns
+        assert "git push" in tel._denied_bash_patterns
+        assert "sqlite3 " in tel._denied_bash_patterns
+        assert "DROP TABLE" in tel._denied_bash_patterns
+
+    @patch("delegate.runtime.random.random", return_value=1.0)
+    def test_disallowed_tools_includes_git_branch(self, _mock_rng, tmp_team):
+        """DISALLOWED_TOOLS should include git branch after Phase 3."""
+        from delegate.runtime import DISALLOWED_TOOLS
+
+        assert "Bash(git branch:*)" in DISALLOWED_TOOLS
+        assert "Bash(git remote:*)" in DISALLOWED_TOOLS
+        assert "Bash(git filter-branch:*)" in DISALLOWED_TOOLS
 
 
 # ---------------------------------------------------------------------------

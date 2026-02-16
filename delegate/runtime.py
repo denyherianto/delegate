@@ -79,6 +79,34 @@ DISALLOWED_TOOLS = [
     "Bash(git switch:*)",
     "Bash(git reset --hard:*)",
     "Bash(git worktree:*)",
+    "Bash(git branch:*)",
+    "Bash(git remote:*)",
+    "Bash(git filter-branch:*)",
+    "Bash(git reflog expire:*)",
+]
+
+# Bash command substrings that are denied via the can_use_tool guard.
+# These complement DISALLOWED_TOOLS — some patterns (like `sqlite3`) can't
+# be expressed as tool patterns because the Claude tool schema uses a
+# `git <subcommand>:*` format.
+DENIED_BASH_PATTERNS = [
+    "git push",
+    "git rebase",
+    "git merge",
+    "git pull",
+    "git fetch",
+    "git checkout",
+    "git switch",
+    "git reset --hard",
+    "git worktree",
+    "git branch",
+    "git remote",
+    "git filter-branch",
+    "git reflog expire",
+    "rm -rf .git",
+    "sqlite3 ",          # trailing space avoids matching variable names
+    "DROP TABLE",
+    "DELETE FROM",
 ]
 
 # Reflection: 1-in-10 coin flip per turn
@@ -419,12 +447,19 @@ def _create_telephone(
     * Workers — may write to their own agent directory, the team
       ``shared/`` folder, and (added per-turn) task worktree paths.
 
-    Sandbox ``add_dirs`` include:
-    * ``DELEGATE_HOME`` — worktrees, agent directories, shared folders.
-    * Platform temp directory — for scratch files.
-    * Each registered repo's ``.git/`` directory — so ``git add`` /
-      ``git commit`` inside worktrees can write to the object store and
-      index without opening the repo working tree to bash writes.
+    Sandbox ``add_dirs`` are narrowed to the team's working directory
+    (not the entire DELEGATE_HOME) so that ``protected/`` and other
+    teams' directories are never writable from bash:
+
+    * **Team working directory** — the team's ``teams/<uuid>/`` dir.
+    * **Platform temp directory** — for scratch files.
+    * **Repo ``.git/`` directories** — workers only.  Allows ``git add``
+      / ``git commit`` inside worktrees without opening the repo working
+      tree.  Managers do NOT get ``.git/`` access (they don't work in
+      worktrees).
+
+    ``denied_bash_patterns`` adds a soft deny layer for dangerous
+    commands that complement the ``disallowed_tools`` list.
 
     The ``on_rotation`` callback writes the rotation summary
     to the agent's ``context.md``.
@@ -439,19 +474,41 @@ def _create_telephone(
     # Platform-appropriate temp directory (resolves macOS /tmp → /private/tmp)
     tmpdir = str(Path(tempfile.gettempdir()).resolve())
 
-    # Repo .git/ dirs — allows git add/commit inside worktrees without
-    # opening the repo working tree to arbitrary bash writes.
-    git_dirs = _repo_git_dirs(hc_home, team)
+    # Sandbox add_dirs: team working directory + tmpdir.
+    # Workers also get .git/ dirs for git add/commit in worktrees.
+    # Managers do NOT get .git/ — they don't work in worktrees.
+    team_working_dir = str(team_dir(hc_home, team))
+    add_dirs = [team_working_dir, tmpdir]
+
+    if role != "manager":
+        # Repo .git/ dirs — allows git add/commit inside worktrees
+        # without opening the repo working tree to arbitrary bash writes.
+        git_dirs = _repo_git_dirs(hc_home, team)
+        add_dirs.extend(git_dirs)
+
+    # In-process MCP server — runs inside daemon, outside agent sandbox.
+    # Gives agents safe access to DB/config via tool calls instead of CLI.
+    from delegate.mcp_tools import create_agent_mcp_server
+
+    mcp_server = create_agent_mcp_server(hc_home, team, agent)
+    mcp_servers = {"delegate": mcp_server} if mcp_server is not None else None
+
+    # Network allowlist — read from protected/network.yaml
+    from delegate.network import get_allowed_domains
+    allowed_domains = get_allowed_domains(hc_home)
 
     return Telephone(
         preamble=preamble,
         cwd=team_dir(hc_home, team),
         model=model,
         allowed_write_paths=_write_paths_for_role(hc_home, team, agent, role),
-        add_dirs=[str(hc_home), tmpdir, *git_dirs],
+        add_dirs=add_dirs,
         disallowed_tools=DISALLOWED_TOOLS,
+        denied_bash_patterns=DENIED_BASH_PATTERNS,
         on_rotation=_on_rotation,
         sandbox_enabled=True,
+        mcp_servers=mcp_servers,
+        allowed_domains=allowed_domains,
     )
 
 
@@ -620,10 +677,11 @@ async def run_turn(
     # repo list changed (add_dirs is a subprocess-level setting).
     tel = exchange.get(team, agent)
 
-    if tel is not None:
+    if tel is not None and role != "manager":
         # Check if registered repos changed (new repo added / removed).
         # add_dirs is baked into the subprocess — can't be changed via
         # rotation, so we must close + recreate.
+        # Only workers get .git/ dirs; managers don't work in worktrees.
         expected_git_dirs = _repo_git_dirs(hc_home, team)
         current_git_dirs = sorted(
             d for d in (str(p) for p in tel.add_dirs)
@@ -634,6 +692,21 @@ async def run_turn(
                 "Repo list changed for %s/%s — replacing telephone "
                 "(old=%d repos, new=%d repos)",
                 team, agent, len(current_git_dirs), len(expected_git_dirs),
+            )
+            await tel.close()
+            tel = None
+            exchange.put(team, agent, None)
+
+    if tel is not None:
+        # Check if network allowlist changed.  allowed_domains is baked
+        # into the sandbox config — must recreate on change.
+        from delegate.network import get_allowed_domains
+        current_domains = sorted(tel.allowed_domains)
+        expected_domains = sorted(get_allowed_domains(hc_home))
+        if current_domains != expected_domains:
+            logger.info(
+                "Network allowlist changed for %s/%s — replacing telephone",
+                team, agent,
             )
             await tel.close()
             tel = None

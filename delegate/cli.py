@@ -1018,5 +1018,86 @@ def workflow_init(ctx: click.Context, team_name: str) -> None:
     success(f"Registered built-in workflow '{wf.name}' v{wf.version} for team '{team_name}'")
 
 
+# ---------------------------------------------------------------------------
+# delegate network …
+# ---------------------------------------------------------------------------
+
+@main.group()
+def network() -> None:
+    """Manage the global network allowlist."""
+    pass
+
+
+@network.command("show")
+@click.pass_context
+def network_show(ctx: click.Context) -> None:
+    """Show the current network allowlist."""
+    from delegate.network import get_allowed_domains, is_unrestricted
+
+    hc_home = _get_home(ctx)
+    domains = get_allowed_domains(hc_home)
+
+    if is_unrestricted(domains):
+        click.echo("Network allowlist: * (unrestricted)")
+    else:
+        click.echo("Network allowlist:")
+        for d in sorted(domains):
+            click.echo(f"  - {d}")
+
+
+@network.command("allow")
+@click.argument("domain")
+@click.pass_context
+def network_allow(ctx: click.Context, domain: str) -> None:
+    """Add a domain to the allowlist.
+
+    DOMAIN can be an exact domain (api.github.com), a wildcard
+    (*.openai.com), or '*' to allow all.
+    """
+    from delegate.network import allow_domain
+    from delegate.fmt import success
+
+    hc_home = _get_home(ctx)
+    try:
+        updated = allow_domain(hc_home, domain)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+
+    success(f"Added '{domain}' to network allowlist")
+    for d in sorted(updated):
+        click.echo(f"  - {d}")
+
+
+@network.command("disallow")
+@click.argument("domain")
+@click.pass_context
+def network_disallow(ctx: click.Context, domain: str) -> None:
+    """Remove a domain from the allowlist."""
+    from delegate.network import disallow_domain
+    from delegate.fmt import success
+
+    hc_home = _get_home(ctx)
+    try:
+        updated = disallow_domain(hc_home, domain)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+
+    success(f"Removed '{domain}' from network allowlist")
+    for d in sorted(updated):
+        click.echo(f"  - {d}")
+
+
+@network.command("reset")
+@click.pass_context
+def network_reset(ctx: click.Context) -> None:
+    """Reset the allowlist to the default wildcard (allow all)."""
+    from delegate.network import reset_config
+    from delegate.fmt import success
+
+    hc_home = _get_home(ctx)
+    reset_config(hc_home)
+    success("Network allowlist reset to * (unrestricted)")
+
+
 if __name__ == "__main__":
     main()

@@ -15,7 +15,7 @@ from delegate.config import add_member
 from delegate.task import create_task, get_task, list_tasks
 from delegate.mailbox import send, read_inbox
 from delegate.repo import register_repo, create_task_worktree
-from delegate.paths import get_team_id
+from delegate.paths import get_team_id, resolve_team_uuid, team_dir as _team_dir
 
 
 TEAM_A = "backend"
@@ -315,8 +315,11 @@ class TestBranchNamespaceIsolation:
 
         # Verify the worktree paths are different (scoped by team)
         assert wt_a != wt_b
-        assert f"/{TEAM_A}/worktrees/" in str(wt_a)
-        assert f"/{TEAM_B}/worktrees/" in str(wt_b)
+        # Paths now use UUID-based directories
+        uuid_a = resolve_team_uuid(hc, TEAM_A)
+        uuid_b = resolve_team_uuid(hc, TEAM_B)
+        assert f"/{uuid_a}/worktrees/" in str(wt_a)
+        assert f"/{uuid_b}/worktrees/" in str(wt_b)
 
         # Verify branches have team_id prefix for collision avoidance
         result = subprocess.run(

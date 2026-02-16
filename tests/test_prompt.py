@@ -136,7 +136,8 @@ class TestPromptParity:
 
     def test_preamble_with_override_charter(self, tmp_team):
         """Preamble includes team override charter when override.md exists."""
-        team_dir = tmp_team / "teams" / SAMPLE_TEAM_NAME
+        from delegate.paths import team_dir as _team_dir
+        team_dir = _team_dir(tmp_team, SAMPLE_TEAM_NAME)
         (team_dir / "override.md").write_text(
             "# Custom Rules\n\nAll code must have 90% test coverage.\n"
         )

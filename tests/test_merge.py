@@ -32,6 +32,7 @@ from delegate.config import (
 )
 from delegate.merge import merge_task, merge_once, _run_pre_merge, _other_unmerged_tasks_on_branch, MergeResult, MergeFailureReason
 from delegate.bootstrap import bootstrap
+from delegate.paths import team_dir as _team_dir
 
 
 SAMPLE_TEAM = "myteam"
@@ -357,7 +358,7 @@ class TestMergeTask:
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
         # Create an agent worktree (simulating normal task work)
-        wt_dir = hc_home / "teams" / SAMPLE_TEAM / "worktrees" / "myrepo"
+        wt_dir = _team_dir(hc_home, SAMPLE_TEAM) / "worktrees" / "myrepo"
         wt_dir.mkdir(parents=True, exist_ok=True)
         wt_path = wt_dir / "T0001"
         subprocess.run(
@@ -382,7 +383,7 @@ class TestMergeTask:
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
         # Create an agent worktree
-        wt_dir = hc_home / "teams" / SAMPLE_TEAM / "worktrees" / "myrepo"
+        wt_dir = _team_dir(hc_home, SAMPLE_TEAM) / "worktrees" / "myrepo"
         wt_dir.mkdir(parents=True, exist_ok=True)
         wt_path = wt_dir / "T0001"
         subprocess.run(
@@ -413,7 +414,7 @@ class TestMergeTask:
         assert result.success is False
 
         # No merge worktrees should remain
-        merge_wt_dir = hc_home / "teams" / SAMPLE_TEAM / "worktrees" / "_merge"
+        merge_wt_dir = _team_dir(hc_home, SAMPLE_TEAM) / "worktrees" / "_merge"
         if merge_wt_dir.exists():
             remaining = list(merge_wt_dir.rglob("*"))
             assert len(remaining) == 0, f"Stale merge worktree remains: {remaining}"
