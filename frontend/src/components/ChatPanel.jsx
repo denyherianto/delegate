@@ -223,7 +223,7 @@ function CollapsibleEventMessage({ html, messageId }) {
   const wrapperClass = "msg-event-content-wrapper" + (isLong && !isExpanded ? " collapsed-agent" : "");
 
   return (
-    <>
+    <div class="msg-event-content-container">
       <div class={wrapperClass} ref={wrapperRef}>
         <LinkedDiv class="msg-event-text" html={html} />
         {isLong && !isExpanded && (
@@ -235,7 +235,7 @@ function CollapsibleEventMessage({ html, messageId }) {
           {isExpanded ? 'Show less' : 'Show more'}
         </button>
       )}
-    </>
+    </div>
   );
 }
 

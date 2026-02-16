@@ -227,6 +227,8 @@ export function linkifyTaskRefs(html) {
   return html.replace(/(^[^<]+|>[^<]*)/g, match =>
     match.replace(/(?<!\/)T(\d{4})\b/g, (full, digits) => {
       const id = parseInt(digits, 10);
+      // Skip T0000 (system placeholder)
+      if (id === 0) return full;
       return '<span class="task-link copyable" data-task-id="' + id + '">' + full + copyBtnHtml(full) + "</span>";
     })
   );
