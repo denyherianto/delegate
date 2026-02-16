@@ -151,9 +151,23 @@ function AgentsWidget({ collapsed }) {
     return a.localeCompare(b);
   });
 
+  // Check if any agents are active across all teams
+  const hasActiveAgents = teamNames.some(teamName => {
+    const teamAgents = teamGroups[teamName];
+    const turnState = allTurnState[teamName] || {};
+    return teamAgents.some(a => {
+      const turn = turnState[a.name];
+      const inTurn = turn?.inTurn ?? false;
+      const lastTaskId = turn?.taskId ?? null;
+      return inTurn || lastTaskId;
+    });
+  });
+
   return (
     <div class="sb-widget sb-agents-widget">
-      <div class="sb-widget-header">Active Teams</div>
+      <div class="sb-widget-header">
+        {hasActiveAgents ? "Active Teams" : "No Active Teams"}
+      </div>
       <div class="sb-agents-scroll">
         {teamNames.map(teamName => {
           const teamAgents = teamGroups[teamName];
