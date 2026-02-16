@@ -73,6 +73,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from delegate.paths import team_dir as _team_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -372,7 +374,7 @@ def workflow(name: str, version: int):
 
 def _workflow_dir(hc_home: Path, team: str, wf_name: str, version: int) -> Path:
     """Return the directory where a workflow version is stored."""
-    return hc_home / "teams" / team / "workflows" / wf_name / f"v{version}"
+    return _team_dir(hc_home, team) / "workflows" / wf_name / f"v{version}"
 
 
 def _workflow_file(hc_home: Path, team: str, wf_name: str, version: int) -> Path:
@@ -457,7 +459,7 @@ def list_workflows(hc_home: Path, team: str) -> list[dict[str, Any]]:
 
     Returns a list of dicts with keys: name, version, stages, initial, terminals.
     """
-    wf_base = hc_home / "teams" / team / "workflows"
+    wf_base = _team_dir(hc_home, team) / "workflows"
     if not wf_base.is_dir():
         return []
 
@@ -504,7 +506,7 @@ def list_workflows(hc_home: Path, team: str) -> list[dict[str, Any]]:
 
 def get_latest_version(hc_home: Path, team: str, name: str) -> int | None:
     """Return the latest version number for a workflow, or None if not found."""
-    wf_dir = hc_home / "teams" / team / "workflows" / name
+    wf_dir = _team_dir(hc_home, team) / "workflows" / name
     if not wf_dir.is_dir():
         return None
     versions = []
@@ -552,9 +554,9 @@ def register_workflow(
         raise FileNotFoundError(f"Workflow file not found: {source_path}")
 
     # Verify team exists
-    team_dir = hc_home / "teams" / team
-    if not team_dir.is_dir():
-        raise FileNotFoundError(f"Team '{team}' not found at {team_dir}")
+    td = _team_dir(hc_home, team)
+    if not td.is_dir():
+        raise FileNotFoundError(f"Team '{team}' not found at {td}")
 
     # Load and validate by importing the file temporarily
     _workflow_registry.clear()
