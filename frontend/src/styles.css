@@ -784,20 +784,28 @@ body {
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 14px;
   border: 1px solid var(--border-default);
   background: var(--bg-elevated);
   color: var(--text-secondary);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   box-shadow: 0 2px 8px rgba(0,0,0,0.3);
   transition: color 100ms;
+  font-size: 12px;
+  font-family: -apple-system, system-ui, sans-serif;
 }
 .chat-jump-btn:hover { color: var(--text-primary); }
+.chat-jump-label { font-size: 12px; }
+.chat-jump-sep { color: #383848; font-size: 11px; }
+.chat-jump-shortcut {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+}
 
 /* ================================================================
    Selection Tooltip

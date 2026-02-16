@@ -1488,9 +1488,9 @@ export function ChatPanel() {
       {/* Jump to bottom */}
       {showJumpBtn && (
         <button class="chat-jump-btn" onClick={jumpToBottom} title="Jump to latest">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="7" y1="2" x2="7" y2="12" /><polyline points="3,8 7,12 11,8" />
-          </svg>
+          <span class="chat-jump-label">Jump to latest</span>
+          <span class="chat-jump-sep">|</span>
+          <span class="chat-jump-shortcut">{navigator.platform.includes('Mac') ? '\u2318\u2193' : 'Ctrl+End'}</span>
         </button>
       )}
 
