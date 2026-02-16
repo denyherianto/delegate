@@ -1416,6 +1416,13 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
         updated = _update_task(hc_home, team, task_id, approval_status="approved")
         _log_event(hc_home, team, f"{format_task_id(task_id)} approved \u2713", task_id=task_id)
+
+        # Transition to merging immediately so UI reflects status change
+        from delegate.task import transition_task
+        from delegate.bootstrap import get_member_by_role
+        manager = get_member_by_role(hc_home, team, "manager") or "delegate"
+        updated = transition_task(hc_home, team, task_id, "merging", manager)
+
         return updated
 
     class RejectBody(BaseModel):

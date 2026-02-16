@@ -899,18 +899,16 @@ def merge_once(hc_home: Path, team: str) -> list[MergeResult]:
         if not result.success:
             _handle_merge_failure(hc_home, team, task_id, result)
 
-    # --- 2. Retry tasks still in 'merging' with prior attempts ---
+    # --- 2. Process tasks in 'merging' status (including newly approved) ---
     for task in list_tasks(hc_home, team, status="merging"):
         task_id = task["id"]
         attempts = task.get("merge_attempts", 0)
-        if attempts == 0:
-            # First attempt is handled above (in_approval -> merging);
-            # if attempts==0 and status==merging, it's mid-flight — skip.
-            continue
 
         logger.info(
-            "%s: retrying merge (attempt %d/%d)",
-            format_task_id(task_id), attempts + 1, MAX_MERGE_ATTEMPTS,
+            "%s: %s merge (attempt %d/%d)",
+            format_task_id(task_id),
+            "retrying" if attempts > 0 else "starting",
+            attempts + 1, MAX_MERGE_ATTEMPTS,
         )
         result = merge_task(hc_home, team, task_id)
         results.append(result)

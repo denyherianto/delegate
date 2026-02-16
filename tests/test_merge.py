@@ -715,6 +715,31 @@ class TestMergeOnce:
         updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
         assert updated["status"] == "done"
 
+    def test_processes_newly_approved_tasks_in_merging(self, hc_home, tmp_path):
+        """Tasks transitioned to 'merging' by approval endpoint should be picked up."""
+        repo = _setup_git_repo(tmp_path)
+        _make_feature_branch(repo, "alice/T0001")
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        # Create task in merging status with merge_attempts=0 (simulating approve endpoint)
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch="alice/T0001")
+        change_status(hc_home, SAMPLE_TEAM, task["id"], "merging")
+        update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
+
+        # Verify starting state: merging with attempts=0
+        task_before = get_task(hc_home, SAMPLE_TEAM, task["id"])
+        assert task_before["status"] == "merging"
+        assert task_before.get("merge_attempts", 0) == 0
+
+        # merge_once should pick it up and process it
+        results = merge_once(hc_home, SAMPLE_TEAM)
+        assert len(results) == 1
+        assert results[0].success is True
+
+        # Task should be done
+        updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
+        assert updated["status"] == "done"
+
 
 # ---------------------------------------------------------------------------
 # get_repo_approval tests

@@ -50,11 +50,16 @@ class TestApproveEndpoint:
         assert "status" in data
         assert "created_at" in data
 
-    def test_approve_does_not_change_status(self, client, in_approval_task, tmp_team):
-        """Approve only sets approval_status, not the task status itself."""
+    def test_approve_transitions_to_merging(self, client, in_approval_task, tmp_team):
+        """Approve transitions the task to 'merging' status immediately."""
         resp = client.post(f"/teams/{TEAM}/tasks/{in_approval_task['id']}/approve")
         data = resp.json()
-        assert data["status"] == "in_approval"
+        assert data["status"] == "merging"
+        assert data["approval_status"] == "approved"
+
+        # Verify persisted
+        loaded = get_task(tmp_team, TEAM, in_approval_task["id"])
+        assert loaded["status"] == "merging"
 
     def test_approve_nonexistent_task_404(self, client):
         resp = client.post(f"/teams/{TEAM}/tasks/9999/approve")
@@ -183,12 +188,14 @@ class TestRejectEndpoint:
 # ---------------------------------------------------------------------------
 
 class TestApprovalWorkflow:
-    def test_approve_then_status_still_in_approval(self, client, in_approval_task, tmp_team):
-        """After approval, status remains in_approval (daemon does the merge)."""
+    def test_approve_transitions_immediately_to_merging(self, client, in_approval_task, tmp_team):
+        """After approval, status immediately transitions to 'merging'."""
         client.post(f"/teams/{TEAM}/tasks/{in_approval_task['id']}/approve")
         loaded = get_task(tmp_team, TEAM, in_approval_task["id"])
-        assert loaded["status"] == "in_approval"
+        assert loaded["status"] == "merging"
         assert loaded["approval_status"] == "approved"
+        # Manager should be assigned
+        assert loaded["assignee"] == "manager"
 
     def test_reject_then_rework_cycle(self, client, in_approval_task, tmp_team):
         """Full cycle: reject -> rework (in_progress) -> in_review -> in_approval."""
