@@ -123,7 +123,7 @@ function AgentView({ agentName }) {
           <div class="agent-msg-header">
             <span class="agent-msg-direction" dangerouslySetInnerHTML={{ __html: arrow }} />
             <span class="agent-msg-sender">{cap(m.counterparty)}</span>
-            {m.task_id != null && (
+            {m.task_id > 0 && (
               <>
                 <span class="msg-task-sep">|</span>
                 <span class="msg-task-badge">{taskIdStr(m.task_id)}</span>

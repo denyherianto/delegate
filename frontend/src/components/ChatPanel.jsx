@@ -1479,7 +1479,7 @@ export function ChatPanel() {
                     {cap(m.sender)}<CopyBtn text={m.sender} />
                   </span>
                   <span class="msg-recipient"> → {cap(m.recipient)}</span>
-                  {m.task_id != null && (
+                  {m.task_id > 0 && (
                     <>
                       <span class="msg-task-sep">|</span>
                       <span
