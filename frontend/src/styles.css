@@ -1728,7 +1728,7 @@ select option:hover {
 .agent-msg { padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); }
 .agent-msg.unread { border-left: 1px solid var(--text-secondary); }
 .agent-msg.pending { border-left: 1px solid var(--semantic-yellow); }
-.agent-msg-header { display: flex; align-items: center; margin-bottom: 4px; }
+.agent-msg-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .agent-msg-direction { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-size: 12px; color: var(--text-muted); margin-right: 6px; }
 .agent-msg-sender { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-weight: 400; font-size: 12px; color: var(--text-primary); }
 .agent-msg-time { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; margin-left: auto; flex-shrink: 0; white-space: nowrap; }
