@@ -193,11 +193,13 @@ def register_team(conn: sqlite3.Connection, name: str, *, team_uuid: str | None 
     """
     new_uuid = team_uuid or uuid_module.uuid4().hex
     conn.execute(
-        "INSERT INTO team_ids (uuid, name) VALUES (?, ?)",
+        "INSERT OR IGNORE INTO team_ids (uuid, name) VALUES (?, ?)",
         (new_uuid, name)
     )
+    # Return existing UUID if insert was ignored (active team with same name exists)
+    row = conn.execute("SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0", (name,)).fetchone()
     _invalidate_caches()
-    return new_uuid
+    return row[0] if row else new_uuid
 
 
 def register_member(
@@ -219,11 +221,22 @@ def register_member(
     """
     new_uuid = uuid_module.uuid4().hex
     conn.execute(
-        "INSERT INTO member_ids (uuid, kind, team_uuid, name) VALUES (?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO member_ids (uuid, kind, team_uuid, name) VALUES (?, ?, ?, ?)",
         (new_uuid, kind, team_uuid, name)
     )
+    # Return existing UUID if insert was ignored (active member with same name exists)
+    if team_uuid is not None:
+        row = conn.execute(
+            "SELECT uuid FROM member_ids WHERE kind = ? AND team_uuid = ? AND name = ? AND deleted = 0",
+            (kind, team_uuid, name)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT uuid FROM member_ids WHERE kind = ? AND team_uuid IS NULL AND name = ? AND deleted = 0",
+            (kind, name)
+        ).fetchone()
     _invalidate_caches()
-    return new_uuid
+    return row[0] if row else new_uuid
 
 
 # ---------------------------------------------------------------------------
