@@ -94,7 +94,9 @@ export function AgentsPanel() {
 
     // Get latest activity for line 2 (log is ordered oldest-first, so search from end)
     const latestActivity = activityLog.findLast(log => log.agent === a.name);
-    const showLine2 = a.pid && (currentTask || latestActivity);
+    const activityFresh = latestActivity &&
+      (Date.now() - new Date(latestActivity.timestamp).getTime()) < 2 * 60 * 1000;
+    const showLine2 = a.pid && (currentTask || activityFresh);
 
     return (
       <div
@@ -144,14 +146,14 @@ export function AgentsPanel() {
               </>
             ) : (
               <span class="agent-task-title" style="color: var(--text-muted);">
-                {a.role === "manager" ? "Managing tasks" : "In turn"}
+                {a.role === "manager" ? "Managing tasks" : "Working"}
               </span>
             )}
-            {latestActivity && (
+            {latestActivity?.detail && (
               <>
                 <span class="agent-tool-sep">|</span>
                 <span class="agent-tool-call">
-                  {latestActivity.tool}: {latestActivity.detail || ""}
+                  {latestActivity.tool}: {latestActivity.detail}
                 </span>
               </>
             )}
