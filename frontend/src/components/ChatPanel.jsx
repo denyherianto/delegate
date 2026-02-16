@@ -346,6 +346,7 @@ export function ChatPanel() {
   const lastMsgTsRef = useRef("");
   const cooldownRef = useRef(false);
   const isAtBottomRef = useRef(true);
+  const wasAtBottomRef = useRef(true);
   const [showJumpBtn, setShowJumpBtn] = useState(false);
   const initialScrollDone = useRef(false);
   const oldestMsgIdRef = useRef(null);
@@ -855,6 +856,32 @@ export function ChatPanel() {
       requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     }
   }, [filteredMsgs]);
+
+  // Restore scroll position when tab becomes visible again
+  useEffect(() => {
+    const onVisChange = () => {
+      const el = logRef.current;
+      if (!el) return;
+      if (document.hidden) {
+        // Capture whether user was at bottom before leaving
+        wasAtBottomRef.current = isAtBottomRef.current;
+      } else {
+        // Tab became visible -- restore scroll if was at bottom
+        if (wasAtBottomRef.current) {
+          requestAnimationFrame(() => {
+            el.scrollTop = el.scrollHeight;
+            isAtBottomRef.current = true;
+            setShowJumpBtn(false);
+          });
+        }
+        // Re-measure isAtBottomRef for accuracy
+        const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+        isAtBottomRef.current = nearBottom;
+      }
+    };
+    document.addEventListener('visibilitychange', onVisChange);
+    return () => document.removeEventListener('visibilitychange', onVisChange);
+  }, []);
 
   const jumpToBottom = useCallback(() => {
     const el = logRef.current;
