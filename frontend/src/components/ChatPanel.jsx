@@ -69,7 +69,7 @@ function CommandMessage({ message, parsed }) {
       )}
       {parsed?.name === 'cost' && <CostBlock result={message.result} />}
       {parsed?.name === 'agent' && message.result && !message.result.error && (
-        <div class="shell-output-block"><pre>{message.result.message}</pre></div>
+        <div class="shell-output-block"><pre class="shell-output-stdout">{message.result.message}</pre></div>
       )}
       {parsed?.name === 'agent' && message.result?.error && (
         <div class="shell-output-stderr">
@@ -972,7 +972,7 @@ export function ChatPanel() {
         const tokens = cmd.args.split(/\s+/).filter(t => t);
 
         if (tokens.length === 0 || tokens[0] !== 'add') {
-          result = { error: 'Usage: /agent add <name> [--role <role>] [--seniority junior|senior] [--bio \'...\']', exit_code: -1 };
+          result = { error: 'Usage: /agent add [name] [--role <role>] [--seniority junior|senior] [--bio \'...\']', exit_code: -1 };
         } else {
           let nameToken = null;
           const options = {};
@@ -982,7 +982,19 @@ export function ChatPanel() {
             const token = tokens[i];
             if (token.startsWith('--')) {
               const flag = token.slice(2);
-              if (flag === 'role' || flag === 'seniority') {
+              if (flag === 'name') {
+                if (i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) {
+                  if (nameToken) {
+                    result = { error: 'Name specified multiple times (both positionally and with --name)', exit_code: -1 };
+                    break;
+                  }
+                  nameToken = tokens[i + 1];
+                  i += 2;
+                } else {
+                  result = { error: 'Missing value for --name', exit_code: -1 };
+                  break;
+                }
+              } else if (flag === 'role' || flag === 'seniority') {
                 if (i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) {
                   options[flag] = tokens[i + 1];
                   i += 2;
