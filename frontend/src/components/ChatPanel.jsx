@@ -873,10 +873,11 @@ export function ChatPanel() {
             isAtBottomRef.current = true;
             setShowJumpBtn(false);
           });
+        } else {
+          // Re-measure isAtBottomRef for accuracy only when we didn't restore scroll
+          const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+          isAtBottomRef.current = nearBottom;
         }
-        // Re-measure isAtBottomRef for accuracy
-        const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-        isAtBottomRef.current = nearBottom;
       }
     };
     document.addEventListener('visibilitychange', onVisChange);
