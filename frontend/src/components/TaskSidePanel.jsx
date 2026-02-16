@@ -555,7 +555,7 @@ function MergePreviewTab({ task, mergePreviewRaw, stats }) {
   let totalAdd = 0, totalDel = 0;
   for (const f of files) { totalAdd += f.addedLines; totalDel += f.deletedLines; }
 
-  if (!mergePreviewRaw) return <div class="diff-empty">Loading merge preview...</div>;
+  if (mergePreviewRaw === null) return <div class="diff-empty">Loading merge preview...</div>;
 
   return (
     <div>
@@ -797,7 +797,7 @@ export function TaskSidePanel() {
   });
   const [diffRaw, setDiffRaw] = useState(null);
   const [diffLoaded, setDiffLoaded] = useState(false);
-  const [mergePreviewRaw, setMergePreviewRaw] = useState("");
+  const [mergePreviewRaw, setMergePreviewRaw] = useState(null);
   const [mergePreviewLoaded, setMergePreviewLoaded] = useState(false);
   const [currentReview, setCurrentReview] = useState(null);
   const [oldComments, setOldComments] = useState([]);
@@ -831,7 +831,7 @@ export function TaskSidePanel() {
     setStats(c.stats ?? null);
     setDiffRaw(c.diffRaw ?? null);
     setDiffLoaded(!!c.diffRaw);
-    setMergePreviewRaw(c.mergePreviewRaw ?? "");
+    setMergePreviewRaw(c.mergePreviewRaw ?? null);
     setMergePreviewLoaded(!!c.mergePreviewRaw);
     setCurrentReview(c.currentReview ?? null);
     setOldComments(c.oldComments ?? []);
@@ -1006,7 +1006,7 @@ export function TaskSidePanel() {
   if (id === null) return null;
 
   const isOpen = id !== null;
-  const t = task;
+  const t = task ?? (id !== null ? (_getCache(id).task || null) : null);
   const TABS = ["overview", "changes", "merge", "activity"];
   const TAB_LABELS = { overview: "Overview", changes: "Changes", merge: "Merge Preview", activity: "Activity" };
 
