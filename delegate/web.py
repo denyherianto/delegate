@@ -2151,7 +2151,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             try:
                 task = _get_task(hc_home, t, task_id)
                 diffs = _get_commit_diffs(hc_home, t, task_id)
-                return {"task_id": task_id, "branch": task.get("branch", ""), "commits": diffs}
+                return {"task_id": task_id, "branch": task.get("branch", ""), "commit_diffs": diffs}
             except FileNotFoundError:
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
