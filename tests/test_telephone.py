@@ -354,6 +354,75 @@ class TestTelephoneUnit:
         assert t.prior_usage == t.total_usage()
         assert t.usage == TelephoneUsage()
 
+    def test_track_message_cumulative_cost_delta(self, tmp_path):
+        """_track_message converts cumulative total_cost_usd to per-query delta.
+
+        The SDK's ResultMessage.total_cost_usd is cumulative across the
+        conversation session, while usage tokens are per-query.  This test
+        ensures cost accounting produces correct deltas, not inflated
+        cumulative values.
+        """
+        t = Telephone(preamble="hello", cwd=tmp_path)
+
+        # Simulate three ResultMessages with CUMULATIVE costs but per-query tokens.
+        class FakeResult:
+            def __init__(self, cumulative_cost, input_tokens, output_tokens):
+                self.total_cost_usd = cumulative_cost
+                self.usage = {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
+                }
+
+        # Query 1: cumulative $0.50
+        t._track_message(FakeResult(0.50, 1000, 500))
+        assert t.usage.cost_usd == pytest.approx(0.50)
+        assert t.usage.input_tokens == 1000
+        assert t.usage.output_tokens == 500
+
+        # Query 2: cumulative $1.30 (per-query delta should be $0.80)
+        t._track_message(FakeResult(1.30, 1200, 600))
+        assert t.usage.cost_usd == pytest.approx(1.30)
+        assert t.usage.input_tokens == 2200  # 1000 + 1200
+        assert t.usage.output_tokens == 1100  # 500 + 600
+
+        # Query 3: cumulative $2.00 (per-query delta should be $0.70)
+        t._track_message(FakeResult(2.00, 800, 400))
+        assert t.usage.cost_usd == pytest.approx(2.00)
+        assert t.usage.input_tokens == 3000  # 2200 + 800
+        assert t.usage.output_tokens == 1500  # 1100 + 400
+
+    def test_track_message_cost_resets_on_rotation(self, tmp_path):
+        """After reset(), cumulative cost tracking starts fresh (new subprocess)."""
+        t = Telephone(preamble="hello", cwd=tmp_path)
+
+        class FakeResult:
+            def __init__(self, cumulative_cost, input_tokens, output_tokens):
+                self.total_cost_usd = cumulative_cost
+                self.usage = {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
+                }
+
+        # Generation 0
+        t._track_message(FakeResult(1.00, 1000, 500))
+        t._track_message(FakeResult(2.50, 1000, 500))
+        assert t.usage.cost_usd == pytest.approx(2.50)
+
+        # Rotate — new subprocess will report cumulative from $0 again
+        t.reset()
+        assert t._last_cumulative_cost == 0.0
+
+        # Generation 1: cost starts fresh
+        t._track_message(FakeResult(0.80, 500, 200))
+        assert t.usage.cost_usd == pytest.approx(0.80)
+
+        # Total across generations
+        assert t.total_usage().cost_usd == pytest.approx(2.50 + 0.80)
+
     def test_needs_rotation_respects_reset(self, tmp_path):
         """needs_rotation is true when over budget, false after reset."""
         t = Telephone(preamble="hello", cwd=tmp_path, max_context_tokens=500)

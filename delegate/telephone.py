@@ -316,6 +316,7 @@ class Telephone:
         )
         self.usage = TelephoneUsage() # usage from current generation
         self.prior_usage = TelephoneUsage() # usage from previous generations
+        self._last_cumulative_cost: float = 0.0  # SDK cost is cumulative; track for delta
         self.turns: int = 0
         self.created_at: float = time.time()
         self.generation: int = 0  # increments on each rotation
@@ -534,6 +535,8 @@ class Telephone:
         # roll over usage from this generation to the prior generations
         self.prior_usage += self.usage
         self.usage = TelephoneUsage()
+        # New subprocess starts with cumulative cost = 0
+        self._last_cumulative_cost = 0.0
 
         self.generation += 1
 
@@ -678,9 +681,20 @@ class Telephone:
         return _guard
 
     def _track_message(self, msg: Any) -> None:
-        """Update token accounting from a ``ResultMessage``."""
+        """Update token accounting from a ``ResultMessage``.
+
+        The SDK's ``total_cost_usd`` is **cumulative** across the
+        conversation session (all queries on the same subprocess),
+        while ``usage.input_tokens`` / ``output_tokens`` are per-query.
+        We convert the cumulative cost into a per-query delta so that
+        ``self.usage`` only accumulates incremental values.
+        """
         delta = TelephoneUsage.from_sdk_message(msg)
         if delta.input_tokens or delta.output_tokens:
+            # Convert cumulative cost → per-query delta
+            cumulative_cost = delta.cost_usd
+            delta.cost_usd = max(0.0, cumulative_cost - self._last_cumulative_cost)
+            self._last_cumulative_cost = cumulative_cost
             self.usage += delta
 
 
