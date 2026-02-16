@@ -27,6 +27,11 @@ function _setCache(id, patch) {
   _cache.set(key, { ...(_cache.get(key) || {}), ...patch });
 }
 
+// ── Cache invalidation (called from SSE handlers) ──
+export function invalidateTaskCache(taskId) {
+  _cache.delete(_cacheKey(taskId));
+}
+
 // ── Background prefetch for recent tasks ──
 // Proactively fetches and caches stats+reviews for task IDs to warm the cache.
 // Processes tasks sequentially to avoid hammering the server.
@@ -855,6 +860,16 @@ export function TaskSidePanel() {
     }
 
     // ── Revalidate in background ──
+    // Fetch fresh task list to catch any updates that may have been missed
+    api.fetchAllTasks().then(taskData => {
+      tasks.value = taskData;
+      const fresh = taskData.find(t => t.id === id);
+      if (fresh) {
+        setTask(fresh);
+        _setCache(id, { task: fresh });
+      }
+    }).catch(() => {});
+
     // Parallelize stats + reviews loading
     (async () => {
       try {
