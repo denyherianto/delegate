@@ -91,6 +91,45 @@ def _detect_git_repo() -> Path | None:
     return None
 
 
+def _prompt_for_repos(hc_home: Path, team_name: str, success) -> None:
+    """Interactively prompt user for repo path(s) until at least one valid repo is provided."""
+    import os
+    from delegate.repo import register_repo
+
+    click.echo()
+    click.echo(f"  Team '{team_name}' requires at least one git repository.")
+
+    while True:
+        paths_str = click.prompt("  Enter path(s) to git repo(s) (comma-separated)", type=str)
+        paths = [p.strip() for p in paths_str.split(",") if p.strip()]
+
+        if not paths:
+            click.echo("  Please enter at least one path.")
+            continue
+
+        valid = []
+        for p in paths:
+            expanded = Path(os.path.expanduser(p)).resolve()
+            if expanded.is_dir() and (expanded / ".git").exists():
+                valid.append(expanded)
+            else:
+                click.echo(f"  Not a valid git repo: {p}")
+
+        if valid:
+            for repo_path in valid:
+                try:
+                    repo_name = register_repo(hc_home, team_name, str(repo_path))
+                    success(f"Registered repo: {repo_name}")
+                except Exception as exc:
+                    from delegate.fmt import warn
+                    warn(f"Could not register {repo_path}: {exc}")
+            break
+
+        click.echo("  At least one valid git repo is required. Try again.")
+
+    click.echo()
+
+
 def _auto_setup(hc_home: Path, success) -> None:
     """One-time first-run setup: create team, agents, and optionally register CWD repo.
 
@@ -156,11 +195,10 @@ def _auto_setup(hc_home: Path, success) -> None:
             from delegate.fmt import warn
             warn(f"Could not register detected repo: {exc}")
     else:
+        # No CWD repo detected — prompt interactively for repo path(s)
         click.echo()
         click.echo("  No git repo detected in current directory.")
-        click.echo("  Tell me which repo to work on in chat, or run:")
-        click.echo("    delegate repo add <team> /path/to/repo")
-        click.echo()
+        _prompt_for_repos(hc_home, team_name, success)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -232,6 +270,21 @@ def start(
 
     # ── Auto-setup: bootstrap on first run ──────────────────────
     _auto_setup(hc_home, success)
+
+    # ── Verify all teams have at least one repo ─────────────────
+    from delegate.config import get_repos
+    from delegate.paths import teams_dir
+
+    tdir = teams_dir(hc_home)
+    if tdir.is_dir():
+        for team_path in tdir.iterdir():
+            if team_path.is_dir():
+                team_name = team_path.name
+                repos = get_repos(hc_home, team_name)
+                if not repos:
+                    click.echo()
+                    click.echo(f"Team '{team_name}' has no repos registered.")
+                    _prompt_for_repos(hc_home, team_name, success)
 
     url = f"http://localhost:{port}"
 

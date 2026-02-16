@@ -1,13 +1,14 @@
 """Tests for delegate CLI commands."""
 
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 import pytest
 from click.testing import CliRunner
 
 from delegate.bootstrap import bootstrap
-from delegate.cli import main
-from delegate.config import add_member
+from delegate.cli import main, _prompt_for_repos
+from delegate.config import add_member, get_repos
 
 
 @pytest.fixture
@@ -128,3 +129,116 @@ def test_nuke_nonexistent_directory(tmp_path, runner):
 
     assert result.exit_code == 0
     assert "not found" in result.output or "does not exist" in result.output
+
+
+def test_prompt_for_repos_accepts_valid_repo(tmp_path):
+    """_prompt_for_repos registers a valid git repo."""
+    hc = tmp_path / "hc"
+    hc.mkdir()
+    add_member(hc, "test_user")
+    bootstrap(hc, "testteam", manager="mgr", agents=[])
+
+    # Create a mock git repo
+    repo_dir = tmp_path / "test_repo"
+    repo_dir.mkdir()
+    (repo_dir / ".git").mkdir()
+
+    # Mock click.prompt to return the repo path
+    with patch("delegate.cli.click.prompt", return_value=str(repo_dir)):
+        with patch("delegate.cli.click.echo"):
+            success_mock = MagicMock()
+            _prompt_for_repos(hc, "testteam", success_mock)
+
+    # Verify repo was registered
+    repos = get_repos(hc, "testteam")
+    assert len(repos) == 1
+    assert "test_repo" in repos
+
+
+def test_prompt_for_repos_rejects_invalid_paths(tmp_path):
+    """_prompt_for_repos rejects non-git directories and re-prompts."""
+    hc = tmp_path / "hc"
+    hc.mkdir()
+    add_member(hc, "test_user")
+    bootstrap(hc, "testteam", manager="mgr", agents=[])
+
+    # Create a regular directory (not a git repo)
+    not_repo = tmp_path / "not_repo"
+    not_repo.mkdir()
+
+    # Create a valid git repo
+    valid_repo = tmp_path / "valid_repo"
+    valid_repo.mkdir()
+    (valid_repo / ".git").mkdir()
+
+    # Mock click.prompt to return invalid path first, then valid path
+    with patch("delegate.cli.click.prompt", side_effect=[str(not_repo), str(valid_repo)]):
+        with patch("delegate.cli.click.echo") as echo_mock:
+            success_mock = MagicMock()
+            _prompt_for_repos(hc, "testteam", success_mock)
+
+            # Verify error message was shown for invalid path
+            error_shown = any("Not a valid git repo" in str(call) for call in echo_mock.call_args_list)
+            assert error_shown
+
+    # Verify valid repo was registered
+    repos = get_repos(hc, "testteam")
+    assert len(repos) == 1
+    assert "valid_repo" in repos
+
+
+def test_prompt_for_repos_accepts_multiple_repos(tmp_path):
+    """_prompt_for_repos can register multiple repos in one input."""
+    hc = tmp_path / "hc"
+    hc.mkdir()
+    add_member(hc, "test_user")
+    bootstrap(hc, "testteam", manager="mgr", agents=[])
+
+    # Create two mock git repos
+    repo1 = tmp_path / "repo1"
+    repo1.mkdir()
+    (repo1 / ".git").mkdir()
+
+    repo2 = tmp_path / "repo2"
+    repo2.mkdir()
+    (repo2 / ".git").mkdir()
+
+    # Mock click.prompt to return comma-separated paths
+    with patch("delegate.cli.click.prompt", return_value=f"{repo1},{repo2}"):
+        with patch("delegate.cli.click.echo"):
+            success_mock = MagicMock()
+            _prompt_for_repos(hc, "testteam", success_mock)
+
+    # Verify both repos were registered
+    repos = get_repos(hc, "testteam")
+    assert len(repos) == 2
+    assert "repo1" in repos
+    assert "repo2" in repos
+
+
+def test_prompt_for_repos_handles_empty_input(tmp_path):
+    """_prompt_for_repos re-prompts when user enters empty string."""
+    hc = tmp_path / "hc"
+    hc.mkdir()
+    add_member(hc, "test_user")
+    bootstrap(hc, "testteam", manager="mgr", agents=[])
+
+    # Create a valid git repo
+    valid_repo = tmp_path / "valid_repo"
+    valid_repo.mkdir()
+    (valid_repo / ".git").mkdir()
+
+    # Mock click.prompt to return empty string first, then valid path
+    with patch("delegate.cli.click.prompt", side_effect=["", str(valid_repo)]):
+        with patch("delegate.cli.click.echo") as echo_mock:
+            success_mock = MagicMock()
+            _prompt_for_repos(hc, "testteam", success_mock)
+
+            # Verify error message was shown for empty input
+            error_shown = any("Please enter at least one path" in str(call) for call in echo_mock.call_args_list)
+            assert error_shown
+
+    # Verify valid repo was registered
+    repos = get_repos(hc, "testteam")
+    assert len(repos) == 1
+    assert "valid_repo" in repos
