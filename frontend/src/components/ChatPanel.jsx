@@ -112,7 +112,7 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
 // ── Memoized message content rendering ──
 const MemoizedMessageContent = memo(function MemoizedMessageContent({ content, team, messageId, isBoss }) {
   const html = useMemo(
-    () => renderFileReferences(linkifyFilePaths(linkifyTaskRefs(renderMarkdown(content))), team),
+    () => linkifyFilePaths(renderFileReferences(linkifyTaskRefs(renderMarkdown(content)), team)),
     [content, team]
   );
   return <CollapsibleMessage html={html} messageId={messageId} isBoss={isBoss} />;
@@ -1464,7 +1464,7 @@ export function ChatPanel() {
       <div class="chat-log" ref={logRef}>
         {filteredMsgs.map((m, i) => {
           if (m.type === "event") {
-            const eventHtml = renderFileReferences(agentifyRefs(linkifyFilePaths(linkifyTaskRefs(esc(m.content))), agNames), team);
+            const eventHtml = agentifyRefs(linkifyFilePaths(renderFileReferences(linkifyTaskRefs(esc(m.content)), team)), agNames);
             return (
               <div key={m.id || i} class="msg-event">
                 <CollapsibleEventMessage html={eventHtml} messageId={m.id || `event-${i}`} />
