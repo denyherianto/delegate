@@ -112,7 +112,7 @@ There's no magic. You can `ls` into any agent's directory and see exactly what t
 
 ## Sandboxing & Permissions
 
-Delegate restricts what agents can do through three independent layers — defense-in-depth so no single bypass compromises the system:
+Delegate restricts what agents can do through four independent layers — defense-in-depth so no single bypass compromises the system:
 
 **1. Write-path isolation (`can_use_tool` callback)**
 
@@ -142,10 +142,15 @@ All bash commands run inside an OS-level sandbox provided by Claude Code's nativ
 
 - `DELEGATE_HOME` (`~/.delegate/` by default) — all team data lives here
 - Platform temp directory (`/tmp` on Unix, `%TEMP%` on Windows)
+- Each registered repo's `.git/` directory — so `git add` / `git commit` work inside worktrees without opening the repo working tree to arbitrary bash writes
 
-Even if the model crafts a bash command that bypasses the tool-level guards, the kernel blocks the write. Network access and other system calls are similarly restricted.
+Even if the model crafts a bash command that bypasses the tool-level guards, the kernel blocks the write. Agents cannot `git` into unregistered repos (the sandbox blocks writes to their `.git/`), and they cannot write to the working tree of any repo via bash (only `.git/` is allowed).
 
-Together these three layers mean: the model can only write to directories Delegate explicitly allows, cannot touch your git branch topology, and cannot escape the sandbox even through creative bash commands.
+**4. Daemon-managed worktree lifecycle**
+
+Git operations that modify branch topology — `git worktree add`, `git worktree remove`, branch creation, rebase, and merge — run exclusively in the **daemon process**, which is unsandboxed. Agents never run these commands directly. When a manager creates a task with `--repo`, only the DB record and branch name are saved; the daemon creates the actual worktree before dispatching any turns to the assigned worker. This clean separation means agents can write code and commit inside their worktrees but cannot create, remove, or manipulate worktrees or branches.
+
+Together these four layers mean: the model can only write to directories Delegate explicitly allows, cannot touch your git branch topology, cannot escape the sandbox even through creative bash commands, and all infrastructure operations happen in a controlled daemon context.
 
 ## Configuration
 

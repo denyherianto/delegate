@@ -265,6 +265,12 @@ def _resolve_workspace(
 
     Falls back to the agent's own workspace directory when there is no
     task or no repos.
+
+    **Defense-in-depth**: if a task has repos but one or more worktrees
+    are missing (daemon hasn't created them yet), the missing repos are
+    logged as warnings and omitted from *workspace_paths*.  The agent
+    still gets the fallback workspace — it can proceed with non-repo
+    work but won't attempt to write code into a nonexistent worktree.
     """
     from delegate.repo import get_task_worktree_path
 
@@ -288,6 +294,12 @@ def _resolve_workspace(
             workspace_paths[repo_name] = wt
             if i == 0:
                 cwd = wt  # first available worktree is the cwd
+        else:
+            logger.warning(
+                "Worktree not yet available for %s/%s repo=%s — "
+                "daemon may still be creating it",
+                team, format_task_id(task["id"]), repo_name,
+            )
 
     return cwd, workspace_paths
 
@@ -365,6 +377,28 @@ def _write_paths_for_role(
     ]
 
 
+def _repo_git_dirs(hc_home: Path, team: str) -> list[str]:
+    """Return resolved ``.git/`` paths for every registered repo in *team*.
+
+    These are added to the sandbox ``add_dirs`` so that ``git add`` /
+    ``git commit`` inside a worktree can write to the repo's object store
+    and index — without opening write access to the repo working tree
+    itself or to arbitrary repos on the machine.
+    """
+    from delegate.repo import list_repos, get_repo_path
+
+    git_dirs: list[str] = []
+    for repo_name in list_repos(hc_home, team):
+        try:
+            real_repo = get_repo_path(hc_home, team, repo_name).resolve()
+            git_dir = real_repo / ".git"
+            if git_dir.is_dir():
+                git_dirs.append(str(git_dir))
+        except Exception:
+            pass  # repo symlink broken or missing — skip
+    return sorted(git_dirs)
+
+
 def _create_telephone(
     hc_home: Path,
     team: str,
@@ -385,6 +419,13 @@ def _create_telephone(
     * Workers — may write to their own agent directory, the team
       ``shared/`` folder, and (added per-turn) task worktree paths.
 
+    Sandbox ``add_dirs`` include:
+    * ``DELEGATE_HOME`` — worktrees, agent directories, shared folders.
+    * Platform temp directory — for scratch files.
+    * Each registered repo's ``.git/`` directory — so ``git add`` /
+      ``git commit`` inside worktrees can write to the object store and
+      index without opening the repo working tree to bash writes.
+
     The ``on_rotation`` callback writes the rotation summary
     to the agent's ``context.md``.
     """
@@ -398,12 +439,16 @@ def _create_telephone(
     # Platform-appropriate temp directory (resolves macOS /tmp → /private/tmp)
     tmpdir = str(Path(tempfile.gettempdir()).resolve())
 
+    # Repo .git/ dirs — allows git add/commit inside worktrees without
+    # opening the repo working tree to arbitrary bash writes.
+    git_dirs = _repo_git_dirs(hc_home, team)
+
     return Telephone(
         preamble=preamble,
         cwd=team_dir(hc_home, team),
         model=model,
         allowed_write_paths=_write_paths_for_role(hc_home, team, agent, role),
-        add_dirs=[str(hc_home), tmpdir],
+        add_dirs=[str(hc_home), tmpdir, *git_dirs],
         disallowed_tools=DISALLOWED_TOOLS,
         on_rotation=_on_rotation,
         sandbox_enabled=True,
@@ -571,8 +616,29 @@ async def run_turn(
     prompt_builder = Prompt(hc_home, team, agent)
 
     preamble = prompt_builder.build_preamble()
-    # Get or create Telephone; rotate if preamble changed
+    # Get or create Telephone; rotate if preamble changed, replace if
+    # repo list changed (add_dirs is a subprocess-level setting).
     tel = exchange.get(team, agent)
+
+    if tel is not None:
+        # Check if registered repos changed (new repo added / removed).
+        # add_dirs is baked into the subprocess — can't be changed via
+        # rotation, so we must close + recreate.
+        expected_git_dirs = _repo_git_dirs(hc_home, team)
+        current_git_dirs = sorted(
+            d for d in (str(p) for p in tel.add_dirs)
+            if d.endswith("/.git") or d.endswith("\\.git")
+        )
+        if expected_git_dirs != current_git_dirs:
+            logger.info(
+                "Repo list changed for %s/%s — replacing telephone "
+                "(old=%d repos, new=%d repos)",
+                team, agent, len(current_git_dirs), len(expected_git_dirs),
+            )
+            await tel.close()
+            tel = None
+            exchange.put(team, agent, None)
+
     if tel is not None and tel.preamble != preamble:
         logger.info("Preamble changed for %s/%s — rotating telephone", team, agent)
         await tel.rotate()

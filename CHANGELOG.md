@@ -7,7 +7,10 @@ All notable changes to Delegate are documented here.
 ### Added
 - **Persistent agent conversations (Telephone)** — agents now maintain a single persistent Claude subprocess across turns via `ClaudeSDKClient`, eliminating process-per-turn overhead. Conversations auto-rotate when the context window fills, summarising state into memory for the next generation.
 - **Prompt class** — extracted prompt building from `agent.py` into a dedicated `Prompt` class with composable methods for charter, task context, message history, and reflection prompts.
-- **OS-level bash sandboxing** — agents run with macOS Seatbelt / Linux bubblewrap isolation via `claude-agent-sdk`. Bash commands are kernel-restricted to the delegate home directory and platform temp directory; writes outside are blocked at the OS level regardless of what the model attempts.
+- **OS-level bash sandboxing** — agents run with macOS Seatbelt / Linux bubblewrap isolation via `claude-agent-sdk`. Bash commands are kernel-restricted to the delegate home directory, platform temp directory, and registered repo `.git/` directories; writes outside are blocked at the OS level regardless of what the model attempts.
+- **Surgical repo `.git/` sandbox access** — each registered repo's `.git/` directory is added to the sandbox `add_dirs`, allowing `git add`/`git commit` inside worktrees while keeping the repo working tree read-only to bash and blocking git operations on unregistered repos.
+- **Daemon-managed worktree lifecycle** — `git worktree add`, branch creation, merge, and cleanup now run exclusively in the unsandboxed daemon process. `task.create()` records only the DB row and branch name; the daemon's `_ensure_task_infra()` creates worktrees before dispatching agent turns, eliminating sandbox conflicts.
+- **Automatic Telephone replacement on repo change** — if a new repo is registered mid-session, the agent's Telephone is automatically closed and recreated with updated `add_dirs` containing the new repo's `.git/` path.
 - **Write-path enforcement per role** — managers can write anywhere under the team directory; engineers are restricted to their agent directory, task worktree(s), and the team `shared/` folder. Enforced via `can_use_tool` callback on every tool invocation.
 - **Migrated to `claude-agent-sdk`** — replaced `claude-code-sdk` (v0.0.25) with `claude-agent-sdk` (v0.1.36), which bundles the Claude Code CLI binary (no separate `npm install` required) and adds native `SandboxSettings` support.
 - **`/agent add` slash command** — spawn new agents from the chat UI without touching the CLI.
@@ -16,9 +19,10 @@ All notable changes to Delegate are documented here.
 - **Scroll-to-bottom shortcut** — keyboard shortcut to jump to the latest message, plus a two-column help modal for discovering all shortcuts.
 - **Individual idle agents in sidebar** — sidebar now shows each idle agent individually instead of a count, with gray dots for idle teams.
 - **One-shot frontend build on `delegate start`** — ensures the frontend bundle is fresh on every daemon start, even without `--dev`.
+- **PyPI wheel includes frontend static assets** — added `force-include` directive so the gitignored `delegate/static/` directory is correctly packaged in the wheel.
 
 ### Changed
-- **Defense-in-depth permissioning** — three independent layers now enforce write isolation: (1) `can_use_tool` callback blocks Edit/Write tools outside allowed paths, (2) `disallowed_tools` hides dangerous git commands at the SDK level, (3) OS sandbox restricts all bash file writes at the kernel level.
+- **Defense-in-depth permissioning** — four independent layers now enforce write isolation: (1) `can_use_tool` callback blocks Edit/Write tools outside allowed paths, (2) `disallowed_tools` hides dangerous git commands at the SDK level, (3) OS sandbox restricts all bash file writes at the kernel level, (4) daemon-only worktree/branch lifecycle operations.
 - **Consolidated token usage tracking** — replaced scattered `TurnTokens` / `_collect_tokens_from_message` implementations with a single `TelephoneUsage` class that handles extraction, arithmetic, and accumulation.
 - **`--repo` now required** on `delegate team add` — the manager charter is updated to reflect this. Review commit gate relaxed (no longer requires a commit before submitting for review).
 - **Agent name optional** in `/agent add` — omitting the name auto-generates one from the name pool.

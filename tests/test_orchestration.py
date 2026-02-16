@@ -6,13 +6,15 @@ subprocess spawning, or stale-PID clearing.  The daemon polls
 """
 
 import asyncio
+import subprocess
 from dataclasses import dataclass
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 import pytest
 
 from delegate.mailbox import deliver, Message, agents_with_unread, mark_processed, read_inbox
-from delegate.runtime import list_ai_agents, run_turn, TelephoneExchange
+from delegate.runtime import list_ai_agents, run_turn, TelephoneExchange, _repo_git_dirs
 from delegate.telephone import TelephoneUsage
 
 TEAM = "testteam"
@@ -55,12 +57,13 @@ class _MockTelephone:
     updates ``usage`` to mimic what the real Telephone does internally.
     """
 
-    def __init__(self, preamble: str = ""):
+    def __init__(self, preamble: str = "", **kwargs):
         self.preamble = preamble
         self._prior = TelephoneUsage()
         self.usage = TelephoneUsage()
         self.allowed_write_paths: list[str] | None = None
         self._effective_write_paths: list[str] | None = None
+        self.add_dirs: list = kwargs.get("add_dirs", [])
         self.turns = 0
 
     async def send(self, prompt: str):
@@ -141,7 +144,8 @@ class TestListAIAgents:
 
 def _make_mock_tel(*args, **kwargs):
     """Factory for _MockTelephone that accepts _create_telephone's signature."""
-    return _MockTelephone(preamble=kwargs.get("preamble", ""))
+    preamble = kwargs.pop("preamble", "")
+    return _MockTelephone(preamble=preamble, **kwargs)
 
 
 class TestRunTurn:
@@ -317,3 +321,246 @@ class TestRunTurn:
         call_kw = _mock_create.call_args
         assert "role" in call_kw.kwargs
         assert call_kw.kwargs["role"] == "engineer"
+
+
+# ---------------------------------------------------------------------------
+# Repo .git/ dirs in sandbox add_dirs
+# ---------------------------------------------------------------------------
+
+
+class TestRepoGitDirs:
+    """Tests for _repo_git_dirs and .git/ add_dirs in _create_telephone."""
+
+    def test_no_repos_returns_empty(self, tmp_team):
+        """Team with no registered repos returns empty list."""
+        result = _repo_git_dirs(tmp_team, TEAM)
+        assert result == []
+
+    def test_registered_repo_returns_git_dir(self, tmp_team):
+        """Registering a real git repo should include its .git/ in the list."""
+        from delegate.repo import register_repo
+
+        # Create a bare git repo to register
+        repo_path = tmp_team / "_test_repos" / "myrepo"
+        repo_path.mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo_path)], check=True,
+                       capture_output=True)
+
+        register_repo(tmp_team, TEAM, str(repo_path), name="myrepo")
+
+        result = _repo_git_dirs(tmp_team, TEAM)
+        expected = str((repo_path / ".git").resolve())
+        assert expected in result
+
+    def test_multiple_repos_sorted(self, tmp_team):
+        """Multiple repos should return sorted .git/ paths."""
+        from delegate.repo import register_repo
+
+        repos = []
+        for name in ("beta-repo", "alpha-repo"):
+            rp = tmp_team / "_test_repos" / name
+            rp.mkdir(parents=True)
+            subprocess.run(["git", "init", str(rp)], check=True,
+                           capture_output=True)
+            register_repo(tmp_team, TEAM, str(rp), name=name)
+            repos.append(str((rp / ".git").resolve()))
+
+        result = _repo_git_dirs(tmp_team, TEAM)
+        assert result == sorted(repos)
+
+    @patch("delegate.runtime.random.random", return_value=1.0)
+    def test_create_telephone_includes_git_dirs(self, _mock_rng, tmp_team):
+        """_create_telephone should include repo .git/ paths in add_dirs."""
+        from delegate.repo import register_repo
+        from delegate.runtime import _create_telephone
+
+        repo_path = tmp_team / "_test_repos" / "myrepo"
+        repo_path.mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo_path)], check=True,
+                       capture_output=True)
+        register_repo(tmp_team, TEAM, str(repo_path), name="myrepo")
+
+        tel = _create_telephone(
+            tmp_team, TEAM, "alice", preamble="test preamble",
+        )
+        expected_git = str((repo_path / ".git").resolve())
+        add_dirs_strs = [str(d) for d in tel.add_dirs]
+        assert expected_git in add_dirs_strs
+
+    def test_sandbox_no_excluded_commands(self, tmp_team):
+        """Sandbox config should NOT include excludedCommands."""
+        from delegate.runtime import _create_telephone
+
+        tel = _create_telephone(
+            tmp_team, TEAM, "alice", preamble="test",
+        )
+        opts = tel._build_options()
+        assert opts.sandbox is not None
+        sandbox = opts.sandbox
+        assert "excludedCommands" not in sandbox
+        assert sandbox["enabled"] is True
+        assert sandbox["autoAllowBashIfSandboxed"] is True
+
+
+# ---------------------------------------------------------------------------
+# Telephone replacement on repo list change
+# ---------------------------------------------------------------------------
+
+
+class TestRepoChangeReplacement:
+    """Tests that Telephone is replaced when the repo list changes."""
+
+    @patch("delegate.runtime.random.random", return_value=1.0)
+    @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
+    def test_telephone_replaced_when_repos_change(self, _mock_create, _mock_rng, tmp_team):
+        """If a new repo is registered mid-session, Telephone should be replaced."""
+        from delegate.repo import register_repo
+
+        exchange = TelephoneExchange()
+
+        # Turn 1 — no repos
+        _deliver_msg(tmp_team, "alice", body="Turn 1")
+        asyncio.run(run_turn(tmp_team, TEAM, "alice", exchange=exchange))
+        tel_1 = exchange.get(TEAM, "alice")
+        assert tel_1 is not None
+        assert _mock_create.call_count == 1
+
+        # Register a repo (simulates mid-session repo addition)
+        repo_path = tmp_team / "_test_repos" / "new-repo"
+        repo_path.mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo_path)], check=True,
+                       capture_output=True)
+        register_repo(tmp_team, TEAM, str(repo_path), name="new-repo")
+
+        # Turn 2 — repo list changed, should create new Telephone
+        _deliver_msg(tmp_team, "alice", body="Turn 2")
+        asyncio.run(run_turn(tmp_team, TEAM, "alice", exchange=exchange))
+        tel_2 = exchange.get(TEAM, "alice")
+
+        # _create_telephone should have been called a second time
+        assert _mock_create.call_count == 2
+        assert tel_2 is not tel_1
+
+    @patch("delegate.runtime.random.random", return_value=1.0)
+    @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
+    def test_telephone_not_replaced_when_repos_same(self, _mock_create, _mock_rng, tmp_team):
+        """If repo list hasn't changed, Telephone should be reused."""
+        exchange = TelephoneExchange()
+
+        _deliver_msg(tmp_team, "alice", body="Turn 1")
+        asyncio.run(run_turn(tmp_team, TEAM, "alice", exchange=exchange))
+
+        _deliver_msg(tmp_team, "alice", body="Turn 2")
+        asyncio.run(run_turn(tmp_team, TEAM, "alice", exchange=exchange))
+
+        # Same telephone, only one create call
+        assert _mock_create.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# _ensure_task_infra
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureTaskInfra:
+    """Tests for daemon-side worktree creation."""
+
+    def test_creates_worktree_for_active_task(self, tmp_team):
+        """_ensure_task_infra should create worktrees for active tasks."""
+        from delegate.repo import register_repo, get_task_worktree_path
+        from delegate.task import create_task
+        from delegate.web import _ensure_task_infra
+
+        # Setup: register a real git repo
+        repo_path = tmp_team / "_test_repos" / "myrepo"
+        repo_path.mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo_path)], check=True,
+                       capture_output=True)
+        # Need at least one commit for worktree creation
+        (repo_path / "README.md").write_text("# Test")
+        subprocess.run(["git", "-C", str(repo_path), "add", "."],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo_path), "commit", "-m", "init"],
+                       check=True, capture_output=True)
+        register_repo(tmp_team, TEAM, str(repo_path), name="myrepo")
+
+        # Create a task with a repo (no worktree creation — just DB + branch)
+        task = create_task(
+            tmp_team, TEAM,
+            title="Test task",
+            assignee="alice",
+            repo=["myrepo"],
+        )
+        task_id = task["id"]
+
+        # Verify worktree doesn't exist yet
+        wt = get_task_worktree_path(tmp_team, TEAM, "myrepo", task_id)
+        assert not wt.is_dir(), "Worktree should NOT be created by task.create()"
+
+        # Run _ensure_task_infra — should create the worktree
+        infra_ready: set[tuple[str, int]] = set()
+        _ensure_task_infra(tmp_team, TEAM, infra_ready)
+
+        assert wt.is_dir(), "Worktree should be created by _ensure_task_infra"
+        assert (TEAM, task_id) in infra_ready
+
+    def test_skips_already_ready_tasks(self, tmp_team):
+        """Tasks already in infra_ready should be skipped."""
+        from delegate.web import _ensure_task_infra
+
+        infra_ready: set[tuple[str, int]] = {(TEAM, 999)}
+        # Should not crash even with a fake task_id in the cache
+        _ensure_task_infra(tmp_team, TEAM, infra_ready)
+        assert (TEAM, 999) in infra_ready
+
+    def test_task_without_repos_immediately_ready(self, tmp_team):
+        """Tasks without repos should be immediately marked ready."""
+        from delegate.task import create_task
+        from delegate.web import _ensure_task_infra
+
+        task = create_task(
+            tmp_team, TEAM,
+            title="No-repo task",
+            assignee="alice",
+        )
+
+        infra_ready: set[tuple[str, int]] = set()
+        _ensure_task_infra(tmp_team, TEAM, infra_ready)
+
+        assert (TEAM, task["id"]) in infra_ready
+
+
+# ---------------------------------------------------------------------------
+# task.create() no longer creates worktrees
+# ---------------------------------------------------------------------------
+
+
+class TestTaskCreateDBOnly:
+    """Verify that task.create() no longer calls create_task_worktree."""
+
+    @patch("delegate.repo.create_task_worktree")
+    def test_create_does_not_call_worktree(self, mock_wt, tmp_team):
+        """task.create() should NOT call create_task_worktree."""
+        from delegate.repo import register_repo
+        from delegate.task import create_task
+
+        # Register a repo so the task has a repo reference
+        repo_path = tmp_team / "_test_repos" / "myrepo"
+        repo_path.mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo_path)], check=True,
+                       capture_output=True)
+        register_repo(tmp_team, TEAM, str(repo_path), name="myrepo")
+
+        task = create_task(
+            tmp_team, TEAM,
+            title="Test task",
+            assignee="alice",
+            repo=["myrepo"],
+        )
+
+        # create_task_worktree should NOT have been called
+        mock_wt.assert_not_called()
+
+        # But branch should still be recorded
+        assert task.get("branch") is not None
+        assert "delegate/" in task["branch"]

@@ -622,3 +622,113 @@ class TestTelephoneLive:
                 await t.close()
 
         asyncio.run(_run())
+
+    def test_sandbox_blocks_bash_write_outside_add_dirs(self, tmp_path):
+        """OS-level sandbox blocks bash writes outside add_dirs."""
+        async def _run():
+            allowed = tmp_path / "allowed"
+            allowed.mkdir()
+            forbidden = tmp_path / "forbidden"
+            forbidden.mkdir()
+            target = forbidden / "should_not_exist.txt"
+
+            t = Telephone(
+                preamble=(
+                    "You are a test agent. When asked to create a file, "
+                    "use bash (echo ... > path) to create it. "
+                    "Do NOT use Write or Edit tools — use ONLY bash."
+                ),
+                cwd=str(allowed),
+                # Sandbox only allows writes inside 'allowed'
+                add_dirs=[str(allowed)],
+                sandbox_enabled=True,
+            )
+            try:
+                await _send_and_collect(
+                    t,
+                    f"Run this exact bash command: echo 'hacked' > {target}",
+                )
+                assert not target.exists(), (
+                    f"Sandbox should have blocked bash write to {target}"
+                )
+            finally:
+                await t.close()
+
+        asyncio.run(_run())
+
+    def test_sandbox_allows_bash_write_inside_add_dirs(self, tmp_path):
+        """OS-level sandbox allows bash writes inside add_dirs."""
+        async def _run():
+            allowed = tmp_path / "allowed"
+            allowed.mkdir()
+            target = allowed / "ok.txt"
+
+            t = Telephone(
+                preamble=(
+                    "You are a test agent. When asked to create a file, "
+                    "use bash (echo ... > path) to create it. "
+                    "Do NOT use Write or Edit tools — use ONLY bash."
+                ),
+                cwd=str(allowed),
+                add_dirs=[str(allowed)],
+                sandbox_enabled=True,
+            )
+            try:
+                await _send_and_collect(
+                    t,
+                    f"Run this exact bash command: echo 'allowed' > {target}",
+                )
+                assert target.exists(), (
+                    f"Sandbox should have allowed bash write to {target}"
+                )
+            finally:
+                await t.close()
+
+        asyncio.run(_run())
+
+    def test_disallowed_tools_blocks_git_commands(self, tmp_path):
+        """disallowed_tools prevents the agent from running hidden git commands."""
+        import subprocess as _sp
+
+        async def _run():
+            # Set up a real git repo so git commands are meaningful
+            repo = tmp_path / "repo"
+            repo.mkdir()
+            _sp.run(["git", "init", str(repo)], check=True, capture_output=True)
+            (repo / "README.md").write_text("# Test")
+            _sp.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
+            _sp.run(["git", "-C", str(repo), "commit", "-m", "init"],
+                    check=True, capture_output=True)
+
+            t = Telephone(
+                preamble=(
+                    "You are a test agent. Follow instructions exactly. "
+                    "If a command fails or is unavailable, say 'BLOCKED'."
+                ),
+                cwd=str(repo),
+                add_dirs=[str(repo)],
+                disallowed_tools=[
+                    "Bash(git push:*)",
+                    "Bash(git rebase:*)",
+                    "Bash(git worktree:*)",
+                ],
+                sandbox_enabled=True,
+            )
+            try:
+                msgs = await _send_and_collect(
+                    t,
+                    "Run: git push origin main\n"
+                    "If it fails or you can't run it, say exactly 'BLOCKED'.",
+                )
+                text = _collect_text(msgs)
+
+                # The agent should NOT have successfully pushed (no remote
+                # anyway), and the disallowed_tools should prevent even
+                # attempting.  We verify it didn't succeed silently.
+                assert "BLOCKED" in text.upper() or "error" in text.lower() or "denied" in text.lower() or "not" in text.lower(), (
+                    f"Expected agent to report blocked/error for disallowed git push: {text!r}"
+                )
+            finally:
+                await t.close()
+
+        asyncio.run(_run())

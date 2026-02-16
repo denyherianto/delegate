@@ -405,6 +405,81 @@ _active_agent_tasks: set[asyncio.Task] = set()
 _active_merge_tasks: set[asyncio.Task] = set()
 _shutdown_flag: bool = False
 
+def _ensure_task_infra(
+    hc_home: Path,
+    team: str,
+    infra_ready: set[tuple[str, int]],
+) -> None:
+    """Ensure worktrees exist for all active tasks that have repos.
+
+    Called from the daemon loop (in a thread) **before** dispatching
+    agent turns.  This guarantees that an agent never receives a turn
+    for a task whose worktree hasn't been created yet.
+
+    Worktree creation runs in the daemon process — which is **not**
+    sandboxed — so it can write to the real repo's ``.git/`` directory.
+
+    The *infra_ready* set acts as an in-memory cache to avoid redundant
+    filesystem checks on every poll cycle.  It is cleared when a task
+    transitions to ``done`` or ``cancelled``.
+    """
+    from delegate.repo import create_task_worktree
+    from delegate.repo import get_task_worktree_path
+
+    # Active statuses that need worktrees
+    active_statuses = ("todo", "in_progress")
+
+    for status in active_statuses:
+        try:
+            tasks = _list_tasks(hc_home, team, status=status)
+        except Exception:
+            continue
+
+        for task in tasks:
+            task_id = task["id"]
+            key = (team, task_id)
+            if key in infra_ready:
+                continue  # already known-good
+
+            repos: list[str] = task.get("repo", [])
+            branch: str = task.get("branch", "")
+            if not repos or not branch:
+                # No repos or no branch — nothing to set up
+                infra_ready.add(key)
+                continue
+
+            # Check if ALL worktrees exist
+            all_exist = True
+            for repo_name in repos:
+                wt = get_task_worktree_path(hc_home, team, repo_name, task_id)
+                if not wt.is_dir():
+                    all_exist = False
+                    break
+
+            if all_exist:
+                infra_ready.add(key)
+                continue
+
+            # Create missing worktrees
+            try:
+                for repo_name in repos:
+                    wt = get_task_worktree_path(hc_home, team, repo_name, task_id)
+                    if not wt.is_dir():
+                        create_task_worktree(
+                            hc_home, team, repo_name, task_id, branch=branch,
+                        )
+                        logger.info(
+                            "Daemon created worktree for %s/%s (%s)",
+                            team, format_task_id(task_id), repo_name,
+                        )
+                infra_ready.add(key)
+            except Exception:
+                logger.exception(
+                    "Failed to create worktree infra for %s/%s",
+                    team, format_task_id(task_id),
+                )
+
+
 async def _daemon_loop(
     hc_home: Path,
     interval: float,
@@ -418,6 +493,11 @@ async def _daemon_loop(
     the daemon dispatches ``run_turn()`` as asyncio tasks when an agent
     has unread mail.  A semaphore enforces *max_concurrent* across all
     teams.
+
+    Before dispatching turns for each team, ``_ensure_task_infra()``
+    creates any missing worktrees for active tasks — this runs in the
+    unsandboxed daemon process so ``git worktree add`` can write to
+    the real repo's ``.git/`` directory.
 
     When *exchange* is provided, persistent ``Telephone`` subprocesses
     are reused across turns (the normal production path).  When ``None``,
@@ -433,6 +513,10 @@ async def _daemon_loop(
     sem = asyncio.Semaphore(max_concurrent)
     merge_sem = asyncio.Semaphore(1)
     in_flight: set[tuple[str, str]] = set()  # (team, agent) pairs currently running
+
+    # In-memory cache: (team, task_id) pairs whose worktrees are confirmed.
+    # Cleared when tasks transition to done/cancelled.
+    infra_ready: set[tuple[str, int]] = set()
 
     async def _dispatch_turn(team: str, agent: str) -> None:
         """Dispatch and run one turn, then remove from in_flight."""
@@ -481,6 +565,19 @@ async def _daemon_loop(
                 if _shutdown_flag:
                     break
 
+                # --- Ensure worktree infrastructure for active tasks ---
+                # Runs in a thread (unsandboxed daemon process) before any
+                # agent turns are dispatched, so worktrees are guaranteed
+                # to exist by the time an agent receives a turn.
+                try:
+                    await asyncio.to_thread(
+                        _ensure_task_infra, hc_home, team, infra_ready,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Error ensuring task infra for team %s", team,
+                    )
+
                 # Find agents with unread messages and dispatch turns
                 ai_agents = set(list_ai_agents(hc_home, team))
                 needing_turn = [
@@ -508,6 +605,8 @@ async def _daemon_loop(
                             for mr in results:
                                 if mr.success:
                                     logger.info("Merged %s in %s: %s", mr.task_id, t, mr.message)
+                                    # Clear infra_ready for done tasks
+                                    infra_ready.discard((t, mr.task_id))
                                 else:
                                     logger.warning("Merge failed %s in %s: %s", mr.task_id, t, mr.message)
 

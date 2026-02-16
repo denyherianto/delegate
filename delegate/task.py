@@ -178,20 +178,14 @@ def create_task(
     from delegate.chat import log_event
     log_event(hc_home, team, f"{format_task_id(task_id)} created \u2014 {title}", task_id=task_id)
 
-    # Eagerly create worktrees for each repo (with branch)
+    # Record a deterministic branch name.  Worktree creation is handled by
+    # the daemon (which runs unsandboxed) — see _ensure_task_infra() in
+    # web.py.  This keeps task.create() a pure DB + event operation so it
+    # works from inside a sandboxed agent subprocess.
     if repo_list:
-        import logging
-        _task_log = logging.getLogger(__name__)
         from delegate.paths import get_team_id
         tid = get_team_id(hc_home, team)
         branch_name = f"delegate/{tid}/{team}/{format_task_id(task_id)}"
-        for repo_name in repo_list:
-            try:
-                from delegate.repo import create_task_worktree
-                create_task_worktree(hc_home, team, repo_name, task_id, branch=branch_name)
-            except Exception as exc:
-                _task_log.warning("Could not create worktree for %s (%s): %s", format_task_id(task_id), repo_name, exc)
-        # Record branch on the task
         task = update_task(hc_home, team, task_id, branch=branch_name)
 
     return task
