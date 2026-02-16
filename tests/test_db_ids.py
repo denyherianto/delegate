@@ -321,3 +321,54 @@ def test_lookup_nonexistent_member(temp_hc_home):
             lookup_member(conn, "00000000000000000000000000000000")
     finally:
         conn.close()
+
+
+def test_register_team_idempotent(temp_hc_home):
+    """Test register_team called twice with same name returns same UUID."""
+    conn = get_connection(temp_hc_home, "")
+    try:
+        # First registration
+        team_uuid_1 = register_team(conn, "myteam")
+        assert len(team_uuid_1) == 32
+        conn.commit()
+
+        # Second registration with same name - should be idempotent
+        team_uuid_2 = register_team(conn, "myteam")
+        conn.commit()
+
+        # Should return the same UUID, no error
+        assert team_uuid_2 == team_uuid_1
+    finally:
+        conn.close()
+
+
+def test_register_member_idempotent(temp_hc_home):
+    """Test register_member called twice with same params returns same UUID."""
+    conn = get_connection(temp_hc_home, "")
+    try:
+        # Register team first
+        team_uuid = register_team(conn, "test-team")
+        conn.commit()
+
+        # First registration of agent
+        agent_uuid_1 = register_member(conn, "agent", team_uuid, "agent-1")
+        assert len(agent_uuid_1) == 32
+        conn.commit()
+
+        # Second registration with same params - should be idempotent
+        agent_uuid_2 = register_member(conn, "agent", team_uuid, "agent-1")
+        conn.commit()
+
+        # Should return the same UUID, no error
+        assert agent_uuid_2 == agent_uuid_1
+
+        # Also test for human (team_uuid=None)
+        human_uuid_1 = register_member(conn, "human", None, "alice")
+        conn.commit()
+
+        human_uuid_2 = register_member(conn, "human", None, "alice")
+        conn.commit()
+
+        assert human_uuid_2 == human_uuid_1
+    finally:
+        conn.close()

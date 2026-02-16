@@ -124,24 +124,44 @@ class TestListSharedFiles:
 
 
 class TestReadSharedFile:
-    """Tests use delegate-relative paths (resolved from hc_home)."""
+    """Tests use absolute paths to shared files."""
 
-    def test_read_file_returns_content(self, client):
+    def test_read_file_returns_content(self, shared_tree):
         """Reading a file returns its content."""
+        from delegate.paths import shared_dir
+        from delegate.web import create_app
+        from fastapi.testclient import TestClient
+
+        base = shared_dir(shared_tree, TEAM)
+        file_path = base / "decisions" / "2026-02-09-api-design.md"
+
+        app = create_app(hc_home=shared_tree)
+        client = TestClient(app)
+
         resp = client.get(
             f"/teams/{TEAM}/files/content",
-            params={"path": f"teams/{TEAM}/shared/decisions/2026-02-09-api-design.md"},
+            params={"path": str(file_path)},
         )
         assert resp.status_code == 200
         data = resp.json()
         assert "API Design Decision" in data["content"]
         assert data["name"] == "2026-02-09-api-design.md"
 
-    def test_read_file_has_required_fields(self, client):
+    def test_read_file_has_required_fields(self, shared_tree):
         """Response should contain path, name, size, content, modified."""
+        from delegate.paths import shared_dir
+        from delegate.web import create_app
+        from fastapi.testclient import TestClient
+
+        base = shared_dir(shared_tree, TEAM)
+        file_path = base / "README.md"
+
+        app = create_app(hc_home=shared_tree)
+        client = TestClient(app)
+
         resp = client.get(
             f"/teams/{TEAM}/files/content",
-            params={"path": f"teams/{TEAM}/shared/README.md"},
+            params={"path": str(file_path)},
         )
         data = resp.json()
         assert "path" in data
@@ -150,20 +170,40 @@ class TestReadSharedFile:
         assert "content" in data
         assert "modified" in data
 
-    def test_read_root_file(self, client):
+    def test_read_root_file(self, shared_tree):
         """Reading a file at the root of shared/ works."""
+        from delegate.paths import shared_dir
+        from delegate.web import create_app
+        from fastapi.testclient import TestClient
+
+        base = shared_dir(shared_tree, TEAM)
+        file_path = base / "README.md"
+
+        app = create_app(hc_home=shared_tree)
+        client = TestClient(app)
+
         resp = client.get(
             f"/teams/{TEAM}/files/content",
-            params={"path": f"teams/{TEAM}/shared/README.md"},
+            params={"path": str(file_path)},
         )
         assert resp.status_code == 200
         assert "Shared Knowledge Base" in resp.json()["content"]
 
-    def test_read_nonexistent_file_404(self, client):
+    def test_read_nonexistent_file_404(self, shared_tree):
         """Reading a non-existent file returns 404."""
+        from delegate.paths import shared_dir
+        from delegate.web import create_app
+        from fastapi.testclient import TestClient
+
+        base = shared_dir(shared_tree, TEAM)
+        file_path = base / "does-not-exist.md"
+
+        app = create_app(hc_home=shared_tree)
+        client = TestClient(app)
+
         resp = client.get(
             f"/teams/{TEAM}/files/content",
-            params={"path": f"teams/{TEAM}/shared/does-not-exist.md"},
+            params={"path": str(file_path)},
         )
         assert resp.status_code == 404
 
@@ -179,7 +219,7 @@ class TestReadSharedFile:
         c = TestClient(app)
         resp = c.get(
             f"/teams/{TEAM}/files/content",
-            params={"path": f"teams/{TEAM}/shared/large.txt"},
+            params={"path": str(large_file)},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -206,7 +246,7 @@ class TestReadSharedFile:
         c = TestClient(app)
         resp = c.get(
             f"/teams/{TEAM}/files/content",
-            params={"path": f"teams/{TEAM}/shared/test.png"},
+            params={"path": str(image_file)},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -228,7 +268,7 @@ class TestReadSharedFile:
         c = TestClient(app)
         resp = c.get(
             f"/teams/{TEAM}/files/content",
-            params={"path": f"teams/{TEAM}/shared/data.bin"},
+            params={"path": str(binary_file)},
         )
         assert resp.status_code == 200
         data = resp.json()
