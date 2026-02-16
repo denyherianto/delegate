@@ -20,6 +20,7 @@ Commands:
     delegate workflow update-actions <team> <name> <path> — update workflow actions
     delegate workflow init <team>                    — register built-in default workflow
     delegate self-update                             — update delegate from source repo
+    delegate nuke                                    — destroy all delegate state (requires confirmation)
 """
 
 import subprocess
@@ -1097,6 +1098,51 @@ def network_reset(ctx: click.Context) -> None:
     hc_home = _get_home(ctx)
     reset_config(hc_home)
     success("Network allowlist reset to * (unrestricted)")
+
+
+# ──────────────────────────────────────────────────────────────
+# delegate nuke
+# ──────────────────────────────────────────────────────────────
+
+@main.command()
+@click.pass_context
+def nuke(ctx: click.Context) -> None:
+    """Destroy all Delegate state by deleting ~/.delegate.
+
+    WARNING: This permanently deletes ALL Delegate data including teams,
+    agents, tasks, history, database, and configuration. This cannot be undone.
+
+    Requires interactive confirmation by typing "delete everything".
+    """
+    import shutil
+    from delegate.fmt import warn, success
+
+    hc_home = _get_home(ctx)
+
+    # Show warning and prompt for confirmation
+    click.echo()
+    warn("This will permanently delete ALL Delegate data including:")
+    click.echo("  - All teams and agent data")
+    click.echo("  - All tasks and history")
+    click.echo("  - All configuration")
+    click.echo("  - Database")
+    click.echo()
+    click.echo(f"Directory: {hc_home}")
+    click.echo()
+
+    confirmation = click.prompt('Type "delete everything" to confirm', type=str)
+
+    if confirmation != "delete everything":
+        click.echo("Aborted. Nothing was deleted.")
+        return
+
+    # Delete the entire delegate home directory
+    click.echo(f"Nuking {hc_home}...")
+    if hc_home.exists():
+        shutil.rmtree(hc_home)
+        success("Done. All Delegate data has been removed.")
+    else:
+        click.echo(f"Directory {hc_home} does not exist. Nothing to delete.")
 
 
 if __name__ == "__main__":
