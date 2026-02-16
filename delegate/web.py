@@ -1510,7 +1510,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 COALESCE(SUM(cost_usd), 0) as total_cost,
                 COUNT(DISTINCT task_id) as task_count
             FROM sessions
-            WHERE started_at >= ? AND team = ?
+            WHERE started_at >= ? AND team_uuid = ?
         """, (midnight_today.isoformat(), t)).fetchone()
 
         today_cost = today_rows[0] or 0.0
@@ -1523,7 +1523,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 COALESCE(SUM(cost_usd), 0) as total_cost,
                 COUNT(DISTINCT task_id) as task_count
             FROM sessions
-            WHERE started_at >= ? AND team = ?
+            WHERE started_at >= ? AND team_uuid = ?
         """, (monday_this_week.isoformat(), t)).fetchone()
 
         week_cost = week_rows[0] or 0.0
@@ -1538,7 +1538,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 SUM(s.cost_usd) as total_cost
             FROM sessions s
             LEFT JOIN tasks t ON s.task_id = t.id
-            WHERE s.task_id IS NOT NULL AND s.team = ?
+            WHERE s.task_id IS NOT NULL AND s.team_uuid = ?
             GROUP BY s.task_id
             ORDER BY total_cost DESC
             LIMIT 3
