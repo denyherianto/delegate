@@ -118,12 +118,14 @@ const MemoizedMessageContent = memo(function MemoizedMessageContent({ content, t
 });
 
 // ── Collapsible long message ──
-const COLLAPSE_THRESHOLD = 90; // ~4 lines at 14px * 1.6 line-height = 89.6px
+const COLLAPSE_THRESHOLD_AGENT = 67;   // ~3 lines at 14px * 1.6 line-height = 67.2px
+const COLLAPSE_THRESHOLD_HUMAN = 224;  // ~10 lines at 14px * 1.6 line-height = 224px
 
 function CollapsibleMessage({ html, messageId, isBoss }) {
   const wrapperRef = useRef();
   const [isLong, setIsLong] = useState(false);
   const isExpanded = expandedMessages.value.has(messageId);
+  const threshold = isBoss ? COLLAPSE_THRESHOLD_HUMAN : COLLAPSE_THRESHOLD_AGENT;
 
   useEffect(() => {
     // Query the content div directly instead of passing ref through LinkedDiv
@@ -131,7 +133,7 @@ function CollapsibleMessage({ html, messageId, isBoss }) {
     if (!el) return;
 
     const checkOverflow = () => {
-      if (el.scrollHeight > COLLAPSE_THRESHOLD) {
+      if (el.scrollHeight > threshold) {
         setIsLong(true);
       } else {
         setIsLong(false);
@@ -145,7 +147,7 @@ function CollapsibleMessage({ html, messageId, isBoss }) {
     const observer = new ResizeObserver(checkOverflow);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [html, activeTab.value]);
+  }, [html, activeTab.value, threshold]);
 
   const toggle = useCallback(() => {
     const next = new Set(expandedMessages.value);
@@ -157,7 +159,8 @@ function CollapsibleMessage({ html, messageId, isBoss }) {
     expandedMessages.value = next;
   }, [messageId]);
 
-  const wrapperClass = "msg-content-wrapper" + (isLong && !isExpanded ? " collapsed" : "");
+  const collapsedClass = isBoss ? "collapsed-human" : "collapsed-agent";
+  const wrapperClass = "msg-content-wrapper" + (isLong && !isExpanded ? " " + collapsedClass : "");
 
   const contentClass = isBoss ? "msg-content md-content content-boss" : "msg-content md-content content-regular";
 
@@ -190,7 +193,7 @@ function CollapsibleEventMessage({ html, messageId }) {
     if (!el) return;
 
     const checkOverflow = () => {
-      if (el.scrollHeight > COLLAPSE_THRESHOLD) {
+      if (el.scrollHeight > COLLAPSE_THRESHOLD_AGENT) {
         setIsLong(true);
       } else {
         setIsLong(false);
@@ -216,7 +219,7 @@ function CollapsibleEventMessage({ html, messageId }) {
     expandedMessages.value = next;
   }, [messageId]);
 
-  const wrapperClass = "msg-event-content-wrapper" + (isLong && !isExpanded ? " collapsed" : "");
+  const wrapperClass = "msg-event-content-wrapper" + (isLong && !isExpanded ? " collapsed-agent" : "");
 
   return (
     <>

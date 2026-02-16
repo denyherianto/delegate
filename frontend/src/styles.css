@@ -687,8 +687,13 @@ body {
   position: relative;
 }
 
-.msg-content-wrapper.collapsed .msg-content {
-  max-height: 90px;
+.msg-content-wrapper.collapsed-agent .msg-content {
+  max-height: 67px;
+  overflow: hidden;
+}
+
+.msg-content-wrapper.collapsed-human .msg-content {
+  max-height: 224px;
   overflow: hidden;
 }
 
@@ -741,8 +746,8 @@ body {
   min-width: 0;
 }
 
-.msg-event-content-wrapper.collapsed .msg-event-text {
-  max-height: 90px;
+.msg-event-content-wrapper.collapsed-agent .msg-event-text {
+  max-height: 67px;
   overflow: hidden;
 }
 
