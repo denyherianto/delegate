@@ -5,6 +5,7 @@ import {
   agentActivityLog, agentTurnState, sidebarCollapsed,
   navigate, navigateTab, crossTeamActiveAgents,
   allTeamsAgents, allTeamsTurnState,
+  lsKey,
 } from "../state.js";
 import {
   cap, taskIdStr, getAgentDotClass,
@@ -317,7 +318,7 @@ export function Sidebar() {
   const toggle = useCallback(() => {
     const next = !sidebarCollapsed.value;
     sidebarCollapsed.value = next;
-    localStorage.setItem("delegate-sidebar-collapsed", next ? "true" : "false");
+    localStorage.setItem(lsKey("sidebar-collapsed"), next ? "true" : "false");
   }, []);
 
   const switchTab = useCallback((key) => {

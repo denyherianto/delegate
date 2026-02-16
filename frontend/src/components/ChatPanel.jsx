@@ -7,6 +7,7 @@ import {
   commandMode, commandCwd, teams, navigate,
   loadTeamCwd, saveTeamCwd, loadTeamHistory, addToHistory,
   uploadingFiles,
+  lsKey,
 } from "../state.js";
 import * as api from "../api.js";
 import {
@@ -1302,7 +1303,7 @@ export function ChatPanel() {
   const toggleMute = useCallback(() => {
     const next = !isMuted.value;
     isMuted.value = next;
-    localStorage.setItem("delegate-muted", next ? "true" : "false");
+    localStorage.setItem(lsKey("muted"), next ? "true" : "false");
   }, []);
 
   const onSearchInput = useCallback((e) => {
