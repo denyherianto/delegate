@@ -19,13 +19,13 @@ function DiffView({ taskId }) {
   const [rawDiff, setRawDiff] = useState("");
 
   useEffect(() => {
-    if (!taskId || !team) return;
+    if (!taskId) return;
     setData(null); setTab("files"); setRawDiff("");
-    api.fetchTaskDiff(team, taskId).then(d => {
+    api.fetchTaskDiff(taskId).then(d => {
       setData(d);
       setRawDiff(flattenDiffDict(d.diff));
     }).catch(() => {});
-  }, [taskId, team]);
+  }, [taskId]);
 
   if (!data) return <div class="diff-empty">Loading diff...</div>;
 
@@ -123,7 +123,7 @@ function AgentView({ agentName }) {
           <div class="agent-msg-header">
             <span class="agent-msg-direction" dangerouslySetInnerHTML={{ __html: arrow }} />
             <span class="agent-msg-sender">{cap(m.counterparty)}</span>
-            {m.task_id > 0 && (
+            {m.task_id != null && (
               <>
                 <span class="msg-task-sep">|</span>
                 <span class="msg-task-badge">{taskIdStr(m.task_id)}</span>
@@ -221,9 +221,9 @@ function AgentView({ agentName }) {
           // Render turn separator
           if (e.type === "turn_separator") {
             let label = "Turn ended";
-            if (e.sender && e.task_id > 0) {
+            if (e.sender && e.task_id != null) {
               label = `Responding to ${e.sender} about ${taskIdStr(e.task_id)}`;
-            } else if (e.task_id > 0) {
+            } else if (e.task_id != null) {
               label = `Working on ${taskIdStr(e.task_id)}`;
             } else if (e.sender) {
               label = `Responding to ${e.sender}`;
@@ -243,7 +243,7 @@ function AgentView({ agentName }) {
           return (
             <div key={i} class="agent-activity-entry">
               <span class="agent-activity-ts">{ts}</span>
-              {e.task_id > 0 && (
+              {e.task_id != null && (
                 <span
                   class="agent-activity-task"
                   onClick={(ev) => { ev.stopPropagation(); pushPanel("task", e.task_id); }}

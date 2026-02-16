@@ -1209,311 +1209,6 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     def get_team_tasks(team: str, status: str | None = None, assignee: str | None = None):
         return _list_tasks(hc_home, team, status=status, assignee=assignee)
 
-    @app.get("/teams/{team}/tasks/{task_id}/stats")
-    def get_team_task_stats(team: str, task_id: int):
-        try:
-            task = _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-        stats = _get_task_stats(hc_home, team, task_id)
-
-        # Compute elapsed time
-        created = datetime.fromisoformat(task["created_at"].replace("Z", "+00:00"))
-        completed_at = task.get("completed_at")
-        if completed_at:
-            ended = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
-        else:
-            ended = datetime.now(timezone.utc)
-        elapsed_seconds = (ended - created).total_seconds()
-
-        return {
-            "task_id": task_id,
-            "elapsed_seconds": elapsed_seconds,
-            "branch": task.get("branch", ""),
-            **stats,
-        }
-
-    @app.get("/teams/{team}/tasks/{task_id}/diff")
-    def get_team_task_diff(team: str, task_id: int):
-        try:
-            task = _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-        diff_dict = _get_task_diff(hc_home, team, task_id)
-        return {
-            "task_id": task_id,
-            "branch": task.get("branch", ""),
-            "repo": task.get("repo", []),
-            "diff": diff_dict,
-            "merge_base": task.get("merge_base", {}),
-            "merge_tip": task.get("merge_tip", {}),
-        }
-
-    @app.get("/teams/{team}/tasks/{task_id}/merge-preview")
-    def get_team_task_merge_preview(team: str, task_id: int):
-        """Return a diff of branch vs current main (merge preview)."""
-        try:
-            task = _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-        diff_dict = _get_merge_preview(hc_home, team, task_id)
-        return {
-            "task_id": task_id,
-            "branch": task.get("branch", ""),
-            "diff": diff_dict,
-        }
-
-    @app.get("/teams/{team}/tasks/{task_id}/commits")
-    def get_team_task_commits(team: str, task_id: int):
-        """Return per-commit diffs for a task, keyed by repo."""
-        try:
-            _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-        # Frontend expects { commit_diffs: { repo: [...] } }
-        return {"commit_diffs": _get_commit_diffs(hc_home, team, task_id)}
-
-    @app.get("/teams/{team}/tasks/{task_id}/activity")
-    def get_team_task_activity(team: str, task_id: int, limit: int | None = None):
-        """Return interleaved activity (events + messages + comments) for a task."""
-        from delegate.chat import get_task_timeline
-
-        try:
-            _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-        return get_task_timeline(hc_home, team, task_id, limit=limit)
-
-    # --- Task comments endpoints (team-scoped) ---
-
-    @app.get("/teams/{team}/tasks/{task_id}/comments")
-    def get_team_task_comments(team: str, task_id: int, limit: int = 50):
-        """Return comments for a task."""
-        from delegate.task import get_comments as _get_comments
-        try:
-            _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-        return _get_comments(hc_home, team, task_id, limit=limit)
-
-    class TaskCommentBody(BaseModel):
-        author: str
-        body: str
-
-    @app.post("/teams/{team}/tasks/{task_id}/comments")
-    def post_team_task_comment(team: str, task_id: int, comment: TaskCommentBody):
-        """Add a comment to a task."""
-        from delegate.task import add_comment as _add_comment
-        try:
-            _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-        cid = _add_comment(hc_home, team, task_id, comment.author, comment.body)
-        return {"id": cid, "task_id": task_id, "author": comment.author, "body": comment.body}
-
-    # --- Review endpoints (team-scoped) ---
-
-    @app.get("/teams/{team}/tasks/{task_id}/reviews")
-    def get_task_reviews(team: str, task_id: int):
-        """Return all review attempts for a task."""
-        from delegate.review import get_reviews, get_comments
-        try:
-            _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-        reviews = get_reviews(hc_home, team, task_id)
-        # Attach comments to each review
-        for r in reviews:
-            r["comments"] = get_comments(hc_home, team, task_id, r["attempt"])
-        return reviews
-
-    @app.get("/teams/{team}/tasks/{task_id}/reviews/current")
-    def get_task_current_review(team: str, task_id: int):
-        """Return the current (latest) review attempt with comments."""
-        from delegate.review import get_current_review
-        try:
-            _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-        review = get_current_review(hc_home, team, task_id)
-        if review is None:
-            return {"attempt": 0, "verdict": None, "summary": "", "comments": []}
-        return review
-
-    class ReviewCommentBody(BaseModel):
-        file: str
-        line: int | None = None
-        body: str
-
-    @app.post("/teams/{team}/tasks/{task_id}/reviews/comments")
-    def post_review_comment(team: str, task_id: int, comment: ReviewCommentBody):
-        """Add an inline comment to the current review attempt."""
-        from delegate.review import add_comment
-        try:
-            task = _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-
-        attempt = task.get("review_attempt", 0)
-        if attempt == 0:
-            raise HTTPException(status_code=400, detail="Task has no active review attempt.")
-
-        human_name = get_default_human(hc_home)
-        result = add_comment(
-            hc_home, team, task_id, attempt,
-            file=comment.file, body=comment.body, author=human_name,
-            line=comment.line,
-        )
-        return result
-
-    class ReviewCommentUpdateBody(BaseModel):
-        body: str
-
-    @app.put("/teams/{team}/tasks/{task_id}/reviews/comments/{comment_id}")
-    def edit_review_comment(team: str, task_id: int, comment_id: int, payload: ReviewCommentUpdateBody):
-        """Edit an existing review comment's body."""
-        from delegate.review import update_comment
-        result = update_comment(hc_home, team, comment_id, payload.body)
-        if result is None:
-            raise HTTPException(status_code=404, detail="Comment not found")
-        return result
-
-    @app.delete("/teams/{team}/tasks/{task_id}/reviews/comments/{comment_id}")
-    def remove_review_comment(team: str, task_id: int, comment_id: int):
-        """Delete a review comment."""
-        from delegate.review import delete_comment
-        deleted = delete_comment(hc_home, team, comment_id)
-        if not deleted:
-            raise HTTPException(status_code=404, detail="Comment not found")
-        return {"ok": True}
-
-    # --- Task approval endpoints (team-scoped) ---
-
-    class ApproveBody(BaseModel):
-        summary: str = ""
-
-    @app.post("/teams/{team}/tasks/{task_id}/approve")
-    def approve_task(team: str, task_id: int, body: ApproveBody | None = None):
-        """Approve a task for merge."""
-        from delegate.review import set_verdict
-        try:
-            task = _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-
-        if task["status"] != "in_approval":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot approve task in '{task['status']}' status. Task must be in 'in_approval' status.",
-            )
-
-        # Record verdict on the review
-        attempt = task.get("review_attempt", 0)
-        human_name = get_default_human(hc_home)
-        summary = body.summary if body else ""
-        if attempt > 0:
-            set_verdict(hc_home, team, task_id, attempt, "approved", summary=summary, reviewer=human_name)
-
-        updated = _update_task(hc_home, team, task_id, approval_status="approved")
-        _log_event(hc_home, team, f"{format_task_id(task_id)} approved \u2713", task_id=task_id)
-
-        # Transition to merging immediately so UI reflects status change
-        from delegate.task import transition_task
-        from delegate.bootstrap import get_member_by_role
-        manager = get_member_by_role(hc_home, team, "manager")
-        if not manager:
-            raise HTTPException(status_code=500, detail=f"No manager found for team '{team}'")
-        updated = transition_task(hc_home, team, task_id, "merging", manager)
-
-        return updated
-
-    class RejectBody(BaseModel):
-        reason: str
-        summary: str = ""
-
-    @app.post("/teams/{team}/tasks/{task_id}/reject")
-    def reject_task(team: str, task_id: int, body: RejectBody):
-        """Reject a task with a reason."""
-        from delegate.review import set_verdict
-        try:
-            task = _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-
-        try:
-            updated = _change_status(hc_home, team, task_id, "rejected")
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-
-        # Record verdict on the review
-        attempt = task.get("review_attempt", 0)
-        human_name = get_default_human(hc_home)
-        # Use reason as summary if no separate summary provided
-        summary = body.summary or body.reason
-        if attempt > 0:
-            set_verdict(hc_home, team, task_id, attempt, "rejected", summary=summary, reviewer=human_name)
-
-        updated = _update_task(hc_home, team, task_id,
-                               rejection_reason=body.reason,
-                               approval_status="rejected")
-
-        # Send notification to manager via the notify module
-        from delegate.notify import notify_rejection
-        notify_rejection(hc_home, team, task, reason=body.reason)
-
-        _log_event(hc_home, team, f"{format_task_id(task_id)} rejected \u2014 {body.reason}", task_id=task_id)
-        return updated
-
-    @app.post("/teams/{team}/tasks/{task_id}/retry-merge")
-    def retry_merge(team: str, task_id: int):
-        """Retry a failed merge.
-
-        Resets ``merge_attempts`` to 0, clears ``status_detail``, and
-        transitions the task to ``merging`` with the manager as assignee.
-        The merge worker will pick it up on the next daemon cycle.
-        """
-        try:
-            task = _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-
-        if task["status"] != "merge_failed":
-            raise HTTPException(
-                status_code=400,
-                detail=f"Task is in '{task['status']}', not 'merge_failed'",
-            )
-
-        from delegate.task import transition_task
-        # Reset counters and detail
-        _update_task(hc_home, team, task_id,
-                     merge_attempts=0, status_detail="")
-        # Transition to merging with manager as assignee
-        from delegate.bootstrap import get_member_by_role
-        manager = get_member_by_role(hc_home, team, "manager")
-        if not manager:
-            raise HTTPException(status_code=500, detail=f"No manager found for team '{team}'")
-        updated = transition_task(hc_home, team, task_id, "merging", manager)
-        return updated
-
-    @app.post("/teams/{team}/tasks/{task_id}/cancel")
-    def cancel_task_endpoint(team: str, task_id: int):
-        """Cancel a task.
-
-        Sets status to ``cancelled``, clears the assignee, and
-        performs best-effort cleanup of worktrees and branches.
-        """
-        try:
-            _get_task(hc_home, team, task_id)
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-
-        try:
-            from delegate.task import cancel_task
-            updated = cancel_task(hc_home, team, task_id)
-            return updated
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-
     # --- Message endpoints (team-scoped) ---
 
     @app.get("/teams/{team}/messages")
@@ -2040,6 +1735,29 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         all_tasks.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
         return all_tasks
 
+    # --- Pydantic models for request bodies ---
+
+    class TaskCommentBody(BaseModel):
+        author: str
+        body: str
+
+    class ReviewCommentBody(BaseModel):
+        file: str
+        line: int | None = None
+        body: str
+
+    class ReviewCommentUpdateBody(BaseModel):
+        body: str
+
+    class ApproveBody(BaseModel):
+        summary: str = ""
+
+    class RejectBody(BaseModel):
+        reason: str
+        summary: str = ""
+
+    # --- Global task endpoints ---
+
     @app.get("/api/tasks/{task_id}/stats")
     def get_task_stats_global(task_id: int):
         """Get task stats — scans all teams for the task (legacy compat)."""
@@ -2089,7 +1807,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             try:
                 task = _get_task(hc_home, t, task_id)
                 if task["status"] != "in_approval":
-                    raise HTTPException(status_code=400, detail=f"Cannot approve task in '{task['status']}' status.")
+                    raise HTTPException(status_code=400, detail=f"Cannot approve task in '{task['status']}' status. Task must be in 'in_approval' status.")
                 attempt = task.get("review_attempt", 0)
                 human_name = get_default_human(hc_home)
                 summary = body.summary if body else ""
@@ -2109,7 +1827,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         for t in _list_teams(hc_home):
             try:
                 task = _get_task(hc_home, t, task_id)
-                _change_status(hc_home, t, task_id, "rejected")
+                try:
+                    _change_status(hc_home, t, task_id, "rejected")
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
                 attempt = task.get("review_attempt", 0)
                 human_name = get_default_human(hc_home)
                 summary = body.summary or body.reason
@@ -2120,7 +1841,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 notify_rejection(hc_home, t, task, reason=body.reason)
                 _log_event(hc_home, t, f"{format_task_id(task_id)} rejected \u2014 {body.reason}", task_id=task_id)
                 return updated
-            except (FileNotFoundError, ValueError):
+            except FileNotFoundError:
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
@@ -2191,9 +1912,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 from delegate.task import transition_task
                 _update_task(hc_home, t, task_id, merge_attempts=0, status_detail="")
                 from delegate.bootstrap import get_member_by_role
-                manager = get_member_by_role(hc_home, t, "manager")
-                if not manager:
-                    raise HTTPException(status_code=500, detail=f"No manager found for team '{t}'")
+                manager = get_member_by_role(hc_home, t, "manager") or "delegate"
                 updated = transition_task(hc_home, t, task_id, "merging", manager)
                 return updated
             except FileNotFoundError:

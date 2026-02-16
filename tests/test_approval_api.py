@@ -33,7 +33,7 @@ def in_approval_task(tmp_team):
 
 class TestApproveEndpoint:
     def test_approve_sets_approval_status(self, client, in_approval_task, tmp_team):
-        resp = client.post(f"/teams/{TEAM}/tasks/{in_approval_task['id']}/approve")
+        resp = client.post(f"/api/tasks/{in_approval_task['id']}/approve")
         assert resp.status_code == 200
         data = resp.json()
         assert data["approval_status"] == "approved"
@@ -43,32 +43,27 @@ class TestApproveEndpoint:
         assert loaded["approval_status"] == "approved"
 
     def test_approve_returns_full_task(self, client, in_approval_task):
-        resp = client.post(f"/teams/{TEAM}/tasks/{in_approval_task['id']}/approve")
+        resp = client.post(f"/api/tasks/{in_approval_task['id']}/approve")
         data = resp.json()
         assert data["id"] == in_approval_task["id"]
         assert data["title"] == "Feature X"
         assert "status" in data
         assert "created_at" in data
 
-    def test_approve_transitions_to_merging(self, client, in_approval_task, tmp_team):
-        """Approve transitions the task to 'merging' status immediately."""
-        resp = client.post(f"/teams/{TEAM}/tasks/{in_approval_task['id']}/approve")
+    def test_approve_does_not_change_status(self, client, in_approval_task, tmp_team):
+        """Approve only sets approval_status, not the task status itself."""
+        resp = client.post(f"/api/tasks/{in_approval_task['id']}/approve")
         data = resp.json()
-        assert data["status"] == "merging"
-        assert data["approval_status"] == "approved"
-
-        # Verify persisted
-        loaded = get_task(tmp_team, TEAM, in_approval_task["id"])
-        assert loaded["status"] == "merging"
+        assert data["status"] == "in_approval"
 
     def test_approve_nonexistent_task_404(self, client):
-        resp = client.post(f"/teams/{TEAM}/tasks/9999/approve")
+        resp = client.post(f"/api/tasks/9999/approve")
         assert resp.status_code == 404
 
     def test_approve_wrong_status_400(self, client, tmp_team):
         """Cannot approve a task that is not in 'in_approval' status."""
         task = create_task(tmp_team, TEAM, title="Todo Task", assignee="manager")
-        resp = client.post(f"/teams/{TEAM}/tasks/{task['id']}/approve")
+        resp = client.post(f"/api/tasks/{task['id']}/approve")
         assert resp.status_code == 400
         assert "in_approval" in resp.json()["detail"]
 
@@ -76,7 +71,7 @@ class TestApproveEndpoint:
         """Cannot approve a task in 'in_progress' status."""
         task = create_task(tmp_team, TEAM, title="WIP Task", assignee="manager")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
-        resp = client.post(f"/teams/{TEAM}/tasks/{task['id']}/approve")
+        resp = client.post(f"/api/tasks/{task['id']}/approve")
         assert resp.status_code == 400
 
     def test_approve_in_review_400(self, client, tmp_team):
@@ -84,11 +79,11 @@ class TestApproveEndpoint:
         task = create_task(tmp_team, TEAM, title="Review Task", assignee="manager")
         change_status(tmp_team, TEAM, task["id"], "in_progress")
         change_status(tmp_team, TEAM, task["id"], "in_review")
-        resp = client.post(f"/teams/{TEAM}/tasks/{task['id']}/approve")
+        resp = client.post(f"/api/tasks/{task['id']}/approve")
         assert resp.status_code == 400
 
     def test_approve_logs_event(self, client, in_approval_task, tmp_team):
-        client.post(f"/teams/{TEAM}/tasks/{in_approval_task['id']}/approve")
+        client.post(f"/api/tasks/{in_approval_task['id']}/approve")
 
         from delegate.chat import get_messages
         events = get_messages(tmp_team, TEAM, msg_type="event")
@@ -102,7 +97,7 @@ class TestApproveEndpoint:
 class TestRejectEndpoint:
     def test_reject_sets_status_and_reason(self, client, in_approval_task, tmp_team):
         resp = client.post(
-            f"/teams/{TEAM}/tasks/{in_approval_task['id']}/reject",
+            f"/api/tasks/{in_approval_task['id']}/reject",
             json={"reason": "Code quality issues"},
         )
         assert resp.status_code == 200
@@ -118,7 +113,7 @@ class TestRejectEndpoint:
 
     def test_reject_returns_full_task(self, client, in_approval_task):
         resp = client.post(
-            f"/teams/{TEAM}/tasks/{in_approval_task['id']}/reject",
+            f"/api/tasks/{in_approval_task['id']}/reject",
             json={"reason": "Not ready"},
         )
         data = resp.json()
@@ -129,7 +124,7 @@ class TestRejectEndpoint:
     def test_reject_sends_notification_to_manager(self, client, in_approval_task, tmp_team):
         """Rejecting a task should deliver a notification to the manager's inbox."""
         client.post(
-            f"/teams/{TEAM}/tasks/{in_approval_task['id']}/reject",
+            f"/api/tasks/{in_approval_task['id']}/reject",
             json={"reason": "Fails CI checks"},
         )
 
@@ -144,7 +139,7 @@ class TestRejectEndpoint:
     def test_reject_notification_includes_task_info(self, client, in_approval_task, tmp_team):
         """The notification should include the task ID and title."""
         client.post(
-            f"/teams/{TEAM}/tasks/{in_approval_task['id']}/reject",
+            f"/api/tasks/{in_approval_task['id']}/reject",
             json={"reason": "Needs rework"},
         )
 
@@ -154,14 +149,14 @@ class TestRejectEndpoint:
         assert "Feature X" in notification.body
 
     def test_reject_nonexistent_task_404(self, client):
-        resp = client.post(f"/teams/{TEAM}/tasks/9999/reject", json={"reason": "Bad"})
+        resp = client.post(f"/api/tasks/9999/reject", json={"reason": "Bad"})
         assert resp.status_code == 404
 
     def test_reject_invalid_transition_400(self, client, tmp_team):
         """Rejecting a task that's not in 'in_approval' should fail."""
         task = create_task(tmp_team, TEAM, title="Todo Task", assignee="manager")
         resp = client.post(
-            f"/teams/{TEAM}/tasks/{task['id']}/reject",
+            f"/api/tasks/{task['id']}/reject",
             json={"reason": "Not mergeable"},
         )
         assert resp.status_code == 400
@@ -169,12 +164,12 @@ class TestRejectEndpoint:
 
     def test_reject_missing_reason_422(self, client, in_approval_task):
         """Request body must include the 'reason' field."""
-        resp = client.post(f"/teams/{TEAM}/tasks/{in_approval_task['id']}/reject", json={})
+        resp = client.post(f"/api/tasks/{in_approval_task['id']}/reject", json={})
         assert resp.status_code == 422
 
     def test_reject_logs_event(self, client, in_approval_task, tmp_team):
         client.post(
-            f"/teams/{TEAM}/tasks/{in_approval_task['id']}/reject",
+            f"/api/tasks/{in_approval_task['id']}/reject",
             json={"reason": "Fails tests"},
         )
 
@@ -188,20 +183,18 @@ class TestRejectEndpoint:
 # ---------------------------------------------------------------------------
 
 class TestApprovalWorkflow:
-    def test_approve_transitions_immediately_to_merging(self, client, in_approval_task, tmp_team):
-        """After approval, status immediately transitions to 'merging'."""
-        client.post(f"/teams/{TEAM}/tasks/{in_approval_task['id']}/approve")
+    def test_approve_then_status_still_in_approval(self, client, in_approval_task, tmp_team):
+        """After approval, status remains in_approval (daemon does the merge)."""
+        client.post(f"/api/tasks/{in_approval_task['id']}/approve")
         loaded = get_task(tmp_team, TEAM, in_approval_task["id"])
-        assert loaded["status"] == "merging"
+        assert loaded["status"] == "in_approval"
         assert loaded["approval_status"] == "approved"
-        # Manager should be assigned
-        assert loaded["assignee"] == "manager"
 
     def test_reject_then_rework_cycle(self, client, in_approval_task, tmp_team):
         """Full cycle: reject -> rework (in_progress) -> in_review -> in_approval."""
         # Reject
         resp = client.post(
-            f"/teams/{TEAM}/tasks/{in_approval_task['id']}/reject",
+            f"/api/tasks/{in_approval_task['id']}/reject",
             json={"reason": "Needs cleanup"},
         )
         assert resp.status_code == 200
@@ -215,6 +208,6 @@ class TestApprovalWorkflow:
         change_status(tmp_team, TEAM, in_approval_task["id"], "in_approval")
 
         # Approve this time
-        resp = client.post(f"/teams/{TEAM}/tasks/{in_approval_task['id']}/approve")
+        resp = client.post(f"/api/tasks/{in_approval_task['id']}/approve")
         assert resp.status_code == 200
         assert resp.json()["approval_status"] == "approved"

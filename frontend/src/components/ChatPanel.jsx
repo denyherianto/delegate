@@ -69,7 +69,7 @@ function CommandMessage({ message, parsed }) {
       )}
       {parsed?.name === 'cost' && <CostBlock result={message.result} />}
       {parsed?.name === 'agent' && message.result && !message.result.error && (
-        <div class="shell-output-block"><pre class="shell-output-stdout">{message.result.message}</pre></div>
+        <div class="shell-output-block"><pre>{message.result.message}</pre></div>
       )}
       {parsed?.name === 'agent' && message.result?.error && (
         <div class="shell-output-stderr">
@@ -223,7 +223,7 @@ function CollapsibleEventMessage({ html, messageId }) {
   const wrapperClass = "msg-event-content-wrapper" + (isLong && !isExpanded ? " collapsed-agent" : "");
 
   return (
-    <div class="msg-event-content-container">
+    <>
       <div class={wrapperClass} ref={wrapperRef}>
         <LinkedDiv class="msg-event-text" html={html} />
         {isLong && !isExpanded && (
@@ -235,7 +235,7 @@ function CollapsibleEventMessage({ html, messageId }) {
           {isExpanded ? 'Show less' : 'Show more'}
         </button>
       )}
-    </div>
+    </>
   );
 }
 
@@ -412,7 +412,7 @@ export function ChatPanel() {
       const tokens = result.uploaded.map(f => `[file:${f.url}]`).join(' ');
       if (inputRef.current) {
         const currentText = inputRef.current.textContent || '';
-        const newText = currentText ? `${currentText}\n${tokens}\n` : `${tokens}\n`;
+        const newText = currentText ? `${currentText} ${tokens}` : tokens;
         inputRef.current.textContent = newText;
 
         // Trigger input event to update state
@@ -957,7 +957,7 @@ export function ChatPanel() {
           if (isNaN(taskId)) {
             result = { error: `Invalid task ID: ${cmd.args}`, exit_code: -1 };
           } else {
-            const diffData = await api.fetchTaskDiffGlobal(taskId);
+            const diffData = await api.fetchTaskDiff(taskId);
             if (!diffData) {
               result = { error: `Task ${taskId} not found or has no diff`, exit_code: -1 };
             } else {
@@ -972,7 +972,7 @@ export function ChatPanel() {
         const tokens = cmd.args.split(/\s+/).filter(t => t);
 
         if (tokens.length === 0 || tokens[0] !== 'add') {
-          result = { error: 'Usage: /agent add [name] [--role <role>] [--seniority junior|senior] [--bio \'...\']', exit_code: -1 };
+          result = { error: 'Usage: /agent add <name> [--role <role>] [--seniority junior|senior] [--bio \'...\']', exit_code: -1 };
         } else {
           let nameToken = null;
           const options = {};
@@ -982,19 +982,7 @@ export function ChatPanel() {
             const token = tokens[i];
             if (token.startsWith('--')) {
               const flag = token.slice(2);
-              if (flag === 'name') {
-                if (i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) {
-                  if (nameToken) {
-                    result = { error: 'Name specified multiple times (both positionally and with --name)', exit_code: -1 };
-                    break;
-                  }
-                  nameToken = tokens[i + 1];
-                  i += 2;
-                } else {
-                  result = { error: 'Missing value for --name', exit_code: -1 };
-                  break;
-                }
-              } else if (flag === 'role' || flag === 'seniority') {
+              if (flag === 'role' || flag === 'seniority') {
                 if (i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) {
                   options[flag] = tokens[i + 1];
                   i += 2;
@@ -1479,7 +1467,7 @@ export function ChatPanel() {
                     {cap(m.sender)}<CopyBtn text={m.sender} />
                   </span>
                   <span class="msg-recipient"> → {cap(m.recipient)}</span>
-                  {m.task_id > 0 && (
+                  {m.task_id != null && (
                     <>
                       <span class="msg-task-sep">|</span>
                       <span

@@ -122,7 +122,7 @@ function InlineEditForm({ comment, taskId, onSaved, onCancel }) {
     if (!body.trim()) return;
     setSaving(true);
     try {
-      const updated = await api.updateReviewComment(currentTeam.value, taskId, comment.id, body.trim());
+      const updated = await api.updateReviewComment(taskId, comment.id, body.trim());
       if (onSaved) onSaved(updated);
     } catch (e) {
       showToast("Failed to update comment", "error");
@@ -600,7 +600,7 @@ export function ReviewableDiff({
 
   const handleCommentDelete = useCallback(async (comment) => {
     try {
-      await api.deleteReviewComment(currentTeam.value, taskId, comment.id);
+      await api.deleteReviewComment(taskId, comment.id);
       // Remove from local comments
       setLocalComments((prev) => prev.filter(c => c.id !== comment.id));
     } catch (e) {

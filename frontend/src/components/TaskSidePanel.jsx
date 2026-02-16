@@ -47,8 +47,8 @@ export async function prefetchTaskPanelData(taskIds) {
     try {
       // Fetch stats and current review (but not full reviews list, diff, or activity)
       const [stats, currentReview] = await Promise.all([
-        api.fetchTaskStatsGlobal(id).catch(() => null),
-        api.fetchCurrentReviewGlobal(id).catch(() => null),
+        api.fetchTaskStats(id).catch(() => null),
+        api.fetchCurrentReview(id).catch(() => null),
       ]);
 
       const cacheUpdate = {};
@@ -71,13 +71,13 @@ export function prefetchTaskData(taskId) {
   if (!taskId) return;
 
   Promise.allSettled([
-    api.fetchTaskStatsGlobal(taskId).then(s => s && _setCache(taskId, { stats: s })),
-    api.fetchTaskDiffGlobal(taskId).then(d => {
+    api.fetchTaskStats(taskId).then(s => s && _setCache(taskId, { stats: s })),
+    api.fetchTaskDiff(taskId).then(d => {
       if (!d) return;
       _setCache(taskId, { diffRaw: flattenDiffDict(d.diff) });
     }),
-    api.fetchTaskActivityGlobal(taskId, 50).then(a => a && _setCache(taskId, { activityRaw: a })),
-    api.fetchCurrentReviewGlobal(taskId).then(r => r && _setCache(taskId, { currentReview: r })),
+    api.fetchTaskActivity(taskId, 50).then(a => a && _setCache(taskId, { activityRaw: a })),
+    api.fetchCurrentReview(taskId).then(r => r && _setCache(taskId, { currentReview: r })),
   ]).catch(() => {});  // allSettled won't reject, but safety net
 }
 
@@ -122,7 +122,7 @@ function RetryMergeButton({ task }) {
     if (loading) return;
     setLoading(true);
     try {
-      await api.retryMergeGlobal(task.id);
+      await api.retryMerge(task.id);
       // Refresh task list - task.team is available if needed
       if (task.team) {
         const refreshed = await api.fetchTasks(task.team);
@@ -201,7 +201,7 @@ function ApprovalBar({ task, currentReview, onAction }) {
   const handleApprove = async () => {
     setLoading(true);
     try {
-      await api.approveTaskGlobal(task.id, summary);
+      await api.approveTask(task.id, summary);
       setResult("approved");
       if (onAction) onAction();
     } catch (e) {
@@ -214,7 +214,7 @@ function ApprovalBar({ task, currentReview, onAction }) {
   const handleReject = async () => {
     setLoading(true);
     try {
-      await api.rejectTaskGlobal(task.id, summary || "(no reason)", summary);
+      await api.rejectTask(task.id, summary || "(no reason)", summary);
       setResult("rejected");
       if (onAction) onAction();
     } catch (e) {
@@ -471,7 +471,7 @@ function ChangesTab({ task, diffRaw, currentReview, oldComments, stats }) {
   useEffect(() => {
     if (!commitsExpanded || commitsData !== null) return;
     setCommitsLoading(true);
-    api.fetchTaskCommitsGlobal(t.id).then(data => {
+    api.fetchTaskCommits(t.id).then(data => {
       if (!data) {
         setCommitsData({ commit_diffs: {} });
         return;
@@ -693,7 +693,7 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
     setLoadingMore(true);
     try {
       // Fetch without limit to get all activity
-      const allActivity = await api.fetchTaskActivityGlobal(taskId, null);
+      const allActivity = await api.fetchTaskActivity(taskId, null);
       setTimeline(transformActivity(allActivity));
       setShowingAll(true);
     } catch (e) {
@@ -708,7 +708,7 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
     if (!body || posting) return;
     setPosting(true);
     try {
-      await api.postTaskCommentGlobal(taskId, human, body);
+      await api.postTaskComment(taskId, human, body);
       setCommentText("");
       // Trigger refresh from parent
       if (onLoadActivity) onLoadActivity();
@@ -884,24 +884,21 @@ export function TaskSidePanel() {
     // ── Revalidate in background ──
     // Fetch fresh task list to catch any updates that may have been missed
     api.fetchAllTasks().then(taskData => {
-      if (!taskData) return;
       tasks.value = taskData;
       const fresh = taskData.find(t => t.id === id);
       if (fresh) {
         setTask(fresh);
         _setCache(id, { task: fresh });
       }
-    }).catch((err) => {
-      console.warn('Failed to fetch all tasks on panel open:', err);
-    });
+    }).catch(() => {});
 
     // Parallelize stats + reviews loading
     (async () => {
       try {
         const [s, review, reviews] = await Promise.all([
-          api.fetchTaskStatsGlobal(id).catch(() => null),
-          api.fetchCurrentReviewGlobal(id).catch(() => null),
-          api.fetchReviewsGlobal(id).catch(() => []),
+          api.fetchTaskStats(id).catch(() => null),
+          api.fetchCurrentReview(id).catch(() => null),
+          api.fetchReviews(id).catch(() => []),
         ]);
 
         if (s) {
@@ -931,32 +928,21 @@ export function TaskSidePanel() {
       } catch (e) { }
 
       // Eagerly start loading diff and activity in background (non-blocking)
-      api.fetchTaskDiffGlobal(id).then(data => {
-        if (!data) return;
+      api.fetchTaskDiff(id).then(data => {
         const raw = flattenDiffDict(data.diff);
         setDiffRaw(raw);
         setDiffLoaded(true);
         _setCache(id, { diffRaw: raw });
-      }).catch((err) => {
-        console.warn('Failed to prefetch diff for task', id, err);
-      });
+      }).catch(() => {});
 
-      api.fetchTaskActivityGlobal(id, 50).then(raw => {
-        if (!raw) {
-          setActivityRaw([]);
-          return;
-        }
+      api.fetchTaskActivity(id, 50).then(raw => {
         setActivityRaw(raw);
         setActivityLoaded(true);
         _setCache(id, { activityRaw: raw });
-      }).catch((err) => {
-        console.warn('Failed to prefetch activity for task', id, err);
+      }).catch(() => {
         setActivityRaw([]);
       });
     })();
-
-    // Always revalidate all data in background (not just current tab)
-    prefetchTaskData(id);
   }, [id]);
 
   // Sync task from signal when SSE pushes updates.
@@ -985,64 +971,47 @@ export function TaskSidePanel() {
     // load from a cold cache, which the diffLoaded flag already guards).
     if (diffLoaded && _getCache(id).diffRaw) {
       // Already showing stale data — revalidate in background
-      api.fetchTaskDiffGlobal(id).then(data => {
-        if (!data) return;
+      api.fetchTaskDiff(id).then(data => {
         const raw = flattenDiffDict(data.diff);
         setDiffRaw(raw);
         _setCache(id, { diffRaw: raw });
-      }).catch((err) => {
-        console.warn('Failed to revalidate diff for task', id, err);
-      });
+      }).catch(() => {});
       return;
     }
     setDiffLoaded(true);
-    api.fetchTaskDiffGlobal(id).then(data => {
-      if (!data) return;
+    api.fetchTaskDiff(id).then(data => {
       const raw = flattenDiffDict(data.diff);
       setDiffRaw(raw);
       _setCache(id, { diffRaw: raw });
-    }).catch((err) => {
-      console.warn('Failed to fetch diff for task', id, err);
-    });
+    }).catch(() => {});
   }, [visitedTabs.changes, diffLoaded, id]);
 
   // Lazy load merge preview when Merge Preview tab first visited — stale-while-revalidate
   useEffect(() => {
     if (!visitedTabs.merge || id === null) return;
     if (mergePreviewLoaded && _getCache(id).mergePreviewRaw) {
-      api.fetchTaskMergePreviewGlobal(id).then(data => {
-        if (!data) return;
+      api.fetchTaskMergePreview(id).then(data => {
         const raw = flattenDiffDict(data.diff);
         setMergePreviewRaw(raw);
         _setCache(id, { mergePreviewRaw: raw });
-      }).catch((err) => {
-        console.warn('Failed to revalidate merge preview for task', id, err);
-      });
+      }).catch(() => {});
       return;
     }
     setMergePreviewLoaded(true);
-    api.fetchTaskMergePreviewGlobal(id).then(data => {
-      if (!data) return;
+    api.fetchTaskMergePreview(id).then(data => {
       const raw = flattenDiffDict(data.diff);
       setMergePreviewRaw(raw);
       _setCache(id, { mergePreviewRaw: raw });
-    }).catch((err) => {
-      console.warn('Failed to fetch merge preview for task', id, err);
-    });
+    }).catch(() => {});
   }, [visitedTabs.merge, mergePreviewLoaded, id]);
 
   // Lazy load activity when Activity tab first visited — stale-while-revalidate
   const loadActivity = useCallback(() => {
     if (id === null) return;
-    api.fetchTaskActivityGlobal(id, 50).then(raw => {
-      if (!raw) {
-        setActivityRaw([]);
-        return;
-      }
+    api.fetchTaskActivity(id, 50).then(raw => {
       setActivityRaw(raw);
       _setCache(id, { activityRaw: raw });
-    }).catch((err) => {
-      console.warn('Failed to load activity for task', id, err);
+    }).catch(() => {
       setActivityRaw([]);
     });
   }, [id]);
