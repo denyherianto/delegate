@@ -137,6 +137,7 @@ def build_agent_tools(hc_home: Path, team: str, agent: str) -> list:
 
             kwargs: dict[str, Any] = {
                 "title": args["title"],
+                "assignee": agent,  # default to creating agent
             }
             if args.get("description"):
                 kwargs["description"] = args["description"]
