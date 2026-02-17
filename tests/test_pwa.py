@@ -2,32 +2,9 @@
 
 import os
 import pytest
-from pathlib import Path
 from fastapi.testclient import TestClient
 
 from delegate.web import create_app
-
-
-SW_CONTENT = 'self.addEventListener("fetch", () => {});'
-
-# _static_dir in web.py is always Path(__file__).parent / "static" (the delegate package static dir)
-_STATIC_DIR = Path(__file__).parent.parent / "delegate" / "static"
-
-
-@pytest.fixture
-def sw_file(tmp_path):
-    """Place a sw.js in the package static dir for the duration of the test."""
-    _STATIC_DIR.mkdir(exist_ok=True)
-    sw_path = _STATIC_DIR / "sw.js"
-    existed = sw_path.exists()
-    original = sw_path.read_bytes() if existed else None
-    sw_path.write_text(SW_CONTENT)
-    yield sw_path
-    # Restore original state
-    if existed:
-        sw_path.write_bytes(original)
-    else:
-        sw_path.unlink(missing_ok=True)
 
 
 @pytest.fixture
@@ -68,14 +45,14 @@ class TestManifest:
 
 
 class TestServiceWorker:
-    def test_sw_returns_200(self, client, sw_file):
+    def test_sw_returns_200(self, client):
         resp = client.get("/sw.js")
         assert resp.status_code == 200
 
-    def test_sw_content_type(self, client, sw_file):
+    def test_sw_content_type(self, client):
         resp = client.get("/sw.js")
         assert "javascript" in resp.headers["content-type"]
 
-    def test_sw_content(self, client, sw_file):
+    def test_sw_content(self, client):
         resp = client.get("/sw.js")
         assert "fetch" in resp.text
