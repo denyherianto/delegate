@@ -244,11 +244,11 @@ class TestTelephoneUnit:
 
         # Write inside — allowed
         result = asyncio.run(guard("Edit", {"file_path": str(tmp_path / "safe" / "f.py")}, None))
-        assert result["behavior"] == "allow"
+        assert result.behavior == "allow"
 
         # Write outside — denied
         result = asyncio.run(guard("Write", {"file_path": "/etc/passwd"}, None))
-        assert result["behavior"] == "deny"
+        assert result.behavior == "deny"
 
     def test_guard_allows_multiple_paths(self, tmp_path):
         """Guard allows writes in any of the allowed paths."""
@@ -260,13 +260,13 @@ class TestTelephoneUnit:
         guard = t._make_guard()
 
         r1 = asyncio.run(guard("Edit", {"file_path": str(tmp_path / "repo-a" / "x")}, None))
-        assert r1["behavior"] == "allow"
+        assert r1.behavior == "allow"
 
         r2 = asyncio.run(guard("Edit", {"file_path": str(tmp_path / "repo-b" / "y")}, None))
-        assert r2["behavior"] == "allow"
+        assert r2.behavior == "allow"
 
         r3 = asyncio.run(guard("Edit", {"file_path": str(tmp_path / "repo-c" / "z")}, None))
-        assert r3["behavior"] == "deny"
+        assert r3.behavior == "deny"
 
     def test_guard_denies_bash_pattern(self, tmp_path):
         """Guard denies bash commands matching denied patterns."""
@@ -279,13 +279,13 @@ class TestTelephoneUnit:
         assert guard is not None
 
         ok = asyncio.run(guard("Bash", {"command": "git status"}, None))
-        assert ok["behavior"] == "allow"
+        assert ok.behavior == "allow"
 
         deny1 = asyncio.run(guard("Bash", {"command": "git rebase main"}, None))
-        assert deny1["behavior"] == "deny"
+        assert deny1.behavior == "deny"
 
         deny2 = asyncio.run(guard("Bash", {"command": "git push origin main"}, None))
-        assert deny2["behavior"] == "deny"
+        assert deny2.behavior == "deny"
 
     def test_guard_read_always_allowed(self, tmp_path):
         """Read/Grep/Glob are never blocked by the write guard."""
@@ -299,7 +299,7 @@ class TestTelephoneUnit:
 
         for tool in ("Read", "Grep", "Glob"):
             r = asyncio.run(guard(tool, {"file_path": "/anywhere/file.py"}, None))
-            assert r["behavior"] == "allow"
+            assert r.behavior == "allow"
 
     def test_guard_covers_notebook_edit(self, tmp_path):
         """NotebookEdit is checked against write paths (not just Edit/Write)."""
@@ -312,11 +312,11 @@ class TestTelephoneUnit:
 
         # NotebookEdit inside allowed path
         ok = asyncio.run(guard("NotebookEdit", {"notebook_path": str(tmp_path / "safe" / "nb.ipynb")}, None))
-        assert ok["behavior"] == "allow"
+        assert ok.behavior == "allow"
 
         # NotebookEdit outside — denied
         deny = asyncio.run(guard("NotebookEdit", {"notebook_path": "/etc/something.ipynb"}, None))
-        assert deny["behavior"] == "deny"
+        assert deny.behavior == "deny"
 
     def test_guard_catches_unknown_write_tool(self, tmp_path):
         """Unknown tools with file_path are denied if outside write paths.
@@ -332,10 +332,10 @@ class TestTelephoneUnit:
         guard = t._make_guard()
 
         deny = asyncio.run(guard("FutureWriteTool", {"file_path": "/outside/file.txt"}, None))
-        assert deny["behavior"] == "deny"
+        assert deny.behavior == "deny"
 
         ok = asyncio.run(guard("FutureWriteTool", {"file_path": str(tmp_path / "safe" / "f.py")}, None))
-        assert ok["behavior"] == "allow"
+        assert ok.behavior == "allow"
 
     def test_guard_resolves_relative_to_cwd(self, tmp_path):
         """Relative paths in tool input are resolved against Telephone CWD.
@@ -355,7 +355,7 @@ class TestTelephoneUnit:
 
         # Relative path inside CWD/safe — should be allowed
         ok = asyncio.run(guard("Edit", {"file_path": "subdir/file.py"}, None))
-        assert ok["behavior"] == "allow"
+        assert ok.behavior == "allow"
 
     def test_guard_blocks_symlink_escape(self, tmp_path):
         """Writes through symlinks to external dirs are denied.
@@ -382,11 +382,11 @@ class TestTelephoneUnit:
 
         # Write through symlink — resolves to external → denied
         deny = asyncio.run(guard("Write", {"file_path": str(link / "secret.txt")}, None))
-        assert deny["behavior"] == "deny"
+        assert deny.behavior == "deny"
 
         # Direct write to safe — allowed
         ok = asyncio.run(guard("Write", {"file_path": str(safe / "ok.txt")}, None))
-        assert ok["behavior"] == "allow"
+        assert ok.behavior == "allow"
 
     def test_id_is_uuid_hex(self, tmp_path):
         """Telephone id is a 32-char hex UUID."""

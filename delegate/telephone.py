@@ -67,6 +67,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable
 
+try:
+    from claude_agent_sdk.types import PermissionResultAllow, PermissionResultDeny
+except ImportError:  # SDK not installed — tests mock these
+    PermissionResultAllow = None  # type: ignore[assignment,misc]
+    PermissionResultDeny = None   # type: ignore[assignment,misc]
+
 logger = logging.getLogger(__name__)
 
 # Sentinel for "argument not provided" (distinct from None).
@@ -691,6 +697,18 @@ class Telephone:
         _bash_deny = self._denied_bash_patterns
         _read_only = self._READ_ONLY_TOOLS
 
+        # Build allow/deny helpers that return SDK types when available,
+        # falling back to plain dicts for test environments without the SDK.
+        def _allow():
+            if PermissionResultAllow is not None:
+                return PermissionResultAllow()
+            return {"behavior": "allow"}
+
+        def _deny(message: str):
+            if PermissionResultDeny is not None:
+                return PermissionResultDeny(message=message)
+            return {"behavior": "deny", "message": message}
+
         async def _guard(
             tool_name: str,
             tool_input: dict[str, Any],
@@ -716,25 +734,19 @@ class Telephone:
                         resolved == wp or _is_under(resolved, wp)
                         for wp in _write_paths
                     ):
-                        return {
-                            "behavior": "deny",
-                            "message": (
-                                f"Write denied: {file_path} is outside "
-                                f"allowed paths {[str(p) for p in _write_paths]}"
-                            ),
-                        }
+                        return _deny(
+                            f"Write denied: {file_path} is outside "
+                            f"allowed paths {[str(p) for p in _write_paths]}"
+                        )
 
             # --- Bash deny-list ---
             if tool_name == "Bash" and _bash_deny:
                 cmd = tool_input.get("command", "")
                 for pattern in _bash_deny:
                     if pattern in cmd:
-                        return {
-                            "behavior": "deny",
-                            "message": f"Command denied: contains '{pattern}'",
-                        }
+                        return _deny(f"Command denied: contains '{pattern}'")
 
-            return {"behavior": "allow"}
+            return _allow()
 
         return _guard
 
