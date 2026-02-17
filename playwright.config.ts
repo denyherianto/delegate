@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { execSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -6,11 +7,15 @@ import * as path from "path";
 /**
  * Playwright config for Delegate E2E tests.
  *
- * We create the temp dir and pick a port HERE (at config-eval time)
- * because globalSetup runs AFTER the config is evaluated, so env
- * vars set there can't influence webServer/baseURL.
+ * IMPORTANT: Both the temp dir creation AND seeding happen here at
+ * config-eval time.  Playwright starts globalSetup and webServer in
+ * parallel, so if the seed runs inside globalSetup it races with the
+ * webServer.  When the server wins it caches an empty team-map and
+ * every subsequent team-UUID lookup returns a fallback value, causing
+ * all task / message queries to return zero rows.
  *
- * globalSetup only seeds data into the already-created temp dir.
+ * By seeding at config-eval time we guarantee the DB is fully
+ * populated before the webServer process is spawned.
  */
 
 // Find the git common directory (main repo) to access .venv
@@ -28,10 +33,40 @@ if (fs.existsSync(gitFile) && fs.statSync(gitFile).isFile()) {
   }
 }
 
-// Create (or reuse) a temp directory for this test run
+const venvPython = path.join(repoRoot, ".venv", "bin", "python");
+
+// Use a stable temp dir so that `reuseExistingServer` can work
+// across consecutive local runs.  A random dir would mismatch
+// the already-running server's DELEGATE_HOME.
 const tmpDir =
   process.env.DELEGATE_E2E_HOME ||
-  fs.mkdtempSync(path.join(os.tmpdir(), "delegate-e2e-"));
+  path.join(os.tmpdir(), "delegate-e2e-stable");
+
+// Wipe and recreate so each run starts from a clean state.
+if (!process.env.DELEGATE_E2E_HOME) {
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+  fs.mkdirSync(tmpDir, { recursive: true });
+}
+
+// Seed test data BEFORE the webServer starts (see comment above).
+// Guard with a marker file to prevent re-seeding if the config is
+// evaluated more than once (Playwright may re-import it per worker).
+const seedMarker = path.join(tmpDir, ".seeded");
+const seedScript = path.resolve(__dirname, "e2e", "seed.py");
+if (!fs.existsSync(seedMarker)) {
+  try {
+    execSync(`${venvPython} ${seedScript} ${tmpDir}`, {
+      cwd: __dirname,
+      stdio: "pipe",
+      env: { ...process.env, PYTHONPATH: __dirname },
+    });
+    fs.writeFileSync(seedMarker, new Date().toISOString());
+  } catch (err: any) {
+    console.error("Seed script failed:");
+    console.error(err.stderr?.toString() || err.message);
+    throw err;
+  }
+}
 
 // Use a fixed high port unlikely to collide (avoids async port-finding)
 const port = Number(process.env.DELEGATE_E2E_PORT) || 13548;
@@ -76,7 +111,9 @@ export default defineConfig({
   webServer: {
     command: `${repoRoot}/.venv/bin/python -m uvicorn delegate.web:create_app --factory --host 127.0.0.1 --port ${port}`,
     port,
-    reuseExistingServer: !process.env.CI,
+    // Always start a fresh server — the seed wipes and re-creates the
+    // temp dir at config-eval time so any cached server would be stale.
+    reuseExistingServer: false,
     cwd: __dirname,
     env: {
       ...process.env,

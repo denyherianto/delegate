@@ -50,8 +50,8 @@ test.describe("Smoke tests", () => {
     await page.locator(".sb-nav-btn", { hasText: "Agents" }).click();
     await expect(page).toHaveURL(/\/agents/);
 
-    // Should see agent cards (edison, alice, bob)
-    await expect(page.locator(".agent-card-rich").first()).toBeVisible({
+    // Should see agent rows (edison, alice, bob)
+    await expect(page.locator(".agent-row").first()).toBeVisible({
       timeout: 5_000,
     });
 

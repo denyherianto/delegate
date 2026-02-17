@@ -156,7 +156,7 @@ function App() {
         return;
       }
       if (e.key === "?") { helpOverlayOpen.value = !helpOverlayOpen.value; return; }
-      if (e.key === "k" && (e.metaKey || e.ctrlKey) && activeTab.value === "chat") {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         teamSwitcherOpen.value = !teamSwitcherOpen.value;
         return;

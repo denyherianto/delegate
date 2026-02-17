@@ -33,6 +33,7 @@ Most AI coding tools give you **one agent, one task, then it's gone**. Delegate 
 
 ```bash
 pip install delegate-ai
+cd to/directory/having/git/repo # optional, just makes config easier
 delegate start # needs claude code login or ANTHROPIC_API_KEY in ENV
 ```
 

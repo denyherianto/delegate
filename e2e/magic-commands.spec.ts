@@ -39,13 +39,14 @@ test.describe("Magic command autocomplete", () => {
     const dropdown = page.locator(".command-autocomplete");
     await expect(dropdown).toBeVisible({ timeout: 3_000 });
 
-    // Should show all commands (shell, status, diff, cost)
+    // Should show all commands (shell, status, diff, cost, agent)
     const items = dropdown.locator(".command-autocomplete-item");
-    await expect(items).toHaveCount(4);
+    await expect(items).toHaveCount(5);
     await expect(dropdown.locator(".command-name", { hasText: "/shell" })).toBeVisible();
     await expect(dropdown.locator(".command-name", { hasText: "/status" })).toBeVisible();
     await expect(dropdown.locator(".command-name", { hasText: "/diff" })).toBeVisible();
     await expect(dropdown.locator(".command-name", { hasText: "/cost" })).toBeVisible();
+    await expect(dropdown.locator(".command-name", { hasText: "/agent" })).toBeVisible();
   });
 
   test("autocomplete filters commands as user types", async ({ page }) => {
