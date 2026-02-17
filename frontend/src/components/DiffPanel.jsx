@@ -289,6 +289,13 @@ function AgentView({ agentName }) {
   );
 }
 
+// ── Byte formatter for directory listings ──
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
 // ── File viewer ──
 // NOTE: useEffect / useSignalEffect do NOT fire reliably inside
 // signal-driven parent renders (@preact/signals v2 commit-phase bug).
@@ -358,6 +365,18 @@ function FileView({ filePath }) {
       <div class="diff-panel-body">
         {error ? <div class="diff-empty">{error}</div>
           : fileData === null ? <div class="diff-empty">Loading file...</div>
+          : fileData.is_directory
+            ? <div class="file-viewer-content file-viewer-directory">
+                <div class="file-viewer-dir-list">
+                  {fileData.files.map((entry, i) => (
+                    <div key={i} class="file-viewer-dir-entry" onClick={() => pushPanel("file", entry.path)}>
+                      <span class="file-viewer-dir-name">{entry.is_dir ? entry.name + "/" : entry.name}</span>
+                      {!entry.is_dir && <span class="file-viewer-dir-meta">{formatBytes(entry.size)}</span>}
+                    </div>
+                  ))}
+                  {fileData.files.length === 0 && <div class="diff-empty">Empty directory</div>}
+                </div>
+              </div>
           : fileData.is_binary && isImage && fileData.content
             ? <div class="file-viewer-content file-viewer-image">
                 <img src={`data:${fileData.content_type};base64,${fileData.content}`} alt={filePath} />

@@ -2439,9 +2439,9 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         else:
             target = (hc_home / path).resolve()
 
-        if not target.is_file():
+        if not target.exists():
             raise HTTPException(
-                status_code=404, detail=f"File not found: {path}"
+                status_code=404, detail=f"Path not found: {path}"
             )
         return target
 
@@ -2456,6 +2456,27 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         For images and binary files, returns base64-encoded data with content_type.
         """
         target = _resolve_file_path(team, path)
+
+        if target.is_dir():
+            entries = []
+            for item in sorted(target.iterdir(), key=lambda i: (not i.is_dir(), i.name.lower())):
+                try:
+                    stat = item.stat()
+                    entries.append({
+                        "name": item.name,
+                        "path": str(item),
+                        "size": stat.st_size,
+                        "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+                        "is_dir": item.is_dir(),
+                    })
+                except OSError:
+                    continue
+            return {
+                "path": str(target),
+                "name": target.name,
+                "is_directory": True,
+                "files": entries,
+            }
 
         stat = target.stat()
         ext = target.suffix.lower()
