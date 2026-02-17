@@ -414,7 +414,12 @@ export function renderFileReferences(html, team) {
   return html.replace(fileRefPattern, (match, filePath) => {
     const ext = filePath.split('.').pop().toLowerCase();
     const fileName = filePath.split('/').pop();
-    const url = `/teams/${team}/${filePath}`;
+    let url;
+    if (filePath.startsWith('/') || filePath.startsWith('~')) {
+      url = `/teams/${team}/files/content?path=${encodeURIComponent(filePath)}`;
+    } else {
+      url = `/teams/${team}/${filePath}`;
+    }
 
     const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
 

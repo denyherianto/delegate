@@ -2,7 +2,8 @@
 
 Verifies that the backend _resolve_file_path() correctly handles:
 1. Absolute paths (start with /) - primary format, used directly
-2. Delegate-relative paths (no leading /) - backward compat, resolved from ~/.delegate
+2. Tilde paths (start with ~/) - expanded to home directory
+3. Delegate-relative paths (no leading /) - backward compat, resolved from ~/.delegate
 """
 
 import pytest
@@ -43,6 +44,40 @@ class TestFilePathResolution:
         data = r.json()
         assert data["content_type"] == "text/plain"
         assert "Test content for path resolution" in data["content"]
+
+    def test_tilde_path(self, client, test_file):
+        """Tilde paths should expand to the home directory and resolve correctly.
+
+        We patch Path.expanduser() so that ~/test-path-resolution.md maps to the
+        real test file path, avoiding the need to write into the actual home dir.
+        """
+        from unittest.mock import patch
+
+        abs_path = test_file.resolve()
+        tilde_path = "~/test-path-resolution.md"
+
+        # Patch expanduser on any Path constructed from our tilde string so it
+        # returns the absolute path of the real test file.
+        original_expanduser = Path.expanduser
+
+        def fake_expanduser(self):
+            if str(self) == tilde_path:
+                return abs_path
+            return original_expanduser(self)
+
+        with patch.object(Path, "expanduser", fake_expanduser):
+            r = client.get(f"/teams/{TEAM}/files/content", params={"path": tilde_path})
+
+        assert r.status_code == 200
+        data = r.json()
+        assert "Test content for path resolution" in data["content"]
+
+    def test_tilde_path_nonexistent(self, client):
+        """Tilde paths pointing to non-existent files should return 404."""
+        r = client.get(f"/teams/{TEAM}/files/content",
+                       params={"path": "~/nonexistent-delegate-test-file-99999.md"})
+        assert r.status_code == 404
+        assert "not found" in r.json()["detail"].lower()
 
     def test_delegate_relative_path(self, client, test_file, tmp_team):
         """Delegate-relative paths should be resolved from hc_home."""

@@ -2434,6 +2434,8 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         """
         if path.startswith("/"):
             target = Path(path).resolve()
+        elif path.startswith("~"):
+            target = Path(path).expanduser().resolve()
         else:
             # Backward compat: resolve delegate-relative paths from hc_home
             target = (hc_home / path).resolve()
