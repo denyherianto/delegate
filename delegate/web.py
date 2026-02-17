@@ -44,7 +44,7 @@ from pathlib import Path
 
 import yaml
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -2609,8 +2609,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
     @app.get("/sw.js")
     def service_worker():
-        sw_path = _static_dir / "sw.js"
-        return FileResponse(sw_path, media_type="application/javascript")
+        # Minimal service worker for PWA installability.
+        # Delegate requires the daemon running, so no offline caching is needed.
+        content = 'self.addEventListener("fetch", () => {});\n'
+        return Response(content=content, media_type="application/javascript")
 
     @app.get("/", response_class=HTMLResponse)
     def index():
