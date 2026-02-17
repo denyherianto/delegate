@@ -102,6 +102,24 @@ def _register_repo_with_symlink(hc_home: Path, name: str, source_repo: Path):
     add_repo(hc_home, SAMPLE_TEAM, name, str(source_repo), approval="auto")
 
 
+def _create_agent_worktree_for_task(
+    hc_home: Path, repo: Path, repo_name: str, branch: str, task_id: int
+) -> Path:
+    """Create a git worktree for a task at the standard path.
+
+    Simulates what _ensure_task_infra does in the daemon loop so that
+    merge tests can run pre-merge scripts in the agent worktree.
+    """
+    from delegate.paths import task_worktree_dir
+    wt_path = task_worktree_dir(hc_home, SAMPLE_TEAM, repo_name, task_id)
+    wt_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "worktree", "add", str(wt_path), branch],
+        cwd=str(repo), capture_output=True, check=True,
+    )
+    return wt_path
+
+
 # ---------------------------------------------------------------------------
 # merge_task tests (with real git)
 # ---------------------------------------------------------------------------
@@ -889,7 +907,11 @@ class TestRunPreMerge:
         assert "no test runner" in output.lower()
 
     def test_merge_with_script_failure(self, hc_home, tmp_path):
-        """merge_task should fail when pre-merge script fails."""
+        """merge_task should fail when pre-merge script fails.
+
+        The pre-merge script now runs in the agent worktree, so we need
+        to create one at the standard path before calling merge_task().
+        """
         repo = _setup_git_repo(tmp_path)
         branch = "alice/T0001"
         _make_feature_branch(repo, branch)
@@ -898,6 +920,7 @@ class TestRunPreMerge:
         set_pre_merge_script(hc_home, SAMPLE_TEAM, "myrepo", "false")
 
         task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
+        _create_agent_worktree_for_task(hc_home, repo, "myrepo", branch, task["id"])
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
 
@@ -906,7 +929,11 @@ class TestRunPreMerge:
         assert "pre-merge" in result.message.lower() or "failed" in result.message.lower()
 
     def test_merge_with_script_success(self, hc_home, tmp_path):
-        """merge_task should succeed when pre-merge script passes."""
+        """merge_task should succeed when pre-merge script passes.
+
+        The pre-merge script now runs in the agent worktree, so we need
+        to create one at the standard path before calling merge_task().
+        """
         repo = _setup_git_repo(tmp_path)
         branch = "alice/T0001"
         _make_feature_branch(repo, branch)
@@ -916,6 +943,7 @@ class TestRunPreMerge:
 
         task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
         update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
+        _create_agent_worktree_for_task(hc_home, repo, "myrepo", branch, task["id"])
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
         assert result.success is True

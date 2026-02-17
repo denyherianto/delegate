@@ -27,6 +27,7 @@ a row to the ``sessions`` table.  The ``Telephone`` subprocess
 lifetime is independent of DB sessions.
 """
 
+import asyncio
 import logging
 import os
 import random
@@ -130,10 +131,25 @@ class TelephoneExchange:
     Created once by the daemon and passed to every ``run_turn()`` call.
     ``close_all()`` is called during graceful shutdown to clean up all
     agent subprocesses.
+
+    Also manages per-worktree asyncio.Locks (keyed by (team, task_id)) that
+    serialize access between the turn dispatcher and merge worker.  Both run
+    in the same event loop, so asyncio.Lock is sufficient.
+
+    Locking protocol:
+    - Turn dispatcher: acquires ``worktree_lock(team, task_id)`` for the
+      duration of the turn.
+    - Merge worker: acquires ``worktree_lock(team, task_id)`` before
+      ``git reset --hard`` in the agent worktree, releases after reset.
+    - This prevents the merge worker from resetting a worktree while an
+      agent turn is actively writing to it.
     """
 
     def __init__(self) -> None:
         self._telephones: dict[tuple[str, str], Any] = {}  # -> Telephone
+        self._worktree_locks: dict[tuple[str, int], asyncio.Lock] = {}
+
+    # --- Telephone registry ---
 
     def get(self, team: str, agent: str) -> Any | None:
         """Return the Telephone for (team, agent), or None."""
@@ -155,6 +171,27 @@ class TelephoneExchange:
             except Exception:
                 pass
         self._telephones.clear()
+
+    # --- Worktree lock registry ---
+
+    def worktree_lock(self, team: str, task_id: int) -> asyncio.Lock:
+        """Return the asyncio.Lock for (team, task_id), creating it if needed.
+
+        The lock is keyed by task_id (not agent name) because worktrees are
+        per-task, not per-agent — and the merge worker only knows task_id.
+        """
+        key = (team, task_id)
+        if key not in self._worktree_locks:
+            self._worktree_locks[key] = asyncio.Lock()
+        return self._worktree_locks[key]
+
+    def discard_worktree_lock(self, team: str, task_id: int) -> None:
+        """Remove the lock for (team, task_id) after task completion.
+
+        Call this after a task reaches ``done`` or ``merge_failed`` to
+        avoid unbounded growth of the lock registry.
+        """
+        self._worktree_locks.pop((team, task_id), None)
 
 
 # ---------------------------------------------------------------------------
@@ -703,6 +740,14 @@ async def run_turn(
         log_caller.reset(_prev_caller)
         return result
 
+    # --- Acquire worktree lock for the duration of this turn ---
+    # This prevents the merge worker from doing ``git reset --hard`` in the
+    # agent worktree while the agent is actively writing to it.
+    worktree_lock = None
+    if current_task_id is not None:
+        worktree_lock = exchange.worktree_lock(team, current_task_id)
+        await worktree_lock.acquire()
+
     # --- Workspace resolution ---
     workspace, workspace_paths = _resolve_workspace(
         hc_home, team, agent, current_task,
@@ -870,6 +915,8 @@ async def run_turn(
         _write_worklog(ad, worklog_lines)
         broadcast_turn_event('turn_ended', agent, team=team, task_id=current_task_id, sender=primary_sender)
         log_caller.reset(_prev_caller)
+        if worktree_lock is not None and worktree_lock.locked():
+            worktree_lock.release()
         return result
 
     # --- Post-turn bookkeeping ---
@@ -997,6 +1044,12 @@ async def run_turn(
 
         broadcast_turn_event('turn_ended', agent, team=team, task_id=current_task_id, sender=primary_sender)
         log_caller.reset(_prev_caller)
+
+        # Release the worktree lock now that the turn is fully complete.
+        # Placed here (after all bookkeeping) so the merge worker waits for
+        # the entire turn to finish, not just the tool calls.
+        if worktree_lock is not None and worktree_lock.locked():
+            worktree_lock.release()
 
     return result
 

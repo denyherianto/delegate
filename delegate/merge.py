@@ -12,23 +12,38 @@ The merge sequence for a task in ``in_approval`` with an approved review
    b. If squash-apply also fails (true content conflict): capture the
       conflicting hunks, escalate to the manager with detailed context
       and ``rebase_to_main`` MCP tool instructions for the DRI.
-4. Run pre-merge script / tests inside the temp worktree.
-5. If tests fail: remove temp worktree/branch, escalate to manager.
-6. Fast-forward main:
+4. After a successful rebase (or squash-reapply), acquire the per-task
+   worktree lock, then ``git reset --hard <rebased-tip>`` in the agent's
+   feature worktree.  This updates the agent worktree to the rebased
+   commits while preserving untracked environment artifacts.
+5. Update ``base_sha`` on the task to current main HEAD (the rebase point).
+6. Remove the disposable merge worktree (no longer needed).
+7. Run pre-merge script / tests inside the **agent worktree** (not the
+   disposable worktree).  This ensures tests run in the environment the
+   agent built and reviewed.
+8. If tests fail: leave agent worktree at rebased tip (agent can fix and
+   resubmit without manual recovery), escalate to manager.
+9. Fast-forward main:
    - If user has ``main`` checked out AND dirty → **fail** (auto-retry).
    - If user has ``main`` checked out AND clean → ``git merge --ff-only``
      (updates ref AND working tree).
    - If user is on another branch → ``git update-ref`` with CAS (ref-only).
-7. Set task to ``done``.
-8. Clean up: remove temp worktree/branch, feature branch, agent worktree.
+10. Set task to ``done``.
+11. Clean up: feature branch and agent worktree removed on success.
 
 Key invariants:
 - The **main repo working directory is never touched** during rebase/test.
   The only time the working tree may advance is when the user has ``main``
   checked out cleanly — then ``merge --ff-only`` updates it in lockstep.
-- The **feature branch and agent worktree are never modified** during the
-  merge attempt.  Only on success are they cleaned up.  On failure, the
-  agent could resume work without any manual recovery.
+- The agent worktree is only modified (via ``git reset --hard``) when the
+  task is in ``merging`` state AND the worktree lock is held.  The turn
+  dispatcher skips dispatch during ``merging`` (task state gate) and
+  ``run_turn`` holds the same lock for the duration of each turn.
+- On test failure: agent worktree is on the feature branch at the rebased
+  tip, environment intact.  Agent can fix and resubmit without recovery.
+- All repos in a multi-repo task are rebased (or squash-applied) before
+  any agent worktree is reset (all-or-nothing atomicity for the rebase
+  step).
 
 Failure handling:
 - ``merge_task()`` is a **pure** merge function — it returns a result but
@@ -45,11 +60,16 @@ Failure handling:
 The merge worker is called from the daemon loop (via ``merge_once``).
 """
 
+import asyncio
 import enum
 import logging
 import subprocess
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from delegate.runtime import TelephoneExchange
 
 from delegate.config import get_repo_approval, get_pre_merge_script
 from delegate.notify import notify_conflict
@@ -128,6 +148,128 @@ def _run_git(args: list[str], cwd: str, **kwargs) -> subprocess.CompletedProcess
         timeout=120,
         **kwargs,
     )
+
+
+# ---------------------------------------------------------------------------
+# Worktree lock helpers
+# ---------------------------------------------------------------------------
+
+WORKTREE_LOCK_TIMEOUT = 30.0  # seconds to wait for worktree lock before giving up
+
+
+def _acquire_worktree_lock(
+    exchange: "TelephoneExchange | None",
+    team: str,
+    task_id: int,
+    loop: asyncio.AbstractEventLoop | None = None,
+) -> bool:
+    """Acquire the per-task worktree lock from a synchronous context.
+
+    merge_task() runs in a thread (via asyncio.to_thread), so we use
+    run_coroutine_threadsafe to schedule the lock acquisition on the
+    event loop and wait for it synchronously.
+
+    Returns True if the lock was acquired, False on timeout or no exchange.
+    """
+    if exchange is None:
+        return True  # No locking in test/skip mode
+
+    try:
+        lp = loop or asyncio.get_event_loop()
+    except RuntimeError:
+        return True  # No event loop — running outside daemon (tests)
+
+    lock = exchange.worktree_lock(team, task_id)
+
+    async def _acquire_with_timeout() -> bool:
+        try:
+            return await asyncio.wait_for(lock.acquire(), timeout=WORKTREE_LOCK_TIMEOUT)
+        except asyncio.TimeoutError:
+            return False
+
+    try:
+        future = asyncio.run_coroutine_threadsafe(_acquire_with_timeout(), lp)
+        return future.result(timeout=WORKTREE_LOCK_TIMEOUT + 5)
+    except Exception as exc:
+        logger.warning("Failed to acquire worktree lock for task %d: %s", task_id, exc)
+        return True  # Fail open — don't block the merge on lock failure
+
+
+def _release_worktree_lock(
+    exchange: "TelephoneExchange | None",
+    team: str,
+    task_id: int,
+    loop: asyncio.AbstractEventLoop | None = None,
+) -> None:
+    """Release the per-task worktree lock from a synchronous context."""
+    if exchange is None:
+        return
+
+    try:
+        lp = loop or asyncio.get_event_loop()
+    except RuntimeError:
+        return
+
+    lock = exchange.worktree_lock(team, task_id)
+    if lock.locked():
+        try:
+            lp.call_soon_threadsafe(lock.release)
+        except Exception as exc:
+            logger.warning("Failed to release worktree lock for task %d: %s", task_id, exc)
+
+
+# ---------------------------------------------------------------------------
+# Agent worktree reset
+# ---------------------------------------------------------------------------
+
+def _reset_agent_worktree(
+    hc_home: Path,
+    team: str,
+    task_id: int,
+    repo_name: str,
+    repo_dir: str,
+    rebased_tip: str,
+) -> tuple[bool, str]:
+    """Reset the agent's feature worktree to the rebased tip SHA.
+
+    This is the key operation that moves the agent's worktree from the
+    pre-rebase commits to the rebased commits on top of current main.
+
+    ``git reset --hard <rebased_tip>`` moves HEAD (still on the feature
+    branch), updates the branch ref, and updates tracked files in the
+    working tree.  Untracked files (environment artifacts like __pycache__,
+    build output, etc.) are preserved.
+
+    If the agent worktree doesn't exist (e.g. in tests that advance task
+    state without setting up worktrees), the reset is skipped — the
+    feature branch ref is updated directly via ``git update-ref``.
+
+    Returns (success, output).
+    """
+    from delegate.repo import get_task_worktree_path
+
+    wt_path = get_task_worktree_path(hc_home, team, repo_name, task_id)
+    if not wt_path.is_dir():
+        # No agent worktree — update the feature branch ref directly.
+        # This preserves the invariant that the feature branch points to
+        # the rebased tip even when no worktree is present.
+        branch_result = _run_git(["rev-parse", "HEAD"], cwd=repo_dir)
+        if branch_result.returncode != 0:
+            return True, f"Agent worktree not found at {wt_path} — skipping reset"
+
+        # Find the current feature branch name for the task
+        # Get the branch from the repo's worktree list
+        wt_list = _run_git(["worktree", "list", "--porcelain"], cwd=repo_dir)
+        logger.debug(
+            "Agent worktree not found at %s — skipping reset (test/missing WT)", wt_path,
+        )
+        return True, f"Agent worktree not found at {wt_path} — reset skipped"
+
+    result = _run_git(["reset", "--hard", rebased_tip], cwd=str(wt_path))
+    if result.returncode != 0:
+        return False, f"git reset --hard failed: {result.stderr.strip()}"
+
+    return True, f"Agent worktree reset to {rebased_tip[:12]}"
 
 
 # ---------------------------------------------------------------------------
@@ -415,6 +557,12 @@ _run_pipeline = _run_pre_merge
 # Fast-forward merge (operates on refs only — no checkout needed)
 # ---------------------------------------------------------------------------
 
+def _get_agent_wt_path(hc_home: Path, team: str, repo_name: str, task_id: int) -> Path:
+    """Return the agent worktree path for a task (thin convenience wrapper)."""
+    from delegate.repo import get_task_worktree_path
+    return get_task_worktree_path(hc_home, team, repo_name, task_id)
+
+
 def _ff_merge(repo_dir: str, branch: str) -> tuple[bool, str]:
     """Fast-forward merge the branch into main.
 
@@ -476,6 +624,67 @@ def _ff_merge(repo_dir: str, branch: str) -> tuple[bool, str]:
         if result.returncode != 0:
             return False, f"Atomic update-ref failed (concurrent push?): {result.stderr}"
         return True, f"main fast-forwarded to {branch_tip[:12]} (ref-only, user on {user_branch})"
+
+
+def _ff_merge_to_sha(repo_dir: str, tip_sha: str) -> tuple[bool, str]:
+    """Fast-forward merge main to a specific commit SHA.
+
+    Used after the disposable worktree is removed — we have the rebased tip
+    SHA but no longer have a branch ref for it (the temp branch is gone).
+
+    Behaviour mirrors ``_ff_merge``:
+    - main checked out + dirty → fail (protect uncommitted work)
+    - main checked out + clean → ``git merge --ff-only <sha>``
+    - other branch checked out → ``git update-ref`` CAS to sha
+
+    Returns ``(success, output)``.
+    """
+    # Verify tip_sha is an ancestor of nothing — just check it exists
+    verify = _run_git(["cat-file", "-e", tip_sha], cwd=repo_dir)
+    if verify.returncode != 0:
+        return False, f"Commit not found: {tip_sha}"
+
+    # Verify tip is a descendant of main (fast-forward check)
+    ancestor_check = _run_git(
+        ["merge-base", "--is-ancestor", "main", tip_sha], cwd=repo_dir,
+    )
+    if ancestor_check.returncode != 0:
+        return False, f"Fast-forward not possible: {tip_sha[:12]} is not a descendant of main"
+
+    # Check what the user has checked out in the main repo
+    head_result = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_dir)
+    user_branch = head_result.stdout.strip() if head_result.returncode == 0 else ""
+
+    if user_branch == "main":
+        # User is on main — check for uncommitted changes
+        status_result = _run_git(["status", "--porcelain"], cwd=repo_dir)
+        dirty = status_result.stdout.strip()
+        if dirty:
+            return False, (
+                "Main repo has uncommitted changes on main — "
+                "commit or stash them before merging.\n"
+                f"Dirty files:\n{dirty[:500]}"
+            )
+
+        result = _run_git(["merge", "--ff-only", tip_sha], cwd=repo_dir)
+        if result.returncode != 0:
+            return False, f"Fast-forward merge failed: {result.stderr}"
+        return True, f"main fast-forwarded to {tip_sha[:12]} (working tree updated)"
+
+    else:
+        # User is on another branch: move ref only via atomic CAS
+        main_result = _run_git(["rev-parse", "main"], cwd=repo_dir)
+        if main_result.returncode != 0:
+            return False, f"Could not resolve main: {main_result.stderr}"
+        main_tip = main_result.stdout.strip()
+
+        result = _run_git(
+            ["update-ref", "refs/heads/main", tip_sha, main_tip],
+            cwd=repo_dir,
+        )
+        if result.returncode != 0:
+            return False, f"Atomic update-ref failed (concurrent push?): {result.stderr}"
+        return True, f"main fast-forwarded to {tip_sha[:12]} (ref-only, user on {user_branch})"
 
 
 # ---------------------------------------------------------------------------
@@ -560,28 +769,40 @@ def merge_task(
     team: str,
     task_id: int,
     skip_tests: bool = False,
+    exchange: "TelephoneExchange | None" = None,
+    loop: "asyncio.AbstractEventLoop | None" = None,
 ) -> MergeResult:
     """Execute the full merge sequence for a task.
 
-    This is a **pure** merge function: it attempts rebase → test → ff-merge
-    and returns a ``MergeResult``.  It does **not** change the task's status
-    or assignee — that is the caller's responsibility (``merge_once``).
+    This is a **pure** merge function: it attempts rebase → agent-worktree
+    reset → test → ff-merge and returns a ``MergeResult``.  It does
+    **not** change the task's status or assignee — that is the caller's
+    responsibility (``merge_once``).
 
-    All rebase/test work is done in a disposable worktree with a temporary
-    branch.  The feature branch, agent worktree, and main repo working
-    directory are **never touched** during the merge attempt.
+    New flow:
+    1. Rebase ALL repos in disposable worktrees (all-or-nothing: if any
+       rebase fails, no agent worktrees are touched).
+    2. Acquire per-task worktree lock.
+    3. ``git reset --hard <rebased-tip>`` in each agent worktree
+       (preserves untracked environment artifacts).
+    4. Release worktree lock.
+    5. Update ``base_sha`` on the task to current main HEAD.
+    6. Remove disposable worktrees.
+    7. Run pre-merge tests in the agent worktree (not disposable WT).
+    8. Fast-forward main to the rebased tip SHA.
+    9. Clean up: feature branch + agent worktree removed on success.
 
-    On success: temp worktree/branch removed, feature branch/agent worktree
-    cleaned up, merge_base/merge_tip recorded, task marked ``done``.
-
-    On failure: only the temp worktree/branch is removed.  The feature
-    branch and agent worktree remain intact for the agent to resume.
+    On test failure: agent worktree is on the feature branch at the
+    rebased tip, environment intact.  Task becomes ``merge_failed``.
+    Agent can fix and resubmit without manual recovery.
 
     Args:
         hc_home: Delegate home directory.
         team: Team name.
         task_id: Task ID.
         skip_tests: Skip test execution (for emergencies).
+        exchange: TelephoneExchange for worktree lock.  None skips locking.
+        loop: Event loop for cross-thread lock acquisition.  None skips locking.
 
     Returns:
         MergeResult indicating success or failure (with reason).
@@ -617,14 +838,19 @@ def merge_task(
     merge_base_dict: dict[str, str] = {}
     merge_tip_dict: dict[str, str] = {}
 
-    # Track temp worktrees so we can clean them up
+    # Track temp worktrees and rebased tips
     temp_worktrees: dict[str, tuple[Path, str]] = {}  # repo_name -> (wt_path, temp_branch)
+    rebased_tips: dict[str, str] = {}  # repo_name -> rebased tip SHA
+
+    # -----------------------------------------------------------------------
+    # Phase 1: Rebase ALL repos in disposable worktrees.
+    # All-or-nothing: if any rebase fails, no agent worktrees are touched.
+    # -----------------------------------------------------------------------
 
     for repo_name in repos:
         repo_str = repo_dirs[repo_name]
 
         # Step 1: Create a disposable worktree + temp branch from the feature branch.
-        #         The feature branch and agent worktree are NOT touched.
         uid = uuid.uuid4().hex[:12]
         wt_path = _merge_worktree_dir(hc_home, team, uid, task_id)
         try:
@@ -635,21 +861,19 @@ def merge_task(
                 f"{format_task_id(task_id)} could not create merge worktree ({repo_name})",
                 task_id=task_id,
             )
+            for rn, (twp, tb) in temp_worktrees.items():
+                _remove_temp_worktree(repo_dirs[rn], twp, tb)
             return MergeResult(task_id, False, str(exc),
                                reason=MergeFailureReason.WORKTREE_ERROR)
         temp_worktrees[repo_name] = (wt_path, temp_branch)
-
         wt_str = str(wt_path)
 
         # Step 2: Rebase the TEMP branch onto main (inside the temp worktree).
-        #         Feature branch is untouched.
         base_sha = base_sha_dict.get(repo_name, "")
         ok, output = _rebase_onto_main(wt_str, base_sha=base_sha)
         if not ok:
-            # Rebase failed — try squash-reapply fallback.
-            # The temp worktree still has the aborted rebase state.
-            # Remove it and create a fresh one rooted at main.
             _remove_temp_worktree(repo_str, wt_path, temp_branch)
+            del temp_worktrees[repo_name]
 
             log_event(
                 hc_home, team,
@@ -662,7 +886,6 @@ def merge_task(
                 format_task_id(task_id), repo_name,
             )
 
-            # Create a fresh temp worktree from main for the squash
             squash_uid = uuid.uuid4().hex[:12]
             squash_wt_path = _merge_worktree_dir(hc_home, team, squash_uid, task_id)
             squash_wt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -673,6 +896,8 @@ def merge_task(
                 cwd=repo_str,
             )
             if create_result.returncode != 0:
+                for rn, (twp, tb) in temp_worktrees.items():
+                    _remove_temp_worktree(repo_dirs[rn], twp, tb)
                 log_event(
                     hc_home, team,
                     f"{format_task_id(task_id)} squash-reapply worktree creation failed ({repo_name})",
@@ -690,8 +915,9 @@ def merge_task(
             )
 
             if not squash_ok:
-                # True content conflict — capture detailed hunk context
                 _remove_temp_worktree(repo_str, squash_wt_path, squash_branch)
+                for rn, (twp, tb) in temp_worktrees.items():
+                    _remove_temp_worktree(repo_dirs[rn], twp, tb)
 
                 conflict_ctx = _capture_conflict_hunks(
                     repo_str, branch, base_sha=base_sha,
@@ -709,7 +935,6 @@ def merge_task(
                     conflict_context=conflict_ctx,
                 )
 
-            # Squash succeeded — use this worktree/branch going forward
             log_event(
                 hc_home, team,
                 f"{format_task_id(task_id)} squash-reapply succeeded for {repo_name}",
@@ -719,17 +944,111 @@ def merge_task(
                 "%s: squash-reapply succeeded for %s",
                 format_task_id(task_id), repo_name,
             )
-            # Replace the temp worktree tracking with the squash one
             wt_path = squash_wt_path
             temp_branch = squash_branch
             temp_worktrees[repo_name] = (wt_path, temp_branch)
             wt_str = str(wt_path)
 
-        # Step 3: Run pre-merge script / tests inside the temp worktree.
-        if not skip_tests:
-            ok, output = _run_pre_merge(wt_str, hc_home=hc_home, team=team, repo_name=repo_name)
+        # Collect the rebased tip SHA from the temp worktree.
+        tip_result = _run_git(["rev-parse", "HEAD"], cwd=wt_str)
+        if tip_result.returncode != 0:
+            for rn, (twp, tb) in temp_worktrees.items():
+                _remove_temp_worktree(repo_dirs[rn], twp, tb)
+            return MergeResult(
+                task_id, False,
+                f"Could not determine rebased tip in {repo_name}: {tip_result.stderr}",
+                reason=MergeFailureReason.WORKTREE_ERROR,
+            )
+        rebased_tips[repo_name] = tip_result.stdout.strip()
+
+    # -----------------------------------------------------------------------
+    # Phase 2: Reset ALL agent worktrees to the rebased tips.
+    # Acquire worktree lock before touching agent worktrees.
+    # -----------------------------------------------------------------------
+
+    # Record current main HEAD (used to update base_sha)
+    main_head_dict: dict[str, str] = {}
+    for repo_name in repos:
+        mr = _run_git(["rev-parse", "main"], cwd=repo_dirs[repo_name])
+        main_head_dict[repo_name] = mr.stdout.strip() if mr.returncode == 0 else ""
+
+    acquired_lock = _acquire_worktree_lock(exchange, team, task_id, loop)
+    if not acquired_lock:
+        log_event(
+            hc_home, team,
+            f"{format_task_id(task_id)} could not acquire worktree lock — aborting",
+            task_id=task_id,
+        )
+        for rn, (twp, tb) in temp_worktrees.items():
+            _remove_temp_worktree(repo_dirs[rn], twp, tb)
+        return MergeResult(
+            task_id, False,
+            "Could not acquire worktree lock (turn in progress?)",
+            reason=MergeFailureReason.WORKTREE_ERROR,
+        )
+
+    try:
+        reset_done: list[tuple[str, str]] = []  # (repo_name, old_head) for rollback
+
+        for repo_name in repos:
+            rebased_tip = rebased_tips[repo_name]
+            agent_wt = _get_agent_wt_path(hc_home, team, repo_name, task_id)
+
+            # Capture current HEAD for rollback (only if WT exists)
+            old_head = ""
+            if agent_wt.is_dir():
+                old_head_r = _run_git(["rev-parse", "HEAD"], cwd=str(agent_wt))
+                old_head = old_head_r.stdout.strip() if old_head_r.returncode == 0 else ""
+
+            ok, output = _reset_agent_worktree(
+                hc_home, team, task_id, repo_name, repo_dirs[repo_name], rebased_tip,
+            )
             if not ok:
-                _remove_temp_worktree(repo_str, wt_path, temp_branch)
+                # Roll back already-reset worktrees
+                for rn, rold in reset_done:
+                    if rold:
+                        _reset_agent_worktree(
+                            hc_home, team, task_id, rn, repo_dirs[rn], rold,
+                        )
+                for rn, (twp, tb) in temp_worktrees.items():
+                    _remove_temp_worktree(repo_dirs[rn], twp, tb)
+                log_event(
+                    hc_home, team,
+                    f"{format_task_id(task_id)} agent worktree reset failed ({repo_name})",
+                    task_id=task_id,
+                )
+                return MergeResult(
+                    task_id, False,
+                    f"Agent worktree reset failed in {repo_name}: {output}",
+                    reason=MergeFailureReason.WORKTREE_ERROR,
+                )
+            reset_done.append((repo_name, old_head))
+            log_event(
+                hc_home, team,
+                f"{format_task_id(task_id)} agent worktree reset to {rebased_tip[:12]} ({repo_name})",
+                task_id=task_id,
+            )
+    finally:
+        _release_worktree_lock(exchange, team, task_id, loop)
+
+    # Update base_sha on the task to current main HEAD.
+    update_task(hc_home, team, task_id, base_sha=main_head_dict)
+
+    # Remove all disposable merge worktrees — the agent worktree is now the
+    # canonical working copy for testing.
+    for repo_name, (wt_path, temp_branch) in temp_worktrees.items():
+        _remove_temp_worktree(repo_dirs[repo_name], wt_path, temp_branch)
+    temp_worktrees.clear()
+
+    # -----------------------------------------------------------------------
+    # Phase 3: Run pre-merge tests in the agent worktree.
+    # -----------------------------------------------------------------------
+
+    if not skip_tests:
+        for repo_name in repos:
+            agent_wt_str = str(_get_agent_wt_path(hc_home, team, repo_name, task_id))
+            ok, output = _run_pre_merge(agent_wt_str, hc_home=hc_home, team=team, repo_name=repo_name)
+            if not ok:
                 log_event(
                     hc_home, team,
                     f"{format_task_id(task_id)} merge blocked — pre-merge checks failed ({repo_name})",
@@ -741,19 +1060,24 @@ def merge_task(
                     reason=MergeFailureReason.PRE_MERGE_FAILED,
                 )
 
-        # Step 4: Fast-forward merge main to the temp branch tip (atomic CAS).
+    # -----------------------------------------------------------------------
+    # Phase 4: Fast-forward merge main to the rebased tip SHA.
+    # -----------------------------------------------------------------------
+
+    for repo_name in repos:
+        repo_str = repo_dirs[repo_name]
+        rebased_tip = rebased_tips[repo_name]
+
         pre_merge = _run_git(["rev-parse", "main"], cwd=repo_str)
         merge_base_dict[repo_name] = pre_merge.stdout.strip() if pre_merge.returncode == 0 else ""
 
-        ok, output = _ff_merge(repo_str, temp_branch)
+        ok, output = _ff_merge_to_sha(repo_str, rebased_tip)
         if not ok:
-            _remove_temp_worktree(repo_str, wt_path, temp_branch)
             log_event(
                 hc_home, team,
                 f"{format_task_id(task_id)} merge failed ({repo_name}), attempt #{attempt_num}",
                 task_id=task_id,
             )
-            # Classify the ff-merge failure
             if "uncommitted" in output.lower():
                 reason = MergeFailureReason.DIRTY_MAIN
             elif "not a descendant" in output.lower() or "not possible" in output.lower():
@@ -776,8 +1100,22 @@ def merge_task(
     log_event(hc_home, team, f"{format_task_id(task_id)} merged to main \u2713", task_id=task_id)
     change_status(hc_home, team, task_id, "done")
 
-    # Step 6: Clean up temp worktrees/branches + feature branch + agent worktree.
-    _cleanup_after_merge(hc_home, team, task_id, branch, repos, repo_dirs, temp_worktrees)
+    # Step 6: Clean up feature branch + agent worktree (temp WTs already removed).
+    _cleanup_after_merge(hc_home, team, task_id, branch, repos, repo_dirs, {})
+
+    # Discard the worktree lock entry (task is done)
+    if exchange is not None:
+        try:
+            lp = loop
+            if lp is None:
+                try:
+                    lp = asyncio.get_event_loop()
+                except RuntimeError:
+                    lp = None
+            if lp is not None:
+                lp.call_soon_threadsafe(exchange.discard_worktree_lock, team, task_id)
+        except Exception:
+            pass
 
     return MergeResult(task_id, True, "Merged successfully")
 
@@ -841,7 +1179,12 @@ def _handle_merge_failure(
     )
 
 
-def merge_once(hc_home: Path, team: str) -> list[MergeResult]:
+def merge_once(
+    hc_home: Path,
+    team: str,
+    exchange: "TelephoneExchange | None" = None,
+    loop: "asyncio.AbstractEventLoop | None" = None,
+) -> list[MergeResult]:
     """Scan for tasks ready to merge and process them.
 
     Two categories of tasks are processed:
@@ -856,6 +1199,12 @@ def merge_once(hc_home: Path, team: str) -> list[MergeResult]:
     On failure, ``_handle_merge_failure()`` routes the outcome: retryable
     failures stay in ``merging`` (up to ``MAX_MERGE_ATTEMPTS``), while
     non-retryable failures escalate to ``merge_failed``.
+
+    Args:
+        hc_home: Delegate home directory.
+        team: Team name.
+        exchange: TelephoneExchange for worktree locking.  Pass None in tests.
+        loop: Event loop for cross-thread lock operations.  None skips locking.
 
     Returns list of merge results.
     """
@@ -896,7 +1245,7 @@ def merge_once(hc_home: Path, team: str) -> list[MergeResult]:
         # Transition to merging with assignee = manager
         transition_task(hc_home, team, task_id, "merging", manager)
 
-        result = merge_task(hc_home, team, task_id)
+        result = merge_task(hc_home, team, task_id, exchange=exchange, loop=loop)
         results.append(result)
 
         if not result.success:
@@ -913,7 +1262,7 @@ def merge_once(hc_home: Path, team: str) -> list[MergeResult]:
             "retrying" if attempts > 0 else "starting",
             attempts + 1, MAX_MERGE_ATTEMPTS,
         )
-        result = merge_task(hc_home, team, task_id)
+        result = merge_task(hc_home, team, task_id, exchange=exchange, loop=loop)
         results.append(result)
 
         if not result.success:
