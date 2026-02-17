@@ -61,9 +61,16 @@ def build_agent_tools(hc_home: Path, team: str, agent: str) -> list:
         "mailbox_send",
         "Send a message to another team member. This is the ONLY way to communicate with others.",
         {
-            "recipient": str,
-            "message": str,
-            "task_id": int,
+            "type": "object",
+            "properties": {
+                "recipient": {"type": "string"},
+                "message": {"type": "string"},
+                "task_id": {
+                    "type": ["integer", "null"],
+                    "description": "Optional task ID to associate the message with. Omit or pass null for messages not related to a specific task.",
+                },
+            },
+            "required": ["recipient", "message"],
         },
     )
     async def mailbox_send(args: dict) -> dict:
@@ -73,7 +80,8 @@ def build_agent_tools(hc_home: Path, team: str, agent: str) -> list:
             recipient = args["recipient"]
             message = args["message"]
             task_id = args.get("task_id")
-            # Convert 0 to None since task IDs start at 1
+            # Defense-in-depth: convert 0 to None (task IDs start at 1;
+            # some MCP clients may default missing int params to 0)
             if task_id == 0:
                 task_id = None
 
