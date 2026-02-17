@@ -416,7 +416,14 @@ export function renderFileReferences(html, team) {
     const fileName = filePath.split('/').pop();
     let url;
     if (filePath.startsWith('/') || filePath.startsWith('~')) {
-      url = `/teams/${team}/files/content?path=${encodeURIComponent(filePath)}`;
+      // Detect upload paths and use the direct file-serving route
+      const uploadMatch = filePath.match(/\/uploads\/(\d{4})\/(\d{2})\/(.+)$/);
+      if (uploadMatch) {
+        const [, year, month, fname] = uploadMatch;
+        url = `/teams/${team}/uploads/${year}/${month}/${encodeURIComponent(fname)}`;
+      } else {
+        url = `/teams/${team}/files/content?path=${encodeURIComponent(filePath)}`;
+      }
     } else {
       url = `/teams/${team}/${filePath}`;
     }
