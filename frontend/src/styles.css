@@ -157,7 +157,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 #app { width: 100%; height: 100%; min-height: 0; }
-.main { flex: 1; display: flex; flex-direction: column; min-height: 0; height: 100vh; }
+.main { flex: 1; display: flex; flex-direction: column; min-height: 0; height: 100%; }
 .content { width: 100%; max-width: 960px; margin: 0 auto; padding: 16px 24px; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .panel { display: none; }
 .panel.active { display: flex; flex-direction: column; flex: 1; min-height: 0; position: relative; }
@@ -168,7 +168,7 @@ body {
 .sb {
   width: 240px;
   min-width: 240px;
-  height: 100vh;
+  height: 100%;
   position: sticky;
   top: 0;
   background: var(--bg-sidebar);
@@ -4240,7 +4240,8 @@ select option:hover {
 .pwa-banner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 16px;
   padding: 8px 16px;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
