@@ -503,7 +503,7 @@ def _create_telephone(
         preamble=preamble,
         cwd=team_dir(hc_home, team),
         model=model,
-        allowed_write_paths=_write_paths_for_role(hc_home, team, agent, role),
+        allowed_write_paths=_write_paths_for_role(hc_home, team, agent, role) + [tmpdir],
         add_dirs=add_dirs,
         disallowed_tools=DISALLOWED_TOOLS,
         denied_bash_patterns=DENIED_BASH_PATTERNS,
@@ -733,9 +733,11 @@ async def run_turn(
     # Workers get their base paths (agent dir + shared) plus any task
     # worktree paths that change per-turn.
     if role != "manager" and workspace_paths:
+        _tmpdir = str(Path(tempfile.gettempdir()).resolve())
         tel.allowed_write_paths = (
             _write_paths_for_role(hc_home, team, agent, role)
             + [str(p) for p in workspace_paths.values()]
+            + [_tmpdir]
         )
 
     user_msg = prompt_builder.build_user_message(
