@@ -56,7 +56,7 @@ function InlineCommentForm({ file, line, taskId, onSaved, onCancel }) {
     if (!body.trim()) return;
     setSaving(true);
     try {
-      const comment = await api.postReviewComment(currentTeam.value, taskId, {
+      const comment = await api.postReviewComment(taskId, {
         file, line, body: body.trim(),
       });
       setBody("");

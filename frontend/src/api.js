@@ -167,6 +167,11 @@ export async function fetchCostSummary(team) {
 
 // --- Global task endpoints (no team context needed) ---
 
+export async function fetchTaskDiff(taskId) {
+  const r = await fetch(`/api/tasks/${taskId}/diff`);
+  return r.ok ? r.json() : { diff: {}, branch: "" };
+}
+
 export async function fetchTaskStats(taskId) {
   const r = await fetch(`/api/tasks/${taskId}/stats`);
   return r.ok ? r.json() : null;
