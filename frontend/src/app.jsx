@@ -28,6 +28,7 @@ import { NotificationBell } from "./components/NotificationBell.jsx";
 import { NotificationPopover } from "./components/NotificationPopover.jsx";
 import { TeamSwitcher } from "./components/TeamSwitcher.jsx";
 import { NoTeamsModal } from "./components/NoTeamsModal.jsx";
+import { PwaBanner } from "./components/PwaBanner.jsx";
 import { showToast, showActionToast, showReturnToast } from "./toast.js";
 
 // ── Per-team backing stores (plain objects, not signals) ──
@@ -709,6 +710,7 @@ function App() {
 
   return (
     <>
+      <PwaBanner />
       <Sidebar />
       <div class="main">
         <div class="main-header">
