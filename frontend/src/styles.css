@@ -2635,7 +2635,7 @@ select option:hover {
   border: none;
   border-radius: 0;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-size: 12px;
   overflow: hidden;
 }
 
