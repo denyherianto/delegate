@@ -29,6 +29,7 @@ from pathlib import Path
 
 import click
 
+from delegate.fmt import get_version
 from delegate.paths import home as _home, teams_dir as _teams_dir, team_dir as _team_dir
 
 
@@ -38,6 +39,7 @@ def _get_home(ctx: click.Context) -> Path:
 
 
 @click.group()
+@click.version_option(version=get_version(), prog_name="delegate")
 @click.option(
     "--home", "home_override", type=click.Path(path_type=Path), default=None,
     envvar="DELEGATE_HOME",

@@ -17,6 +17,15 @@ def runner():
     return CliRunner()
 
 
+def test_version_flag(runner):
+    """--version prints the program name and version string."""
+    result = runner.invoke(main, ["--version"])
+    assert result.exit_code == 0
+    assert "delegate" in result.output
+    # Output format: "delegate, version X.Y.Z" or "delegate, version dev"
+    assert "version" in result.output
+
+
 def test_nuke_removes_directory(tmp_path, runner):
     """Nuke command removes the hc_home directory."""
     hc = tmp_path / "hc"
