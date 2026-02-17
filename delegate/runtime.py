@@ -359,38 +359,47 @@ class TurnResult:
 # Tool-summary extractor (feeds ring buffer + SSE + worklog)
 # ---------------------------------------------------------------------------
 
-# MCP tool formatters — convert tool input dicts to human-readable one-liners.
-# Each lambda receives the tool's ``input`` dict and returns a detail string.
+# MCP tool formatters — convert tool input dicts to human-readable (category, detail) tuples.
+# Each lambda receives the tool's ``input`` dict and returns a (category, detail) tuple.
+# Category groups related tools for display (e.g. "task", "message", "git", "repo").
 MCP_TOOL_FORMATTERS: dict[str, Any] = {
-    # Task management
+    # Task management — category: "task"
     "task_create": lambda inp: (
-        f'Created task: "{inp.get("title", "")[:40]}" ({inp.get("priority", "medium")})'
+        "task",
+        f'create T{inp.get("task_id", 0):04d}: "{inp.get("title", "")[:40]}"'
+        + (f' ({inp["priority"]})' if inp.get("priority") and inp["priority"] != "medium" else ""),
     ),
     "task_assign": lambda inp: (
-        f'Assigned T{inp.get("task_id", 0):04d} to {inp.get("assignee", "?")}'
+        "task",
+        f'assign T{inp.get("task_id", 0):04d} to {inp.get("assignee", "?").title()}',
     ),
     "task_status": lambda inp: (
-        f'T{inp.get("task_id", 0):04d} \u2192 {inp.get("new_status", "?")}'
+        "task",
+        f'T{inp.get("task_id", 0):04d} -> {inp.get("new_status", "?")}',
     ),
-    "task_comment": lambda inp: f'Commented on T{inp.get("task_id", 0):04d}',
-    "task_show": lambda inp: f'Viewed T{inp.get("task_id", 0):04d}',
-    "task_list": lambda inp: "Listed tasks",
-    "task_cancel": lambda inp: f'Cancelled T{inp.get("task_id", 0):04d}',
+    "task_comment": lambda inp: ("task", f'comment on T{inp.get("task_id", 0):04d}'),
+    "task_show": lambda inp: ("task", f'show T{inp.get("task_id", 0):04d}'),
+    "task_list": lambda inp: ("task", "list tasks"),
+    "task_cancel": lambda inp: ("task", f'cancel T{inp.get("task_id", 0):04d}'),
     "task_attach": lambda inp: (
-        f'Attached {os.path.basename(inp.get("file_path", "?"))} to T{inp.get("task_id", 0):04d}'
+        "task",
+        f'attach {os.path.basename(inp.get("file_path", "?"))} to T{inp.get("task_id", 0):04d}',
     ),
     "task_detach": lambda inp: (
-        f'Detached {os.path.basename(inp.get("file_path", "?"))} from T{inp.get("task_id", 0):04d}'
+        "task",
+        f'detach {os.path.basename(inp.get("file_path", "?"))} from T{inp.get("task_id", 0):04d}',
     ),
-    # Communication
+    # Communication — category: "message"
     "mailbox_send": lambda inp: (
-        f'Sent message to {inp.get("recipient", "?")}'
-        + (f' (re: T{inp["task_id"]:04d})' if inp.get("task_id") else "")
+        "message",
+        f'send to {inp.get("recipient", "?").title()}: "{(inp.get("message", "") or "")[:40]}"'
+        + ("..." if len(inp.get("message", "") or "") > 40 else ""),
     ),
-    "mailbox_inbox": lambda inp: "Checked inbox",
-    # Repository
-    "repo_list": lambda inp: "Listed repos",
-    "rebase_to_main": lambda inp: f'Rebasing T{inp.get("task_id", 0):04d} onto main',
+    "mailbox_inbox": lambda inp: ("message", "check inbox"),
+    # Repository — category: "repo"
+    "repo_list": lambda inp: ("repo", "list repos"),
+    # Git — category: "git"
+    "rebase_to_main": lambda inp: ("git", f'rebase T{inp.get("task_id", 0):04d} to main'),
 }
 
 
@@ -413,7 +422,7 @@ def _extract_tool_summary(block: Any) -> tuple[str, str]:
         return name, inp.get("pattern", "")
     elif name in MCP_TOOL_FORMATTERS:
         try:
-            return name, MCP_TOOL_FORMATTERS[name](inp)
+            return MCP_TOOL_FORMATTERS[name](inp)
         except Exception as exc:  # noqa: BLE001
             logger.warning("MCP formatter error for %s: %s", name, exc)
             keys = ", ".join(sorted(inp.keys())[:3]) if inp else ""

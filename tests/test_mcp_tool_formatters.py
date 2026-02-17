@@ -1,8 +1,8 @@
 """Tests for MCP tool activity summary formatters.
 
-Verifies that _extract_tool_summary() produces human-readable one-liners
-for all 13 MCP tools, with correct truncation, optional params, and
-graceful fallback on malformed input.
+Verifies that _extract_tool_summary() produces human-readable (category, detail)
+tuples for all 13 MCP tools, with correct truncation, optional params,
+name capitalization, and graceful fallback on malformed input.
 """
 
 import types
@@ -21,32 +21,53 @@ def _block(name: str, **kwargs) -> object:
 
 
 # ---------------------------------------------------------------------------
-# Task management tools
+# Task management tools — category must be "task"
 # ---------------------------------------------------------------------------
 
 
 class TestTaskCreate:
-    def test_basic(self):
+    def test_basic_high_priority(self):
         tool, detail = _extract_tool_summary(
-            _block("task_create", title="Fix the bug", priority="high")
+            _block("task_create", task_id=45, title="Fix the bug", priority="high")
         )
-        assert tool == "task_create"
-        assert detail == 'Created task: "Fix the bug" (high)'
+        assert tool == "task"
+        assert detail == 'create T0045: "Fix the bug" (high)'
+
+    def test_medium_priority_omitted(self):
+        # priority "medium" is the default and should NOT appear in detail
+        _, detail = _extract_tool_summary(
+            _block("task_create", task_id=45, title="Fix the bug", priority="medium")
+        )
+        assert detail == 'create T0045: "Fix the bug"'
+        assert "medium" not in detail
+
+    def test_missing_priority_omitted(self):
+        # missing priority treated same as medium — omit
+        _, detail = _extract_tool_summary(
+            _block("task_create", task_id=1, title="No priority")
+        )
+        assert "medium" not in detail
+        assert "(" not in detail
 
     def test_title_truncated_to_40_chars(self):
         long_title = "A" * 50
         _, detail = _extract_tool_summary(
-            _block("task_create", title=long_title, priority="medium")
+            _block("task_create", task_id=1, title=long_title, priority="low")
         )
-        assert detail == f'Created task: "{"A" * 40}" (medium)'
-
-    def test_priority_defaults_to_medium_when_missing(self):
-        _, detail = _extract_tool_summary(_block("task_create", title="No priority"))
-        assert "(medium)" in detail
+        assert f'"{"A" * 40}"' in detail
+        assert "A" * 41 not in detail
 
     def test_empty_title(self):
-        _, detail = _extract_tool_summary(_block("task_create", title="", priority="low"))
-        assert detail == 'Created task: "" (low)'
+        _, detail = _extract_tool_summary(
+            _block("task_create", task_id=2, title="", priority="low")
+        )
+        assert detail == 'create T0002: "" (low)'
+
+    def test_task_id_zero_padded(self):
+        _, detail = _extract_tool_summary(
+            _block("task_create", task_id=3, title="Short", priority="high")
+        )
+        assert "T0003" in detail
 
 
 class TestTaskAssign:
@@ -54,16 +75,23 @@ class TestTaskAssign:
         tool, detail = _extract_tool_summary(
             _block("task_assign", task_id=15, assignee="cubic")
         )
-        assert tool == "task_assign"
-        assert detail == "Assigned T0015 to cubic"
+        assert tool == "task"
+        assert detail == "assign T0015 to Cubic"
+
+    def test_name_capitalized(self):
+        _, detail = _extract_tool_summary(
+            _block("task_assign", task_id=5, assignee="porter")
+        )
+        assert "Porter" in detail
+        assert "porter" not in detail
 
     def test_task_id_zero_padded(self):
         _, detail = _extract_tool_summary(_block("task_assign", task_id=3, assignee="blend"))
-        assert detail == "Assigned T0003 to blend"
+        assert "T0003" in detail
 
     def test_missing_params_fallback(self):
         _, detail = _extract_tool_summary(_block("task_assign"))
-        assert detail == "Assigned T0000 to ?"
+        assert detail == "assign T0000 to ?"
 
 
 class TestTaskStatus:
@@ -71,18 +99,19 @@ class TestTaskStatus:
         tool, detail = _extract_tool_summary(
             _block("task_status", task_id=15, new_status="in_review")
         )
-        assert tool == "task_status"
-        assert detail == "T0015 \u2192 in_review"
+        assert tool == "task"
+        assert detail == "T0015 -> in_review"
 
-    def test_arrow_unicode(self):
+    def test_ascii_arrow_not_unicode(self):
         _, detail = _extract_tool_summary(
             _block("task_status", task_id=1, new_status="done")
         )
-        assert "\u2192" in detail
+        assert "->" in detail
+        assert "\u2192" not in detail
 
     def test_missing_params_fallback(self):
         _, detail = _extract_tool_summary(_block("task_status"))
-        assert detail == "T0000 \u2192 ?"
+        assert detail == "T0000 -> ?"
 
 
 class TestTaskComment:
@@ -90,8 +119,8 @@ class TestTaskComment:
         tool, detail = _extract_tool_summary(
             _block("task_comment", task_id=22, body="Some long comment text")
         )
-        assert tool == "task_comment"
-        assert detail == "Commented on T0022"
+        assert tool == "task"
+        assert detail == "comment on T0022"
 
     def test_body_not_included_in_detail(self):
         _, detail = _extract_tool_summary(
@@ -103,8 +132,8 @@ class TestTaskComment:
 class TestTaskShow:
     def test_basic(self):
         tool, detail = _extract_tool_summary(_block("task_show", task_id=7))
-        assert tool == "task_show"
-        assert detail == "Viewed T0007"
+        assert tool == "task"
+        assert detail == "show T0007"
 
 
 class TestTaskList:
@@ -112,12 +141,12 @@ class TestTaskList:
         tool, detail = _extract_tool_summary(
             _block("task_list", status="in_progress", assignee="blend")
         )
-        assert tool == "task_list"
-        assert detail == "Listed tasks"
+        assert tool == "task"
+        assert detail == "list tasks"
 
     def test_no_params(self):
         _, detail = _extract_tool_summary(_block("task_list"))
-        assert detail == "Listed tasks"
+        assert detail == "list tasks"
 
     def test_filter_params_not_shown(self):
         _, detail = _extract_tool_summary(
@@ -130,8 +159,8 @@ class TestTaskList:
 class TestTaskCancel:
     def test_basic(self):
         tool, detail = _extract_tool_summary(_block("task_cancel", task_id=19))
-        assert tool == "task_cancel"
-        assert detail == "Cancelled T0019"
+        assert tool == "task"
+        assert detail == "cancel T0019"
 
 
 class TestTaskAttach:
@@ -139,8 +168,8 @@ class TestTaskAttach:
         tool, detail = _extract_tool_summary(
             _block("task_attach", task_id=15, file_path="/some/deep/path/spec.md")
         )
-        assert tool == "task_attach"
-        assert detail == "Attached spec.md to T0015"
+        assert tool == "task"
+        assert detail == "attach spec.md to T0015"
 
     def test_basename_extracted(self):
         _, detail = _extract_tool_summary(
@@ -159,8 +188,8 @@ class TestTaskDetach:
         tool, detail = _extract_tool_summary(
             _block("task_detach", task_id=15, file_path="/some/path/old-spec.md")
         )
-        assert tool == "task_detach"
-        assert detail == "Detached old-spec.md from T0015"
+        assert tool == "task"
+        assert detail == "detach old-spec.md from T0015"
 
     def test_basename_extracted(self):
         _, detail = _extract_tool_summary(
@@ -171,69 +200,86 @@ class TestTaskDetach:
 
 
 # ---------------------------------------------------------------------------
-# Communication tools
+# Communication tools — category must be "message"
 # ---------------------------------------------------------------------------
 
 
 class TestMailboxSend:
-    def test_with_task_id(self):
+    def test_basic_with_short_message(self):
         tool, detail = _extract_tool_summary(
-            _block("mailbox_send", recipient="cubic", message="Hello", task_id=15)
+            _block("mailbox_send", recipient="cubic", message="Hello there", task_id=15)
         )
-        assert tool == "mailbox_send"
-        assert detail == "Sent message to cubic (re: T0015)"
+        assert tool == "message"
+        assert detail == 'send to Cubic: "Hello there"'
 
-    def test_without_task_id(self):
-        _, detail = _extract_tool_summary(
-            _block("mailbox_send", recipient="nikhil", message="Hello")
+    def test_name_capitalized(self):
+        tool, detail = _extract_tool_summary(
+            _block("mailbox_send", recipient="porter", message="Hi")
         )
-        assert detail == "Sent message to nikhil"
-        assert "re:" not in detail
+        assert tool == "message"
+        assert "Porter" in detail
+        assert "porter" not in detail
 
-    def test_task_id_none_omitted(self):
+    def test_message_truncated_to_40_chars(self):
+        long_msg = "A" * 50
         _, detail = _extract_tool_summary(
-            _block("mailbox_send", recipient="blend", message="Hi", task_id=None)
+            _block("mailbox_send", recipient="blend", message=long_msg)
         )
-        assert "re:" not in detail
+        assert '"' + "A" * 40 + '"...' in detail
+        assert "A" * 41 not in detail.replace("...", "")
+
+    def test_short_message_no_ellipsis(self):
+        _, detail = _extract_tool_summary(
+            _block("mailbox_send", recipient="blend", message="Short msg")
+        )
+        assert "..." not in detail
 
     def test_missing_recipient(self):
         _, detail = _extract_tool_summary(_block("mailbox_send", message="Hi"))
-        assert detail == "Sent message to ?"
+        assert 'send to ?: "Hi"' == detail
+
+    def test_missing_message(self):
+        _, detail = _extract_tool_summary(_block("mailbox_send", recipient="blend"))
+        assert detail == 'send to Blend: ""'
 
 
 class TestMailboxInbox:
     def test_basic(self):
         tool, detail = _extract_tool_summary(_block("mailbox_inbox"))
-        assert tool == "mailbox_inbox"
-        assert detail == "Checked inbox"
+        assert tool == "message"
+        assert detail == "check inbox"
 
     def test_no_params_needed(self):
-        # inbox takes no params — verify it works with an empty input dict
         _, detail = _extract_tool_summary(_block("mailbox_inbox"))
-        assert detail == "Checked inbox"
+        assert detail == "check inbox"
 
 
 # ---------------------------------------------------------------------------
-# Repository tools
+# Repository tools — category must be "repo"
 # ---------------------------------------------------------------------------
 
 
 class TestRepoList:
     def test_basic(self):
         tool, detail = _extract_tool_summary(_block("repo_list"))
-        assert tool == "repo_list"
-        assert detail == "Listed repos"
+        assert tool == "repo"
+        assert detail == "list repos"
+
+
+# ---------------------------------------------------------------------------
+# Git tools — category must be "git"
+# ---------------------------------------------------------------------------
 
 
 class TestRebaseToMain:
     def test_basic(self):
         tool, detail = _extract_tool_summary(_block("rebase_to_main", task_id=16))
-        assert tool == "rebase_to_main"
-        assert detail == "Rebasing T0016 onto main"
+        assert tool == "git"
+        assert detail == "rebase T0016 to main"
 
     def test_missing_task_id(self):
         _, detail = _extract_tool_summary(_block("rebase_to_main"))
-        assert detail == "Rebasing T0000 onto main"
+        assert detail == "rebase T0000 to main"
 
 
 # ---------------------------------------------------------------------------
@@ -276,8 +322,8 @@ class TestFormatterFallback:
         tool, detail = _extract_tool_summary(
             _block("task_create", title="Hello", priority="high")
         )
+        # Fallback returns raw tool name as category, key list as detail
         assert tool == "task_create"
-        # Fallback: key names listed (sorted, up to 3)
         assert "task_create" in detail or "priority" in detail or "title" in detail
 
     def test_unknown_tool_uses_legacy_fallback(self):
