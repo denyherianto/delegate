@@ -640,7 +640,7 @@ body {
 
 /* Messages */
 .msg {
-  padding: 8px 12px 8px 15px;
+  padding: 8px 12px 8px 16px;
   border-bottom: 1px solid var(--border-subtle);
   border-left: 1px solid transparent;
   transition: background 100ms;
@@ -727,7 +727,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 4px 12px 4px 15px;
+  padding: 4px 12px 4px 16px;
   margin: 2px 0;
   border-left: 1px solid var(--text-faint);
   border-bottom: 1px solid var(--border-subtle);
@@ -2602,7 +2602,7 @@ select option:hover {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 8px 12px 8px 15px;
+  padding: 8px 12px 8px 16px;
   margin-bottom: 0;
   font-size: 12px;
   border-bottom: 1px solid var(--border-subtle);
@@ -2635,7 +2635,7 @@ select option:hover {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 12px 8px 15px;
+  padding: 8px 12px 8px 16px;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-subtle);
 }
