@@ -1,3 +1,4 @@
+import { forwardRef } from "preact/compat";
 import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks";
 import { effect } from "@preact/signals";
 import {
@@ -30,6 +31,16 @@ function _setCache(id, patch) {
 // ── Cache invalidation (called from SSE handlers) ──
 export function invalidateTaskCache(taskId) {
   _cache.delete(_cacheKey(taskId));
+}
+
+// ── Seed cache before opening a panel ──
+// Call this with the task object you already have (e.g. from the task list)
+// BEFORE calling openPanel().  Guarantees the first render never shows
+// "Loading..." — immune to @preact/signals v2 hook-state loss.
+export function seedTaskCache(taskId, taskObj) {
+  if (taskId != null && taskObj) {
+    _setCache(taskId, { task: taskObj });
+  }
 }
 
 // ── Background prefetch for recent tasks ──
@@ -99,7 +110,7 @@ const _tabState = new Map();  // taskId -> { activeTab, visitedTabs }
 // ── Event delegation for linked content ──
 // Uses onClick prop (not useEffect+addEventListener) to avoid broken
 // commit-phase hook scheduling with @preact/signals v2.
-function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
+const LinkedDiv = forwardRef(function LinkedDiv({ html, class: cls, style }, ref) {
   const handler = useCallback((e) => {
     const copyBtn = e.target.closest(".copy-btn");
     if (copyBtn) { e.stopPropagation(); e.preventDefault(); handleCopyClick(copyBtn); return; }
@@ -111,8 +122,8 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
     if (fileLink) { e.stopPropagation(); pushPanel("file", fileLink.dataset.filePath); return; }
   }, []);
 
-  return <div ref={externalRef} class={cls} style={style} onClick={handler} dangerouslySetInnerHTML={{ __html: html }} />;
-}
+  return <div ref={ref} class={cls} style={style} onClick={handler} dangerouslySetInnerHTML={{ __html: html }} />;
+});
 
 // ── Retry merge button (compact, inline) ──
 function RetryMergeButton({ task }) {
@@ -795,7 +806,16 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
 export function TaskSidePanel() {
   const [id, setId] = useState(() => taskPanelId.peek());
   useEffect(() => {
-    const dispose = effect(() => { setId(taskPanelId.value); });
+    const dispose = effect(() => {
+      const newId = taskPanelId.value;
+      // Eagerly seed cache from tasks signal BEFORE the re-render.
+      // tasks.peek() is subscription-free — immune to the v2 bug.
+      if (newId !== null && !_getCache(newId).task) {
+        const found = tasks.peek().find(x => x.id === newId);
+        if (found) _setCache(newId, { task: found });
+      }
+      setId(newId);
+    });
     return dispose;
   }, []);
   // NOTE: Do NOT read tasks.value here in the render body.
@@ -876,7 +896,10 @@ export function TaskSidePanel() {
     }
 
     // ── Synchronous fallback from signal (instant when tasks already loaded) ──
-    const cached = tasks.value.find(t => t.id === id);
+    // Use peek() to avoid subscribing the component to the tasks signal.
+    // A .value read inside useEffect can still create a subscription in
+    // @preact/signals v2, leading to the commit-phase hook-state-loss bug.
+    const cached = tasks.peek().find(t => t.id === id);
     if (cached) {
       setTask(cached);
       _setCache(id, { task: cached });
@@ -1059,7 +1082,15 @@ export function TaskSidePanel() {
   if (id === null) return null;
 
   const isOpen = id !== null;
-  const t = task ?? (id !== null ? (_getCache(id).task || null) : null);
+  // Derive task from multiple sources — resilient to signal-driven
+  // hook state loss (@preact/signals v2 commit-phase bug):
+  //   1. React state (set by useEffect)
+  //   2. Module-level cache (survives remounts)
+  //   3. tasks signal via peek() (no subscription — immune to v2 bug)
+  const t = task
+    ?? _getCache(id)?.task
+    ?? (id !== null ? tasks.peek().find(x => x.id === id) : null)
+    ?? null;
   const TABS = ["overview", "changes", "merge", "activity"];
   const TAB_LABELS = { overview: "Overview", changes: "Changes", merge: "Merge Preview", activity: "Activity" };
 

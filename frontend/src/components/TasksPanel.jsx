@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "preact/hooks"
 import { currentTeam, tasks, activeTab, openPanel, taskTeamFilter, teams, getWorkflowStages, isInputFocused } from "../state.js";
 import { cap, fmtStatus, taskIdStr } from "../utils.js";
 import { playTaskSound, playApprovalSound } from "../audio.js";
+import { seedTaskCache } from "./TaskSidePanel.jsx";
 import { FilterBar, applyFilters } from "./FilterBar.jsx";
 import { PillSelect } from "./PillSelect.jsx";
 import { CopyBtn } from "./CopyBtn.jsx";
@@ -264,6 +265,7 @@ export function TasksPanel() {
         if (idx >= 0 && idx < len) {
           e.preventDefault();
           e.stopPropagation();
+          seedTaskCache(flatTaskList[idx].id, flatTaskList[idx]);
           openPanel("task", flatTaskList[idx].id);
         }
       } else if (e.key === "Escape") {
@@ -349,7 +351,7 @@ export function TasksPanel() {
                           <div
                             key={t.id}
                             class={`task-row${globalIdx === selectedIndex ? " selected" : ""}`}
-                            onClick={() => { openPanel("task", t.id); }}
+                            onClick={() => { seedTaskCache(t.id, t); openPanel("task", t.id); }}
                           >
                             <div class="task-summary">
                               <span class="task-id copyable">{taskIdStr(t.id)}<CopyBtn text={taskIdStr(t.id)} /></span>
@@ -373,7 +375,7 @@ export function TasksPanel() {
               <div
                 key={t.id}
                 class={`task-row${idx === selectedIndex ? " selected" : ""}`}
-                onClick={() => { openPanel("task", t.id); }}
+                onClick={() => { seedTaskCache(t.id, t); openPanel("task", t.id); }}
               >
                 <div class="task-summary">
                   <span class="task-id copyable">{taskIdStr(t.id)}<CopyBtn text={taskIdStr(t.id)} /></span>
