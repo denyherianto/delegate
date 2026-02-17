@@ -191,3 +191,69 @@ class TestPromptUnit:
         """No other tasks → empty string."""
         p = Prompt(tmp_team, SAMPLE_TEAM_NAME, SAMPLE_WORKERS[0])
         assert p._section_other_tasks(None) == ""
+
+
+class TestInstructionFiles:
+    """Tests for collect_instruction_files() and repo instruction injection."""
+
+    def test_collect_instruction_files_empty(self, tmp_path):
+        """No instruction files in repo -> returns empty string."""
+        from delegate.prompt import collect_instruction_files
+        assert collect_instruction_files(tmp_path) == ""
+
+    def test_collect_instruction_files_claude_md(self, tmp_path):
+        """CLAUDE.md in root is collected."""
+        from delegate.prompt import collect_instruction_files
+        (tmp_path / "CLAUDE.md").write_text("Use snake_case for all identifiers.")
+        result = collect_instruction_files(tmp_path)
+        assert "Use snake_case" in result
+        assert "CLAUDE.md" in result
+
+    def test_collect_instruction_files_case_insensitive(self, tmp_path):
+        """Lowercase claude.md still matches the CLAUDE.md candidate."""
+        from delegate.prompt import collect_instruction_files
+        (tmp_path / "claude.md").write_text("Lowercase instructions here.")
+        result = collect_instruction_files(tmp_path)
+        assert "Lowercase instructions here." in result
+
+    def test_collect_instruction_files_multiple(self, tmp_path):
+        """CLAUDE.md and .cursorrules are both collected, separated by ---."""
+        from delegate.prompt import collect_instruction_files
+        (tmp_path / "CLAUDE.md").write_text("Claude-specific rules.")
+        (tmp_path / ".cursorrules").write_text("Cursor-specific rules.")
+        result = collect_instruction_files(tmp_path)
+        assert "Claude-specific rules." in result
+        assert "Cursor-specific rules." in result
+        assert "---" in result
+
+    def test_collect_instruction_files_subdirectory(self, tmp_path):
+        """.claude/instructions.md in subdirectory is collected."""
+        from delegate.prompt import collect_instruction_files
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        (claude_dir / "instructions.md").write_text("Subdirectory instructions.")
+        result = collect_instruction_files(tmp_path)
+        assert "Subdirectory instructions." in result
+        assert ".claude/instructions.md" in result
+
+    def test_preamble_includes_repo_instructions(self, tmp_team, tmp_path):
+        """Preamble includes content from repo instruction files."""
+        import os
+        from delegate.repo import register_repo
+
+        # Create a fake git repo with a CLAUDE.md
+        fake_repo = tmp_path / "myrepo"
+        fake_repo.mkdir()
+        (fake_repo / ".git").mkdir()
+        (fake_repo / "CLAUDE.md").write_text("Always write docstrings.")
+
+        register_repo(tmp_team, SAMPLE_TEAM_NAME, str(fake_repo), name="myrepo")
+
+        old = build_system_prompt(tmp_team, SAMPLE_TEAM_NAME, SAMPLE_WORKERS[0])
+        new = Prompt(tmp_team, SAMPLE_TEAM_NAME, SAMPLE_WORKERS[0]).build_preamble()
+
+        # Both paths should produce identical output
+        assert old == new
+        # Both should include the repo instruction content
+        assert "Always write docstrings." in new
+        assert "REPO INSTRUCTIONS" in new

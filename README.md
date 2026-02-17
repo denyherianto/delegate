@@ -60,7 +60,9 @@ All of this is visible in real-time in the web UI — tasks moving, agents worki
 
 ## Key features
 
-**Persistent teams, not disposable agents.** Create a team once, use it across hundreds of tasks. Agents maintain memory — journals, notes, context files — so they learn your codebase, conventions, and patterns over time. 
+**Persistent teams, not disposable agents.** Create a team once, use it across hundreds of tasks. Agents maintain memory — journals, notes, context files — so they learn your codebase, conventions, and patterns over time.
+
+**Works with your existing setup.** Delegate automatically reads `claude.md`, `AGENTS.md`, `.cursorrules`, and `.github/copilot-instructions.md` from your repos — no migration needed.
 
 **One team per project** - Spin up a team for each project, running for as long 
 as you need with zero cost when not in use, all on your local filesystem.

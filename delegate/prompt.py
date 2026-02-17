@@ -44,6 +44,32 @@ from delegate.agent import DEFAULT_MODEL, DEFAULT_MANAGER_MODEL, ALLOWED_MODELS
 logger = logging.getLogger(__name__)
 
 
+def collect_instruction_files(repo_path: Path) -> str:
+    """Collect instruction files from standard locations in a repo."""
+    candidates = [
+        "CLAUDE.md",
+        "AGENTS.md",
+        ".claude/instructions.md",
+        ".cursorrules",
+        ".github/copilot-instructions.md",
+    ]
+    sections = []
+    for candidate in candidates:
+        # Case-insensitive file matching
+        parent = repo_path / Path(candidate).parent
+        target_name = Path(candidate).name.lower()
+        if parent.is_dir():
+            for entry in parent.iterdir():
+                if entry.is_file() and entry.name.lower() == target_name:
+                    content = entry.read_text().strip()
+                    if content:
+                        sections.append(
+                            f"# Instructions from {entry.relative_to(repo_path)}\n\n{content}"
+                        )
+                    break  # take first case-insensitive match
+    return "\n\n---\n\n".join(sections)
+
+
 # ---------------------------------------------------------------------------
 # Constants (mirrored from agent.py for identical output)
 # ---------------------------------------------------------------------------
@@ -96,6 +122,7 @@ class Prompt:
         charter_block = self._charter_block()
         role_block = self._section_role_charter()
         override_block = self._section_team_overrides()
+        repo_instructions_block = self._section_repo_instructions()
         inlined_notes_block = self._section_inlined_notes()
         files_block = self._files_block()
 
@@ -116,7 +143,7 @@ class Prompt:
         return f"""\
 === TEAM CHARTER ===
 
-{charter_block}{role_block}{override_block}
+{charter_block}{role_block}{override_block}{repo_instructions_block}
 
 === AGENT IDENTITY ===
 
@@ -196,6 +223,27 @@ Team data: {hc_home}/teams/{team}/"""
             if content:
                 return f"\n\n---\n\n# Team Overrides\n\n{content}"
         return ""
+
+    def _section_repo_instructions(self) -> str:
+        """Instruction files collected from registered repos."""
+        from delegate.repo import list_repos, get_repo_path
+        repos = list_repos(self.hc_home, self.team)
+        all_sections: list[str] = []
+        for repo_name in repos:
+            symlink = get_repo_path(self.hc_home, self.team, repo_name)
+            real_path = symlink.resolve()
+            if real_path.is_dir():
+                collected = collect_instruction_files(real_path)
+                if collected:
+                    all_sections.append(collected)
+        if not all_sections:
+            return ""
+        combined = "\n\n---\n\n".join(all_sections)
+        return (
+            "\n\n=== REPO INSTRUCTIONS ===\n"
+            "(From instruction files found in registered repositories.)\n\n"
+            f"{combined}"
+        )
 
     def _section_inlined_notes(self) -> str:
         """Inlined reflections and feedback."""

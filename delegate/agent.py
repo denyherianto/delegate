@@ -386,6 +386,27 @@ def build_system_prompt(
         if content:
             override_block = f"\n\n---\n\n# Team Overrides\n\n{content}"
 
+    # --- 3b. Repo instruction files (claude.md, AGENTS.md, .cursorrules, etc.) ---
+    from delegate.prompt import collect_instruction_files
+    from delegate.repo import list_repos, get_repo_path
+    repo_instructions_block = ""
+    _repos = list_repos(hc_home, team)
+    _repo_sections: list[str] = []
+    for _repo_name in _repos:
+        _symlink = get_repo_path(hc_home, team, _repo_name)
+        _real_path = _symlink.resolve()
+        if _real_path.is_dir():
+            _collected = collect_instruction_files(_real_path)
+            if _collected:
+                _repo_sections.append(_collected)
+    if _repo_sections:
+        _combined = "\n\n---\n\n".join(_repo_sections)
+        repo_instructions_block = (
+            "\n\n=== REPO INSTRUCTIONS ===\n"
+            "(From instruction files found in registered repositories.)\n\n"
+            f"{_combined}"
+        )
+
     # --- 4–5. Agent identity + commands (stable per agent) ---
 
     # --- 6. Reflections & feedback (inline if present) ---
@@ -452,7 +473,7 @@ def build_system_prompt(
     return f"""\
 === TEAM CHARTER ===
 
-{charter_block}{role_block}{override_block}
+{charter_block}{role_block}{override_block}{repo_instructions_block}
 
 === AGENT IDENTITY ===
 
