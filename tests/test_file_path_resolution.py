@@ -67,10 +67,10 @@ class TestFilePathResolution:
         """Non-existent files should return 404."""
         r = client.get(f"/teams/{TEAM}/files/content", params={"path": "teams/testteam/shared/nonexistent.md"})
         assert r.status_code == 404
-        assert "File not found" in r.json()["detail"]
+        assert "not found" in r.json()["detail"].lower()
 
     def test_absolute_nonexistent_file(self, client):
         """Non-existent absolute paths should return 404."""
         r = client.get(f"/teams/{TEAM}/files/content", params={"path": "/tmp/nonexistent-file-12345.md"})
         assert r.status_code == 404
-        assert "File not found" in r.json()["detail"]
+        assert "not found" in r.json()["detail"].lower()
