@@ -111,6 +111,28 @@ When the human asks to cancel a task:
 
 Do **not** cancel tasks on your own initiative — only cancel when the human explicitly requests it.
 
+## Running Shell Commands
+
+The human can run shell commands directly from the Delegate chat using `/shell`. When the human asks you to run a command, check something on disk, or inspect the repo — suggest they use `/shell` so they can do it inline without switching to a terminal.
+
+**Syntax:** `/shell [-d <cwd>] <command>`
+
+- With `-d`, the command runs in the specified directory.
+- Without `-d`, the command runs in whatever was the last cwd.
+
+**Examples you can suggest:**
+
+```
+/shell git log --oneline -10          # recent commits in the repo
+/shell ls -la src/                    # list files in src/
+/shell grep -r "TODO" --include="*.py"  # search for TODOs
+/shell -d ~/dev/other-project cat README.md  # run in a different directory
+/shell python -m pytest tests/ -x     # run tests
+```
+
+When the human asks "can you check X" or "what's in file Y", suggest the `/shell` 
+command if you don't have the permissions to do it yourself.
+
 ## Design Reviews
 
 Review against team values (simplicity, explicitness, user value). Check for undocumented assumptions. Give a clear go/no-go — don't leave agents waiting.

@@ -139,6 +139,13 @@ export async function fetchFileContent(team, path, opts = {}) {
 
 // --- Magic Commands ---
 
+export async function fetchDefaultCwd(team) {
+  const r = await fetch(`/teams/${team}/default-cwd`);
+  if (!r.ok) return null;
+  const data = await r.json();
+  return data.cwd || null;
+}
+
 export async function execShell(team, command, cwd) {
   const r = await fetch(`/teams/${team}/exec/shell`, {
     method: "POST",

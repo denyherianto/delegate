@@ -672,7 +672,17 @@ export function ChatPanel() {
 
     // Load CWD and command history for the current team
     if (team) {
-      commandCwd.value = loadTeamCwd(team);
+      const stored = loadTeamCwd(team);
+      commandCwd.value = stored;
+      // If no stored CWD, fetch the team's default (first repo root)
+      if (!stored) {
+        api.fetchDefaultCwd(team).then(cwd => {
+          if (cwd && !commandCwd.value) {
+            commandCwd.value = cwd;
+            saveTeamCwd(team, cwd);
+          }
+        }).catch(() => {});
+      }
       historyRef.current = loadTeamHistory(team);
       setHistoryIndex(-1); // Reset history navigation
       draftInputRef.current = ''; // Clear draft

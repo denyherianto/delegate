@@ -1596,6 +1596,25 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         seniority_display = req.seniority or ("junior" if req.role != "manager" else "senior")
         return {"message": f"Added agent '{agent_name}' to team '{team}' (role: {req.role or 'engineer'}, seniority: {seniority_display})"}
 
+    @app.get("/teams/{team}/default-cwd")
+    def get_default_cwd(team: str):
+        """Return the default working directory for shell commands in a team.
+
+        Resolution order:
+        1. First repo root (resolved symlink)
+        2. User's home directory
+        """
+        from delegate.paths import repos_dir
+
+        repos_path = repos_dir(hc_home, team)
+        if repos_path.exists():
+            repo_links = sorted(repos_path.iterdir())
+            if repo_links:
+                first_repo = repo_links[0]
+                cwd = str(first_repo.resolve()) if first_repo.is_symlink() else str(first_repo)
+                return {"cwd": cwd}
+        return {"cwd": str(Path.home())}
+
     class ShellExecRequest(BaseModel):
         command: str
         cwd: str | None = None
