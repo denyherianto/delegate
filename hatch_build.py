@@ -19,8 +19,14 @@ class CustomBuildHook(BuildHookInterface):
         import os
 
         root = Path(self.root)
+        static_dir = root / "delegate" / "static"
         frontend_dir = root / "frontend"
         build_js = frontend_dir / "build.js"
+
+        # Ensure delegate/static/ exists — hatchling's force-include
+        # requires the directory even for editable installs where the
+        # frontend build may be skipped.
+        static_dir.mkdir(parents=True, exist_ok=True)
 
         if os.environ.get("SKIP_FRONTEND_BUILD", ""):
             self.app.display_info("SKIP_FRONTEND_BUILD set — skipping frontend build")
