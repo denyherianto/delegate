@@ -7,6 +7,7 @@ than team name, ensuring the endpoint returns actual cost data.
 import pytest
 from fastapi.testclient import TestClient
 from datetime import datetime, timezone, timedelta
+from unittest.mock import patch, MagicMock
 
 from delegate.web import create_app
 from delegate.chat import start_session, end_session
@@ -158,3 +159,63 @@ class TestCostSummaryEndpoint:
         assert data["this_week"]["total_cost_usd"] == 0.0
         assert data["this_week"]["task_count"] == 0
         assert len(data["top_tasks"]) == 0
+
+    def test_cost_summary_uses_local_timezone_not_utc(self, tmp_team):
+        """Verify 'today' uses local calendar day, not UTC calendar day.
+
+        Scenario: local timezone is UTC-8. Mock local time to Tuesday
+        2026-02-10 00:30 local (= 08:30 UTC Tuesday).
+
+        - Session A: stored at 2026-02-10T07:00:00+00:00 (= Monday 23:00 local)
+          -> should appear in 'this week' but NOT 'today'
+        - Session B: stored at 2026-02-10T09:00:00+00:00 (= Tuesday 01:00 local)
+          -> should appear in both 'today' and 'this week'
+
+        With UTC-only logic: midnight_today = 2026-02-10T00:00:00Z, so Session A
+        (07:00 UTC) would incorrectly appear in 'today'. With local timezone
+        logic: midnight_today_utc = 2026-02-10T08:00:00Z, correctly excluding
+        Session A from 'today'.
+        """
+        # UTC-8 offset
+        local_tz = timezone(timedelta(hours=-8))
+
+        # Tuesday 2026-02-10 00:30 local (UTC-8) = 2026-02-10 08:30 UTC
+        mocked_local_now = datetime(2026, 2, 10, 0, 30, 0, tzinfo=local_tz)
+
+        task1 = create_task(tmp_team, TEAM, title="Monday Night Task", assignee="alice")
+        task2 = create_task(tmp_team, TEAM, title="Tuesday Task", assignee="bob")
+
+        # Session A: Monday 23:00 local = 2026-02-10 07:00 UTC
+        session_a_utc = "2026-02-10T07:00:00+00:00"
+        # Session B: Tuesday 01:00 local = 2026-02-10 09:00 UTC
+        session_b_utc = "2026-02-10T09:00:00+00:00"
+
+        _create_sessions_with_costs(tmp_team, TEAM, [
+            {"agent": "alice", "task_id": task1["id"], "cost_usd": 1.00, "started_at": session_a_utc},
+            {"agent": "bob", "task_id": task2["id"], "cost_usd": 2.00, "started_at": session_b_utc},
+        ])
+
+        # Patch datetime.now().astimezone() in delegate.web to return our mocked local time
+        mock_dt = MagicMock(wraps=datetime)
+        mock_dt.now = MagicMock(return_value=MagicMock(astimezone=MagicMock(return_value=mocked_local_now)))
+
+        app = create_app(hc_home=tmp_team)
+        test_client = TestClient(app)
+
+        with patch("delegate.web.datetime", mock_dt):
+            resp = test_client.get(f"/teams/{TEAM}/cost-summary")
+
+        assert resp.status_code == 200
+        data = resp.json()
+
+        # 'today' (Tuesday local) should only include Session B ($2.00)
+        assert data["today"]["total_cost_usd"] == 2.00, (
+            "Session A is Monday local time and must not appear in 'today'"
+        )
+        assert data["today"]["task_count"] == 1
+
+        # 'this week' (Monday 00:00 local = 08:00 UTC onwards) includes both sessions
+        assert data["this_week"]["total_cost_usd"] == 3.00, (
+            "Both sessions fall within the current local week"
+        )
+        assert data["this_week"]["task_count"] == 2

@@ -1493,16 +1493,20 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         from delegate.db import get_connection
         t = _resolve_team(hc_home, team)
         conn = get_connection(hc_home, team)
-        now_utc = datetime.now(timezone.utc)
+        # Use local timezone for day/week boundaries so "today" and "this week"
+        # reflect the user's local calendar day, not UTC.
+        now_local = datetime.now().astimezone()
 
-        # Today: midnight UTC today
-        midnight_today = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Today: midnight in local time, converted to UTC for comparison
+        midnight_today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        midnight_today_utc = midnight_today_local.astimezone(timezone.utc)
 
-        # This week: Monday 00:00 UTC
-        days_since_monday = now_utc.weekday()
-        monday_this_week = (now_utc - timedelta(days=days_since_monday)).replace(
+        # This week: Monday 00:00 local time, converted to UTC
+        days_since_monday = now_local.weekday()
+        monday_this_week_local = (now_local - timedelta(days=days_since_monday)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
+        monday_this_week_utc = monday_this_week_local.astimezone(timezone.utc)
 
         # Query today
         today_rows = conn.execute("""
@@ -1511,7 +1515,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 COUNT(DISTINCT task_id) as task_count
             FROM sessions
             WHERE started_at >= ? AND team_uuid = ?
-        """, (midnight_today.isoformat(), t)).fetchone()
+        """, (midnight_today_utc.isoformat(), t)).fetchone()
 
         today_cost = today_rows[0] or 0.0
         today_task_count = today_rows[1] or 0
@@ -1524,7 +1528,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 COUNT(DISTINCT task_id) as task_count
             FROM sessions
             WHERE started_at >= ? AND team_uuid = ?
-        """, (monday_this_week.isoformat(), t)).fetchone()
+        """, (monday_this_week_utc.isoformat(), t)).fetchone()
 
         week_cost = week_rows[0] or 0.0
         week_task_count = week_rows[1] or 0
