@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks";
-import { memo } from "preact/compat";
+import { memo, forwardRef } from "preact/compat";
 import {
   currentTeam, messages, agents, activeTab,
   chatFilterDirection, openPanel,
@@ -82,7 +82,7 @@ function CommandMessage({ message, parsed }) {
 }
 
 // ── Linked content with event delegation ──
-function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
+const LinkedDiv = forwardRef(function LinkedDiv({ html, class: cls, style }, ref) {
   const handler = useCallback((e) => {
     // Copy button click
     const copyBtn = e.target.closest(".copy-btn");
@@ -106,8 +106,8 @@ function LinkedDiv({ html, class: cls, style, ref: externalRef }) {
     }
   }, []);
 
-  return <div ref={externalRef} class={cls} style={style} onClick={handler} dangerouslySetInnerHTML={{ __html: html }} />;
-}
+  return <div ref={ref} class={cls} style={style} onClick={handler} dangerouslySetInnerHTML={{ __html: html }} />;
+});
 
 // ── Memoized message content rendering ──
 const MemoizedMessageContent = memo(function MemoizedMessageContent({ content, team, messageId, isBoss }) {
@@ -123,15 +123,23 @@ const COLLAPSE_THRESHOLD_AGENT = 67;   // ~3 lines at 14px * 1.6 line-height = 6
 const COLLAPSE_THRESHOLD_HUMAN = 224;  // ~10 lines at 14px * 1.6 line-height = 224px
 
 function CollapsibleMessage({ html, messageId, isBoss }) {
-  const wrapperRef = useRef();
+  const contentRef = useRef();
   const [isLong, setIsLong] = useState(false);
   const isExpanded = expandedMessages.value.has(messageId);
   const threshold = isBoss ? COLLAPSE_THRESHOLD_HUMAN : COLLAPSE_THRESHOLD_AGENT;
 
   useEffect(() => {
-    // Query the content div directly instead of passing ref through LinkedDiv
-    const el = wrapperRef.current?.querySelector('.msg-content');
-    if (!el) return;
+    const el = contentRef.current;
+    if (!el) {
+      // Fallback: retry after a short delay in case ref hasn't been set yet
+      const timer = setTimeout(() => {
+        const retryEl = contentRef.current;
+        if (retryEl && retryEl.scrollHeight > threshold) {
+          setIsLong(true);
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
 
     const checkOverflow = () => {
       if (el.scrollHeight > threshold) {
@@ -167,8 +175,8 @@ function CollapsibleMessage({ html, messageId, isBoss }) {
 
   return (
     <>
-      <div class={wrapperClass} ref={wrapperRef}>
-        <LinkedDiv class={contentClass} html={html} />
+      <div class={wrapperClass}>
+        <LinkedDiv ref={contentRef} class={contentClass} html={html} />
         {isLong && !isExpanded && (
           <div class="msg-fade-overlay" />
         )}
@@ -184,14 +192,22 @@ function CollapsibleMessage({ html, messageId, isBoss }) {
 
 // ── Collapsible event message ──
 function CollapsibleEventMessage({ html, messageId }) {
-  const wrapperRef = useRef();
+  const contentRef = useRef();
   const [isLong, setIsLong] = useState(false);
   const isExpanded = expandedMessages.value.has(messageId);
 
   useEffect(() => {
-    // Query the content div directly instead of passing ref through LinkedDiv
-    const el = wrapperRef.current?.querySelector('.msg-event-text');
-    if (!el) return;
+    const el = contentRef.current;
+    if (!el) {
+      // Fallback: retry after a short delay in case ref hasn't been set yet
+      const timer = setTimeout(() => {
+        const retryEl = contentRef.current;
+        if (retryEl && retryEl.scrollHeight > COLLAPSE_THRESHOLD_AGENT) {
+          setIsLong(true);
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
 
     const checkOverflow = () => {
       if (el.scrollHeight > COLLAPSE_THRESHOLD_AGENT) {
@@ -224,8 +240,8 @@ function CollapsibleEventMessage({ html, messageId }) {
 
   return (
     <>
-      <div class={wrapperClass} ref={wrapperRef}>
-        <LinkedDiv class="msg-event-text" html={html} />
+      <div class={wrapperClass}>
+        <LinkedDiv ref={contentRef} class="msg-event-text" html={html} />
         {isLong && !isExpanded && (
           <div class="msg-event-fade-overlay" />
         )}
