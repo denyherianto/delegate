@@ -577,12 +577,25 @@ class Telephone:
         No ``resume`` parameter is needed — the ``ClaudeSDKClient``
         keeps a single persistent subprocess that maintains
         conversation state across ``query()`` calls.
+
+        **Permission model**: when a ``can_use_tool`` guard is active
+        we must NOT pass ``--permission-mode bypassPermissions``.
+        ``bypassPermissions`` causes Claude Code to auto-approve every
+        tool call *before* consulting the ``--permission-prompt-tool``
+        (stdio), which means our guard is never invoked — Edit / Write
+        calls go straight through unchecked.
+
+        By omitting ``permission_mode`` when the guard is set, Claude
+        Code falls back to its default mode and routes every permission
+        check through the stdio permission-prompt-tool, which the SDK
+        forwards to our ``can_use_tool`` callback.  Bash commands are
+        still auto-approved by the sandbox (``autoAllowBashIfSandboxed:
+        true``), so only Edit/Write/MultiEdit go through the callback.
         """
         from claude_agent_sdk import ClaudeAgentOptions
 
         kw: dict[str, Any] = {
             "cwd": str(self.cwd),
-            "permission_mode": self.permission_mode,
         }
 
         if self.model:
@@ -598,6 +611,15 @@ class Telephone:
         guard = self._make_guard()
         if guard is not None:
             kw["can_use_tool"] = guard
+            # CRITICAL: do NOT set permission_mode when guard is active.
+            # bypassPermissions short-circuits Claude Code's permission
+            # system, preventing can_use_tool from ever being called.
+            # Without it, Claude Code routes permission checks through
+            # the stdio permission-prompt-tool → our guard callback.
+        else:
+            # No guard — fall back to permission_mode for unattended use.
+            if self.permission_mode:
+                kw["permission_mode"] = self.permission_mode
 
         # OS-level sandbox for bash commands
         if self.sandbox_enabled:
@@ -623,6 +645,21 @@ class Telephone:
 
         return ClaudeAgentOptions(**kw)
 
+    # Tools that can write files — must be checked against allowed_write_paths.
+    # Uses a broad set to catch current and future Claude Code tools.  New
+    # write-capable tools added by the SDK will be caught if they are NOT in
+    # the read-only set below.
+    _WRITE_TOOLS = frozenset({
+        "Edit", "Write", "MultiEdit", "NotebookEdit",
+    })
+
+    # Tools known to be read-only — never need write-path checks.
+    _READ_ONLY_TOOLS = frozenset({
+        "Read", "Grep", "Glob", "LS", "NotebookRead", "View",
+        "Bash",  # handled separately via deny-list + OS sandbox
+        "TodoRead", "TodoWrite",  # internal
+    })
+
     def _make_guard(self):
         """Build a ``can_use_tool`` callback for path/command enforcement.
 
@@ -631,6 +668,16 @@ class Telephone:
         The guard reads ``self._effective_write_paths`` at each
         invocation so that per-turn ``allowed_write_paths`` overrides
         in ``send()`` take effect without reconnecting the client.
+
+        **Path resolution**: relative paths in tool inputs are resolved
+        against ``self.cwd`` (the Telephone's working directory), NOT
+        the daemon's ``os.getcwd()``.  This matches Claude Code's own
+        path resolution.  Symlinks are resolved so that symlink-based
+        escapes (e.g. ``repos/<name>/file`` → real repo) are caught.
+
+        **Tool coverage**: any tool NOT in ``_READ_ONLY_TOOLS`` that
+        carries a ``file_path`` or ``notebook_path`` parameter is
+        checked.  This future-proofs against new write tools.
         """
         has_write_restriction = self._allowed_write_paths is not None
         has_bash_restriction = bool(self._denied_bash_patterns)
@@ -642,6 +689,7 @@ class Telephone:
         # dynamically — it may change between turns.
         telephone = self
         _bash_deny = self._denied_bash_patterns
+        _read_only = self._READ_ONLY_TOOLS
 
         async def _guard(
             tool_name: str,
@@ -650,10 +698,20 @@ class Telephone:
         ):
             # --- Write-path isolation ---
             _write_paths = telephone._effective_write_paths
-            if _write_paths is not None and tool_name in ("Edit", "Write"):
-                file_path = tool_input.get("file_path", "")
+            if _write_paths is not None and tool_name not in _read_only:
+                # Check all path-like parameters (file_path, notebook_path, etc.)
+                file_path = (
+                    tool_input.get("file_path", "")
+                    or tool_input.get("notebook_path", "")
+                )
                 if file_path:
-                    resolved = Path(file_path).resolve()
+                    # Resolve relative to Telephone CWD, not daemon CWD.
+                    p = Path(file_path)
+                    resolved = (
+                        p.resolve()
+                        if p.is_absolute()
+                        else (telephone.cwd / p).resolve()
+                    )
                     if not any(
                         resolved == wp or _is_under(resolved, wp)
                         for wp in _write_paths

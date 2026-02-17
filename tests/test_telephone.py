@@ -301,6 +301,93 @@ class TestTelephoneUnit:
             r = asyncio.run(guard(tool, {"file_path": "/anywhere/file.py"}, None))
             assert r["behavior"] == "allow"
 
+    def test_guard_covers_notebook_edit(self, tmp_path):
+        """NotebookEdit is checked against write paths (not just Edit/Write)."""
+        t = Telephone(
+            preamble="hello",
+            cwd=tmp_path,
+            allowed_write_paths=[str(tmp_path / "safe")],
+        )
+        guard = t._make_guard()
+
+        # NotebookEdit inside allowed path
+        ok = asyncio.run(guard("NotebookEdit", {"notebook_path": str(tmp_path / "safe" / "nb.ipynb")}, None))
+        assert ok["behavior"] == "allow"
+
+        # NotebookEdit outside — denied
+        deny = asyncio.run(guard("NotebookEdit", {"notebook_path": "/etc/something.ipynb"}, None))
+        assert deny["behavior"] == "deny"
+
+    def test_guard_catches_unknown_write_tool(self, tmp_path):
+        """Unknown tools with file_path are denied if outside write paths.
+
+        Defense-in-depth: new tools added to Claude Code that aren't in
+        _READ_ONLY_TOOLS are checked for file_path parameters.
+        """
+        t = Telephone(
+            preamble="hello",
+            cwd=tmp_path,
+            allowed_write_paths=[str(tmp_path / "safe")],
+        )
+        guard = t._make_guard()
+
+        deny = asyncio.run(guard("FutureWriteTool", {"file_path": "/outside/file.txt"}, None))
+        assert deny["behavior"] == "deny"
+
+        ok = asyncio.run(guard("FutureWriteTool", {"file_path": str(tmp_path / "safe" / "f.py")}, None))
+        assert ok["behavior"] == "allow"
+
+    def test_guard_resolves_relative_to_cwd(self, tmp_path):
+        """Relative paths in tool input are resolved against Telephone CWD.
+
+        The guard must NOT resolve relative paths against os.getcwd()
+        (the daemon process CWD), because the Claude Code subprocess uses
+        the Telephone's CWD.
+        """
+        safe = tmp_path / "safe"
+        safe.mkdir()
+        t = Telephone(
+            preamble="hello",
+            cwd=safe,
+            allowed_write_paths=[str(safe)],
+        )
+        guard = t._make_guard()
+
+        # Relative path inside CWD/safe — should be allowed
+        ok = asyncio.run(guard("Edit", {"file_path": "subdir/file.py"}, None))
+        assert ok["behavior"] == "allow"
+
+    def test_guard_blocks_symlink_escape(self, tmp_path):
+        """Writes through symlinks to external dirs are denied.
+
+        Even if the symlink lives inside allowed_write_paths, resolve()
+        reveals the real target which is outside → deny.
+        """
+        safe = tmp_path / "safe"
+        safe.mkdir()
+        external = tmp_path / "external"
+        external.mkdir()
+        (external / "secret.txt").write_text("x")
+
+        # Create a symlink inside safe → external
+        link = safe / "escape"
+        link.symlink_to(external)
+
+        t = Telephone(
+            preamble="hello",
+            cwd=safe,
+            allowed_write_paths=[str(safe)],
+        )
+        guard = t._make_guard()
+
+        # Write through symlink — resolves to external → denied
+        deny = asyncio.run(guard("Write", {"file_path": str(link / "secret.txt")}, None))
+        assert deny["behavior"] == "deny"
+
+        # Direct write to safe — allowed
+        ok = asyncio.run(guard("Write", {"file_path": str(safe / "ok.txt")}, None))
+        assert ok["behavior"] == "allow"
+
     def test_id_is_uuid_hex(self, tmp_path):
         """Telephone id is a 32-char hex UUID."""
         t = Telephone(preamble="hello", cwd=tmp_path)
@@ -452,6 +539,38 @@ class TestTelephoneUnit:
         opts = t._build_options()
         # mcp_servers should not be set when empty
         assert not hasattr(opts, "mcp_servers") or not opts.mcp_servers
+
+    def test_build_options_no_bypass_when_guard_active(self, tmp_path):
+        """permission_mode must NOT be bypassPermissions when can_use_tool is set.
+
+        bypassPermissions causes Claude Code to auto-approve tool calls
+        *before* consulting the permission-prompt-tool (stdio), which
+        means the can_use_tool guard is never invoked — Edit/Write calls
+        go straight through unchecked.
+        """
+        # With a guard (has allowed_write_paths)
+        t = Telephone(
+            preamble="hello",
+            cwd=tmp_path,
+            allowed_write_paths=[str(tmp_path / "safe")],
+        )
+        opts = t._build_options()
+        assert opts.can_use_tool is not None, "Guard should be set"
+        assert opts.permission_mode != "bypassPermissions", (
+            "permission_mode must NOT be bypassPermissions when guard is active — "
+            "it prevents can_use_tool from being invoked"
+        )
+
+    def test_build_options_bypass_when_no_guard(self, tmp_path):
+        """Without a guard, permission_mode should be bypassPermissions.
+
+        When there's no can_use_tool callback, we need bypassPermissions
+        to avoid hanging on user prompts (there's no user).
+        """
+        t = Telephone(preamble="hello", cwd=tmp_path)
+        opts = t._build_options()
+        assert opts.can_use_tool is None, "No guard when no restrictions"
+        assert opts.permission_mode == "bypassPermissions"
 
     def test_sandbox_add_dirs_includes_tmpdir(self, tmp_path):
         """When sandbox is enabled, add_dirs should include tmpdir for platform compat."""
@@ -835,6 +954,144 @@ class TestTelephoneLive:
                 assert target_file.read_text() == "hello from mcp"
             finally:
                 await t.close()
+
+        asyncio.run(_run())
+
+    def test_guard_blocks_write_outside_without_bypass(self, tmp_path):
+        """WITHOUT bypassPermissions: guard blocks Edit/Write outside allowed paths.
+
+        This is the fixed behavior — when permission_mode is NOT
+        bypassPermissions, Claude Code routes permission checks through
+        the can_use_tool callback, which denies writes outside the
+        allowed directory.
+        """
+        async def _run():
+            safe = tmp_path / "safe"
+            safe.mkdir()
+            forbidden = tmp_path / "forbidden"
+            forbidden.mkdir()
+            target = forbidden / "should_not_exist.txt"
+
+            guard_calls: list[tuple[str, str]] = []
+
+            t = Telephone(
+                preamble=(
+                    "You are a test agent. When asked to create a file, "
+                    "use the Write tool with the EXACT absolute path given. "
+                    "Do NOT use Bash. If denied, say DENIED."
+                ),
+                cwd=str(safe),
+                allowed_write_paths=[str(safe)],
+            )
+
+            # Track guard invocations
+            orig_build = t._build_options
+            orig_guard = t._make_guard()
+
+            async def tracking_guard(tool_name, tool_input, ctx):
+                guard_calls.append((tool_name, tool_input.get("file_path", "")))
+                return await orig_guard(tool_name, tool_input, ctx)
+
+            def patched_build():
+                opts = orig_build()
+                if opts.can_use_tool is not None:
+                    opts.can_use_tool = tracking_guard
+                return opts
+
+            t._build_options = patched_build
+
+            try:
+                await _send_and_collect(
+                    t,
+                    f"Create a file at {target} with content 'WRITTEN'. "
+                    f"Use the Write tool with file_path={target}",
+                )
+            finally:
+                await t.close()
+
+            # Guard should have been called and denied the write.
+            assert len(guard_calls) > 0, (
+                "can_use_tool guard was NEVER called — bypassPermissions "
+                "may still be active"
+            )
+            assert not target.exists(), (
+                f"Guard allowed write to {target} outside allowed paths"
+            )
+
+        asyncio.run(_run())
+
+    def test_guard_bypassed_with_bypass_permissions(self, tmp_path):
+        """WITH bypassPermissions: guard is NOT called, writes go through.
+
+        This test documents the OLD broken behavior: when
+        permission_mode=bypassPermissions is set alongside can_use_tool,
+        Claude Code auto-approves every tool call without consulting
+        the guard callback.
+
+        If this test starts FAILING (i.e. guard IS called even with
+        bypassPermissions), it means the Claude Code CLI changed its
+        behavior — and we may be able to re-enable bypassPermissions
+        safely. Until then, our fix of omitting it is correct.
+        """
+        async def _run():
+            safe = tmp_path / "safe"
+            safe.mkdir()
+            forbidden = tmp_path / "forbidden"
+            forbidden.mkdir()
+            target = forbidden / "should_not_exist.txt"
+
+            guard_calls: list[tuple[str, str]] = []
+
+            t = Telephone(
+                preamble=(
+                    "You are a test agent. When asked to create a file, "
+                    "use the Write tool with the EXACT absolute path given. "
+                    "Do NOT use Bash. If denied, say DENIED."
+                ),
+                cwd=str(safe),
+                allowed_write_paths=[str(safe)],
+            )
+
+            # Monkey-patch to re-inject bypassPermissions (old broken behavior)
+            orig_build = t._build_options
+            orig_guard = t._make_guard()
+
+            async def tracking_guard(tool_name, tool_input, ctx):
+                guard_calls.append((tool_name, tool_input.get("file_path", "")))
+                return await orig_guard(tool_name, tool_input, ctx)
+
+            def patched_build():
+                opts = orig_build()
+                # Force the OLD broken state
+                opts.permission_mode = "bypassPermissions"
+                if opts.can_use_tool is not None:
+                    opts.can_use_tool = tracking_guard
+                return opts
+
+            t._build_options = patched_build
+
+            try:
+                await _send_and_collect(
+                    t,
+                    f"Create a file at {target} with content 'WRITTEN'. "
+                    f"Use the Write tool with file_path={target}",
+                )
+            finally:
+                await t.close()
+
+            # With bypassPermissions, the guard should NOT have been called.
+            # The write may or may not succeed (depends on Claude Code version),
+            # but the key signal is that the guard was bypassed.
+            write_tool_calls = [
+                c for c in guard_calls
+                if c[0] in ("Write", "Edit", "MultiEdit")
+            ]
+            assert len(write_tool_calls) == 0, (
+                f"can_use_tool guard WAS called for write tools even with "
+                f"bypassPermissions — this means the CLI now respects "
+                f"permission-prompt-tool with bypassPermissions. "
+                f"Guard calls: {guard_calls}"
+            )
 
         asyncio.run(_run())
 
