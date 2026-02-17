@@ -90,8 +90,8 @@ export function ShellOutputBlock({ result, onErrorState }) {
           </div>
         )}
         {stderr && (
-          <div class="shell-output-stderr">
-            <div class="shell-output-stderr-label">stderr:</div>
+          <div class={hasError ? "shell-output-stderr" : "shell-output-stderr-neutral"}>
+            <div class={hasError ? "shell-output-stderr-label" : "shell-output-stderr-neutral-label"}>stderr:</div>
             <pre>{stderr}</pre>
           </div>
         )}

@@ -2757,6 +2757,26 @@ select option:hover {
   word-break: break-all;
 }
 
+.shell-output-stderr-neutral {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(255,255,255,0.03);
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.shell-output-stderr-neutral-label {
+  color: var(--text-tertiary);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.shell-output-stderr-neutral pre {
+  margin: 0;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .shell-output-loading {
   padding: 24px;
   text-align: center;
