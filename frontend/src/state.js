@@ -197,7 +197,7 @@ export function getWorkflowStages(team, workflowName) {
 }
 
 // ── Chat filter direction ──
-export const chatFilterDirection = signal("one-way"); // "one-way" | "bidi"
+export const chatFilterDirection = signal("bidi"); // "one-way" | "bidi"
 
 // ── Expanded messages (for collapsible long messages) ──
 export const expandedMessages = signal(new Set());

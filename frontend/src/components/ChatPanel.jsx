@@ -706,7 +706,7 @@ export function ChatPanel() {
       // Backward compat: convert old showEvents boolean to typeFilter
       if (f.typeFilter) setTypeFilter(f.typeFilter);
       else if (f.showEvents === false) setTypeFilter("chat");
-      if (f.direction === "bidi") chatFilterDirection.value = "bidi";
+      if (f.direction === "one-way") chatFilterDirection.value = "one-way";
     } catch (e) { }
   }, []);
 
