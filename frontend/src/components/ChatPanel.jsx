@@ -758,13 +758,19 @@ export function ChatPanel() {
     }
   }, [allAgents]);
 
-  // Sound on new messages
+  // Sound on new messages — only when the message involves the human
   useEffect(() => {
     const chatMsgs = msgs.filter(m => m.type === "chat");
     if (chatMsgs.length > 0) {
-      const newest = chatMsgs[chatMsgs.length - 1].timestamp || "";
+      const newestMsg = chatMsgs[chatMsgs.length - 1];
+      const newest = newestMsg.timestamp || "";
       if (lastMsgTsRef.current && newest > lastMsgTsRef.current && !cooldownRef.current) {
-        playMsgSound();
+        const human = (humanName.value || "human").toLowerCase();
+        const isToHuman = (newestMsg.recipient || "").toLowerCase() === human;
+        const isFromHuman = (newestMsg.sender || "").toLowerCase() === human;
+        if (isToHuman || isFromHuman) {
+          playMsgSound();
+        }
       }
       lastMsgTsRef.current = newest;
     }
