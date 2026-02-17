@@ -565,7 +565,7 @@ function ChangesTab({ task, diffRaw, currentReview, oldComments, stats }) {
           <span>Commits</span>
         </div>
         {commitsExpanded && (
-          commitsLoading
+          (commitsLoading || commitsData === null)
             ? <div class="diff-empty">Loading commits...</div>
             : !allCommits.length
               ? <div class="diff-empty">No commits recorded</div>
