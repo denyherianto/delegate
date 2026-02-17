@@ -28,7 +28,7 @@ from delegate.merge import (
     _ff_merge_to_sha,
     MergeFailureReason,
 )
-from delegate.runtime import TelephoneExchange
+from delegate.runtime import TelephoneExchange, AsyncRWLock
 from delegate.bootstrap import bootstrap
 from delegate.paths import task_worktree_dir
 
@@ -235,7 +235,7 @@ class TestWorktreeLocks:
         exchange = TelephoneExchange()
         lock = exchange.worktree_lock("myteam", 42)
         assert lock is not None
-        assert isinstance(lock, asyncio.Lock)
+        assert isinstance(lock, AsyncRWLock)
 
     def test_same_lock_returned(self):
         exchange = TelephoneExchange()
@@ -261,6 +261,73 @@ class TestWorktreeLocks:
     def test_discard_nonexistent_lock_is_safe(self):
         exchange = TelephoneExchange()
         exchange.discard_worktree_lock("myteam", 999)  # Must not raise
+
+    def test_rwlock_multiple_readers(self):
+        """Multiple readers can hold the lock simultaneously without blocking."""
+        async def _run():
+            lock = AsyncRWLock()
+            await lock.acquire_read()
+            await lock.acquire_read()  # Second reader should not block
+            assert lock._readers == 2
+            await lock.release_read()
+            await lock.release_read()
+            assert lock._readers == 0
+
+        asyncio.run(_run())
+
+    def test_rwlock_writer_excludes_readers(self):
+        """Writer blocks new readers from acquiring until write lock is released."""
+        async def _run():
+            lock = AsyncRWLock()
+            await lock.acquire_write()
+            assert lock._writer is True
+
+            # Try to acquire read -- should not complete while writer holds
+            read_acquired = False
+
+            async def _reader():
+                nonlocal read_acquired
+                await lock.acquire_read()
+                read_acquired = True
+                await lock.release_read()
+
+            task = asyncio.ensure_future(_reader())
+            # Yield control so _reader gets a chance to run
+            await asyncio.sleep(0)
+            # Reader should still be blocked
+            assert read_acquired is False
+
+            await lock.release_write()
+            # Now reader should complete
+            await asyncio.wait_for(task, timeout=1.0)
+            assert read_acquired is True
+
+        asyncio.run(_run())
+
+    def test_rwlock_writer_waits_for_readers(self):
+        """Writer waits until all active readers release before acquiring."""
+        async def _run():
+            lock = AsyncRWLock()
+            await lock.acquire_read()  # Reader holds lock
+
+            write_acquired = False
+
+            async def _writer():
+                nonlocal write_acquired
+                await lock.acquire_write()
+                write_acquired = True
+                await lock.release_write()
+
+            task = asyncio.ensure_future(_writer())
+            # Yield -- writer should be waiting
+            await asyncio.sleep(0)
+            assert write_acquired is False
+
+            await lock.release_read()  # Release reader
+            await asyncio.wait_for(task, timeout=1.0)
+            assert write_acquired is True
+
+        asyncio.run(_run())
 
 
 # ---------------------------------------------------------------------------

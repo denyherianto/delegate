@@ -183,7 +183,8 @@ def _acquire_worktree_lock(
 
     async def _acquire_with_timeout() -> bool:
         try:
-            return await asyncio.wait_for(lock.acquire(), timeout=WORKTREE_LOCK_TIMEOUT)
+            await asyncio.wait_for(lock.acquire_write(), timeout=WORKTREE_LOCK_TIMEOUT)
+            return True
         except asyncio.TimeoutError:
             return False
 
@@ -211,11 +212,14 @@ def _release_worktree_lock(
         return
 
     lock = exchange.worktree_lock(team, task_id)
-    if lock.locked():
-        try:
-            lp.call_soon_threadsafe(lock.release)
-        except Exception as exc:
-            logger.warning("Failed to release worktree lock for task %d: %s", task_id, exc)
+
+    async def _do_release() -> None:
+        await lock.release_write()
+
+    try:
+        asyncio.run_coroutine_threadsafe(_do_release(), lp)
+    except Exception as exc:
+        logger.warning("Failed to release worktree lock for task %d: %s", task_id, exc)
 
 
 # ---------------------------------------------------------------------------

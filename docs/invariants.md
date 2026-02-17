@@ -112,23 +112,29 @@ Retryable reasons (stay in `merging`, retry up to 3 times):
 
 This is enforced by two complementary mechanisms:
 
-### Mechanism A: Per-task asyncio.Lock (primary)
+### Mechanism A: Per-task AsyncRWLock (primary)
 
-The `TelephoneExchange` maintains a registry of `asyncio.Lock` objects, keyed
-by `(team, task_id)`. Both the turn dispatcher and merge worker use this lock.
+The `TelephoneExchange` maintains a registry of `AsyncRWLock` objects (a custom
+async read-write lock), keyed by `(team, task_id)`.
 
-- **Turn dispatcher** (`run_turn` in `runtime.py`): acquires the lock at the
-  start of a turn and releases it at the very end (after all bookkeeping,
+- **Turn dispatcher** (`run_turn` in `runtime.py`): acquires a **read lock** at
+  the start of a turn and releases it at the very end (after all bookkeeping,
   including the optional reflection turn). Lock is released in a `finally` block.
+  Multiple agent turns on the same task can hold the read lock simultaneously
+  (e.g. manager and DRI both active concurrently without contention).
 
-- **Merge worker** (`merge_task` in `merge.py`): acquires the lock before
+- **Merge worker** (`merge_task` in `merge.py`): acquires a **write lock** before
   `git reset --hard` in Phase 2, releases immediately after all repos are reset.
-  Uses `run_coroutine_threadsafe` since the merge worker runs in a thread pool.
+  The write lock waits for all active readers to finish and blocks new readers
+  while held. Uses `run_coroutine_threadsafe` since the merge worker runs in a
+  thread pool.
 
-Both run in the same asyncio event loop, so `asyncio.Lock` is sufficient.
+Both run in the same asyncio event loop. `AsyncRWLock` uses `asyncio.Condition`
+internally.
 
-**Lock ordering**: only one lock per task is ever held at a time by either party.
-No ordering constraint is needed (no deadlock risk).
+**Lock ordering**: only one write lock per task is ever held at a time (by the
+merge worker). No cross-task or cross-lock ordering constraint exists (no
+deadlock risk).
 
 ### Mechanism B: Task state gate (defense-in-depth)
 
@@ -144,11 +150,11 @@ would waste a turn and fight the lock.
 
 ## Locking Protocol Summary
 
-| Actor | When | What | Lock held for |
-|-------|------|------|---------------|
-| `run_turn` | start of turn | acquire `(team, task_id)` lock | entire turn duration |
-| `merge_task` | before Phase 2 | acquire `(team, task_id)` lock | Phase 2 only (reset loop) |
-| daemon loop | before dispatch | check task state gate | (no lock, just a read check) |
+| Actor | When | Lock type | Lock held for |
+|-------|------|-----------|---------------|
+| `run_turn` | start of turn | read lock on `(team, task_id)` | entire turn duration |
+| `merge_task` | before Phase 2 | write lock on `(team, task_id)` | Phase 2 only (reset loop) |
+| daemon loop | before dispatch | (no lock — state gate is a read check) | n/a |
 
 ---
 
@@ -231,10 +237,14 @@ never touched in that case.
 - `merge_task()` is **pure**: it returns `MergeResult` and does not change task
   status. Status changes are the caller's responsibility (`merge_once()`).
 
-- The worktree lock is acquired/released synchronously by the merge worker (which
-  runs in a thread pool via `asyncio.to_thread`). `run_coroutine_threadsafe` is
-  used to schedule lock acquisition on the event loop and `future.result()` waits
-  for it synchronously.
+- The worktree write lock is acquired/released synchronously by the merge worker
+  (which runs in a thread pool via `asyncio.to_thread`). `run_coroutine_threadsafe`
+  is used to schedule both `acquire_write()` and `release_write()` on the event
+  loop, and `future.result()` waits for acquisition synchronously. Release is
+  fire-and-forget (not awaited) since we just need the write flag cleared.
+
+- Agent turns acquire the read lock directly with `await lock.acquire_read()` /
+  `await lock.release_read()` since `run_turn` is an async function.
 
 - If the exchange is `None` (e.g., in unit tests), locking is skipped entirely.
   Tests should pass `exchange=None` to `merge_task()`.
