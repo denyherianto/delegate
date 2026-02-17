@@ -132,7 +132,7 @@ export function AgentsPanel() {
         </div>
 
         {/* Line 2: task + tool call (only for active agents) */}
-        {showLine2 && (
+        {showLine2 && latestActivity?.detail && (
           <div class="agent-row-line2">
             {currentTask ? (
               <span
