@@ -359,3 +359,64 @@ class TestFormatterFallback:
         )
         assert tool == "Grep"
         assert detail == "def foo"
+
+
+# ---------------------------------------------------------------------------
+# MCP-prefixed tool names (the real names Claude's API sends)
+# ---------------------------------------------------------------------------
+
+
+class TestMCPPrefixStripping:
+    """Verify that mcp__delegate__<tool> is resolved to the bare <tool> key
+    before the MCP_TOOL_FORMATTERS lookup, so real API names work correctly.
+    """
+
+    def test_task_comment_with_prefix(self):
+        """mcp__delegate__task_comment maps to the task_comment formatter."""
+        tool, detail = _extract_tool_summary(
+            _block("mcp__delegate__task_comment", task_id=5, body="some text")
+        )
+        assert tool == "task"
+        assert detail == "comment on T0005"
+
+    def test_mailbox_send_with_prefix(self):
+        """mcp__delegate__mailbox_send maps to the mailbox_send formatter."""
+        tool, detail = _extract_tool_summary(
+            _block("mcp__delegate__mailbox_send", recipient="nikhil", message="Hello")
+        )
+        assert tool == "message"
+        assert detail == 'send to Nikhil: "Hello"'
+
+    def test_task_create_with_prefix(self):
+        """mcp__delegate__task_create maps to the task_create formatter."""
+        tool, detail = _extract_tool_summary(
+            _block("mcp__delegate__task_create", title="New feature", priority="high")
+        )
+        assert tool == "task"
+        assert detail == 'create: "New feature" (high)'
+
+    def test_task_status_with_prefix(self):
+        """mcp__delegate__task_status maps to the task_status formatter."""
+        tool, detail = _extract_tool_summary(
+            _block("mcp__delegate__task_status", task_id=12, new_status="in_review")
+        )
+        assert tool == "task"
+        assert detail == "T0012 -> in_review"
+
+    def test_unknown_mcp_tool_falls_back_to_short_name(self):
+        """Unknown MCP tools fall back using the short name (not the full prefix)."""
+        tool, detail = _extract_tool_summary(
+            _block("mcp__delegate__some_future_tool", foo="bar")
+        )
+        # short_name is "some_future_tool" -- should NOT contain the mcp__ prefix
+        assert "mcp__" not in tool
+        assert "mcp__" not in detail
+        assert "some_future_tool" in tool or "some_future_tool" in detail
+
+    def test_bare_names_still_work(self):
+        """Bare names (no mcp__ prefix) continue to work as before."""
+        tool, detail = _extract_tool_summary(
+            _block("task_comment", task_id=22, body="text")
+        )
+        assert tool == "task"
+        assert detail == "comment on T0022"

@@ -414,22 +414,25 @@ def _extract_tool_summary(block: Any) -> tuple[str, str]:
     name = block.name
     inp = getattr(block, "input", {}) or {}
 
+    # Strip MCP namespace prefix so "mcp__delegate__task_create" -> "task_create"
+    short_name = name.split("__")[-1] if name.startswith("mcp__") else name
+
     if name == "Bash":
         return name, (inp.get("command", "") or "")[:120]
     elif name in ("Edit", "Write", "Read", "MultiEdit"):
         return name, inp.get("file_path", "")
     elif name in ("Grep", "Glob"):
         return name, inp.get("pattern", "")
-    elif name in MCP_TOOL_FORMATTERS:
+    elif short_name in MCP_TOOL_FORMATTERS:
         try:
-            return MCP_TOOL_FORMATTERS[name](inp)
+            return MCP_TOOL_FORMATTERS[short_name](inp)
         except Exception as exc:  # noqa: BLE001
             logger.warning("MCP formatter error for %s: %s", name, exc)
             keys = ", ".join(sorted(inp.keys())[:3]) if inp else ""
-            return name, f"{name}({keys})" if keys else name
+            return short_name, f"{short_name}({keys})" if keys else short_name
     else:
         keys = ", ".join(sorted(inp.keys())[:3]) if inp else ""
-        return name, f"{name}({keys})" if keys else name
+        return short_name, f"{short_name}({keys})" if keys else short_name
 
 
 # ---------------------------------------------------------------------------
