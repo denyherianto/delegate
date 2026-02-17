@@ -1,6 +1,5 @@
 ## Engineering Practices
 
-- When working in a directory, check if it or any of its ancestor directories (up to the repo root) contain `claude.md`, `CLAUDE.md`, `AGENTS.md`, `agents.md`, or similar instruction files. If found, read them first to understand any directory-specific instructions before making changes.
 - Read before you write. Understand the existing code style, patterns,
   and conventions in the area you're working on. Match them.
 - Start by understanding the requirement fully. If the brief is ambiguous,

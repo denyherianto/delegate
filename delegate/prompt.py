@@ -235,7 +235,7 @@ Team data: {hc_home}/teams/{team}/"""
             if real_path.is_dir():
                 collected = collect_instruction_files(real_path)
                 if collected:
-                    all_sections.append(collected)
+                    all_sections.append(f"## {repo_name}\n\n{collected}")
         if not all_sections:
             return ""
         combined = "\n\n---\n\n".join(all_sections)

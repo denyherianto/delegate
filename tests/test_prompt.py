@@ -254,6 +254,7 @@ class TestInstructionFiles:
 
         # Both paths should produce identical output
         assert old == new
-        # Both should include the repo instruction content
+        # Both should include the repo instruction content and repo name header
         assert "Always write docstrings." in new
         assert "REPO INSTRUCTIONS" in new
+        assert "## myrepo" in new

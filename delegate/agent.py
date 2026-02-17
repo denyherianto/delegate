@@ -398,7 +398,7 @@ def build_system_prompt(
         if _real_path.is_dir():
             _collected = collect_instruction_files(_real_path)
             if _collected:
-                _repo_sections.append(_collected)
+                _repo_sections.append(f"## {_repo_name}\n\n{_collected}")
     if _repo_sections:
         _combined = "\n\n---\n\n".join(_repo_sections)
         repo_instructions_block = (

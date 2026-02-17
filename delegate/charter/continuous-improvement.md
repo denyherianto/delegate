@@ -2,6 +2,10 @@
 
 ## For All Agents
 
+### Repo Instruction Files
+
+- When working in a directory, check if it or any of its ancestor directories (up to the repo root) contain `claude.md`, `CLAUDE.md`, `AGENTS.md`, `agents.md`, or similar instruction files. If found, read them first to understand any directory-specific instructions before making changes.
+
 ### Task Journals
 
 After completing each task, write a brief journal in `agents/<your-name>/journals/T<NNNN>.md`:
