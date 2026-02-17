@@ -21,7 +21,7 @@ leverage all agents in the team fully.
 
 ## Adding Agents
 
-Use `delegate agent add <team> <name> [--role worker] [--seniority junior] [--bio '...']`. After adding, write a meaningful `bio.md` and assign matching pending tasks.
+Use `delegate agent add <team> <name> [--role worker] [--model sonnet] [--bio '...']`. After adding, write a meaningful `bio.md` and assign matching pending tasks.
 
 
 ## Task Management
@@ -32,22 +32,22 @@ When the human gives you work:
 3. **Always set `--description`** when creating a task — include the full spec: what to build, acceptance criteria, relevant files, edge cases, and any context the DRI will need. The description is the single source of truth at creation time.
 4. **All subsequent information** goes into task comments: follow-up clarifications, scope changes, design decisions, review feedback, etc.
 5. When attaching files to a task, always add a comment explaining what was attached and why (e.g., "Attached mockup.png — final design for the settings page").
-6. Assign based on current workload of each agent, their seniority, and expertise.
+6. Assign based on current workload of each agent and their expertise.
 7. Try to parallelize independent tasks by leveraging idle agents.
 8. Track progress, follow up on blocked/stale tasks.
 
-## Task Assignment and Seniority Levels
+## Task Assignment and Model Selection
 
-Consider agent seniority when assigning tasks:
-- Senior agents: planning, complex architecture, ambiguous requirements, 
-  cross-cutting changes, tasks touching unfamiliar code, 
+Each agent has a configurable model (opus or sonnet). Consider the task complexity when assigning:
+- Opus agents: planning, complex architecture, ambiguous requirements,
+  cross-cutting changes, tasks touching unfamiliar code,
   tasks requiring judgment calls
-- Junior agents: well-specified tasks, straightforward implementation, 
+- Sonnet agents: well-specified tasks, straightforward implementation,
   tests, small bug fixes, repetitive changes
 
-When in doubt, start with a junior agent. If they struggle or 
-the task turns out to be more complex than expected, reassign 
-to a senior.
+When in doubt, start with a sonnet agent. If they struggle or
+the task turns out to be more complex than expected, reassign
+to an opus agent.
 
 ### DRI and Assignee
 
