@@ -678,7 +678,7 @@ body {
 }
 .msg-recipient { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; color: var(--text-muted); font-size: 12px; }
 .msg-time { color: var(--text-faint); font-size: 12px; font-variant-numeric: tabular-nums; margin-left: auto; flex-shrink: 0; white-space: nowrap; }
-.msg-checkmark { flex-shrink: 0; margin-left: 4px; width: 16px; display: inline-block; text-align: left; }
+.msg-checkmark { flex-shrink: 0; margin-left: 4px; width: 16px; min-width: 16px; max-width: 16px; text-align: left; overflow: hidden; }
 .msg-content { color: var(--text-primary); font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 
 /* Collapsible long messages */
