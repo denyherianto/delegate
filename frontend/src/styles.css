@@ -116,10 +116,11 @@ html, body { height: 100%; }
      Whitish: active (agent working)
      Gray:    stale/stuck/offline (idle)
   */
-  --dot-active:  #b0b0b0;
-  --dot-stale:   var(--semantic-gray);
-  --dot-stuck:   var(--semantic-gray);
-  --dot-offline: var(--semantic-gray);
+  --dot-active:          #b0b0b0;
+  --dot-manager-active:  #4caf50;  /* green for manager */
+  --dot-stale:           var(--semantic-gray);
+  --dot-stuck:           var(--semantic-gray);
+  --dot-offline:         var(--semantic-gray);
 }
 
 /* ================================================================
@@ -285,10 +286,11 @@ body {
 }
 
 /* Agent dots */
-.sb-dot.dot-active  { background: var(--dot-active); }
-.sb-dot.dot-stale   { background: var(--dot-stale); }
-.sb-dot.dot-stuck   { background: var(--dot-stuck); }
-.sb-dot.dot-offline { background: var(--dot-offline); }
+.sb-dot.dot-active          { background: var(--dot-active); }
+.sb-dot.dot-manager-active  { background: var(--dot-manager-active); }
+.sb-dot.dot-stale           { background: var(--dot-stale); }
+.sb-dot.dot-stuck           { background: var(--dot-stuck); }
+.sb-dot.dot-offline         { background: var(--dot-offline); }
 
 /* Task dots (status) */
 .sb-dot.dot-todo        { background: var(--status-todo); }
@@ -1300,10 +1302,11 @@ select option:hover {
 
 /* Dot */
 .agent-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.agent-dot-active  { background: var(--dot-active); }
-.agent-dot-stale   { background: var(--dot-stale); }
-.agent-dot-stuck   { background: var(--dot-stuck); }
-.agent-dot-offline { background: var(--dot-offline); }
+.agent-dot-active          { background: var(--dot-active); }
+.agent-dot-manager-active  { background: var(--dot-manager-active); }
+.agent-dot-stale           { background: var(--dot-stale); }
+.agent-dot-stuck           { background: var(--dot-stuck); }
+.agent-dot-offline         { background: var(--dot-offline); }
 
 /* Name */
 .agent-name {
@@ -1411,8 +1414,9 @@ select option:hover {
 /* Old styles kept for agent detail panel and sidebar */
 .agent-status { font-size: 12px; color: var(--text-muted); }
 .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 8px; }
-.dot-active { background: var(--dot-active); }
-.dot-idle { background: var(--dot-offline); }
+.dot-active         { background: var(--dot-active); }
+.dot-manager-active { background: var(--dot-manager-active); }
+.dot-idle           { background: var(--dot-offline); }
 
 /* Agent stats grid (for detail panel) */
 .agent-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
@@ -2384,10 +2388,29 @@ select option:hover {
 .sidebar-task-dot.dot-merge_failed { background: var(--status-merge_failed); }
 .sidebar-task-dot.dot-cancelled { background: var(--status-cancelled); }
 .sidebar-agent-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.sidebar-agent-dot.dot-active { background: var(--dot-active); }
-.sidebar-agent-dot.dot-stale { background: var(--dot-stale); }
-.sidebar-agent-dot.dot-stuck { background: var(--dot-stuck); }
-.sidebar-agent-dot.dot-offline { background: var(--dot-offline); }
+.sidebar-agent-dot.dot-active          { background: var(--dot-active); }
+.sidebar-agent-dot.dot-manager-active  { background: var(--dot-manager-active); }
+.sidebar-agent-dot.dot-stale           { background: var(--dot-stale); }
+.sidebar-agent-dot.dot-stuck           { background: var(--dot-stuck); }
+.sidebar-agent-dot.dot-offline         { background: var(--dot-offline); }
+
+/* Active dot pulsating animation */
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.sb-dot.dot-active,
+.sb-dot.dot-manager-active,
+.agent-dot-active,
+.agent-dot-manager-active,
+.dot-active,
+.dot-manager-active,
+.sidebar-agent-dot.dot-active,
+.sidebar-agent-dot.dot-manager-active {
+  animation: dot-pulse 2s ease-in-out infinite;
+}
+
 .sidebar-task-id { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-variant-numeric: tabular-nums; font-size: 11px; color: var(--text-muted); }
 
 /* ================================================================

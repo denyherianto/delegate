@@ -340,10 +340,11 @@ export function getAgentDotClass(agent, tasksList, stats) {
   const taskUpdated = assignedTask ? new Date(assignedTask.updated_at) : null;
   const lastActive = stats && stats.last_active ? new Date(stats.last_active) : null;
   const timestamps = [taskUpdated, lastActive].filter(Boolean);
-  if (timestamps.length === 0) return "dot-active";
+  const isManager = agent.role === "manager";
+  if (timestamps.length === 0) return isManager ? "dot-manager-active" : "dot-active";
   const mostRecent = new Date(Math.max(...timestamps));
   const minutesAgo = (Date.now() - mostRecent.getTime()) / 60000;
-  if (minutesAgo <= 5) return "dot-active";
+  if (minutesAgo <= 5) return isManager ? "dot-manager-active" : "dot-active";
   if (minutesAgo <= 30) return "dot-stale";
   return "dot-stuck";
 }
@@ -353,7 +354,7 @@ export function getAgentDotTooltip(dotClass, agent, tasksList) {
   const assignedTask = tasksList.find(t => t.assignee === agent.name && t.status === "in_progress");
   const lastTs = assignedTask && assignedTask.updated_at ? assignedTask.updated_at : null;
   const timeStr = lastTs ? fmtRelativeTime(lastTs) : "";
-  if (dotClass === "dot-active") return "Active" + (timeStr ? " \u2014 last activity " + timeStr : "");
+  if (dotClass === "dot-active" || dotClass === "dot-manager-active") return "Active" + (timeStr ? " \u2014 last activity " + timeStr : "");
   if (dotClass === "dot-stale") return "May be stuck" + (timeStr ? " \u2014 last activity " + timeStr : "");
   if (dotClass === "dot-stuck") return "Likely stuck" + (timeStr ? " \u2014 last activity " + timeStr : "");
   return "";
