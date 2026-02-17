@@ -409,7 +409,7 @@ export function renderFileReferences(html, team) {
   // Match [file:path/to/file.ext] tokens
   // Replace with appropriate HTML based on file type
 
-  const fileRefPattern = /\[file:([\w/._-]+)\]/g;
+  const fileRefPattern = /\[file:([~\w/._-]+)\]/g;
 
   return html.replace(fileRefPattern, (match, filePath) => {
     const ext = filePath.split('.').pop().toLowerCase();

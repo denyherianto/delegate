@@ -2427,6 +2427,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         """Resolve a file path from an API ``path`` parameter.
 
         Paths starting with ``/`` are treated as absolute and used directly.
+        Paths starting with ``~`` are expanded via the home directory.
         Other paths are resolved relative to ``hc_home`` for backward
         compatibility with older stored paths.
 
