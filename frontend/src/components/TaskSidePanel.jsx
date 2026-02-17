@@ -275,48 +275,6 @@ function ApprovalBar({ task, currentReview, onAction }) {
   );
 }
 
-// ── Collapsible description ──
-const TASK_DESC_COLLAPSE_THRESHOLD = 110;
-
-function CollapsibleDescription({ html }) {
-  const contentRef = useRef();
-  const [isLong, setIsLong] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  useEffect(() => {
-    if (!contentRef.current) return;
-    const checkOverflow = () => {
-      const el = contentRef.current;
-      if (el && el.scrollHeight > TASK_DESC_COLLAPSE_THRESHOLD) {
-        setIsLong(true);
-      } else {
-        setIsLong(false);
-      }
-    };
-    checkOverflow();
-    const observer = new ResizeObserver(checkOverflow);
-    if (contentRef.current) observer.observe(contentRef.current);
-    return () => observer.disconnect();
-  }, [html]);
-
-  const toggle = useCallback(() => { setIsExpanded(prev => !prev); }, []);
-  const wrapperClass = "task-desc-wrapper" + (isLong && !isExpanded ? " collapsed" : "");
-
-  return (
-    <>
-      <div class={wrapperClass}>
-        <LinkedDiv class="task-panel-desc md-content" html={html} ref={contentRef} />
-        {isLong && !isExpanded && <div class="task-desc-fade-overlay" />}
-      </div>
-      {isLong && (
-        <button class="task-desc-expand-btn" onClick={toggle}>
-          {isExpanded ? 'Show less' : 'Show more'}
-        </button>
-      )}
-    </>
-  );
-}
-
 // ── Commit list ──
 function CommitList({ commits, multiRepo }) {
   const [expandedIdx, setExpandedIdx] = useState({});
@@ -424,7 +382,7 @@ function OverviewTab({ task, stats }) {
       {t.description && (
         <div class="task-panel-section">
           <div class="task-panel-section-label">Description</div>
-          <CollapsibleDescription html={descHtml} />
+          <LinkedDiv class="task-panel-desc md-content" html={descHtml} />
         </div>
       )}
       {/* Attachments */}
@@ -1091,7 +1049,7 @@ export function TaskSidePanel() {
     ?? _getCache(id)?.task
     ?? (id !== null ? tasks.peek().find(x => x.id === id) : null)
     ?? null;
-  const TABS = ["overview", "changes", "merge", "activity"];
+  const TABS = ["overview", "activity", "changes", "merge"];
   const TAB_LABELS = { overview: "Overview", changes: "Changes", merge: "Merge Preview", activity: "Activity" };
 
   const stack = panelStack.peek();
