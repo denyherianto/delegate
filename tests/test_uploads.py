@@ -53,16 +53,16 @@ class TestUploadEndpoint:
 
         uploaded = data["uploaded"][0]
         assert uploaded["original_name"] == "test.png"
-        assert uploaded["stored_path"].startswith("uploads/")
-        assert uploaded["url"].startswith("uploads/")
+        # stored_path and url are absolute paths
+        assert uploaded["stored_path"].startswith("/")
+        assert uploaded["url"].startswith("/")
+        assert uploaded["stored_path"] == uploaded["url"]
         assert uploaded["size_bytes"] == len(PNG_1x1)
         assert uploaded["mime_type"] == "image/png"
 
-        # Verify file exists on disk
+        # Verify file exists on disk -- path is absolute, use directly
         from pathlib import Path
-        from delegate.paths import team_dir
-        team_path = team_dir(tmp_team, TEAM)
-        file_path = team_path / uploaded["stored_path"]
+        file_path = Path(uploaded["stored_path"])
         assert file_path.exists()
         assert file_path.read_bytes() == PNG_1x1
 
@@ -79,11 +79,9 @@ class TestUploadEndpoint:
         assert uploaded["original_name"] == "photo.jpg"
         assert uploaded["mime_type"] == "image/jpeg"
 
-        # Verify file exists
+        # Verify file exists -- stored_path is absolute
         from pathlib import Path
-        from delegate.paths import team_dir
-        team_path = team_dir(tmp_team, TEAM)
-        file_path = team_path / uploaded["stored_path"]
+        file_path = Path(uploaded["stored_path"])
         assert file_path.exists()
 
     def test_upload_text_file_succeeds(self, client, tmp_team):
@@ -101,10 +99,9 @@ class TestUploadEndpoint:
         # Text files don't have magic bytes, so mime_type is None
         assert uploaded["mime_type"] is None or uploaded["mime_type"] == ""
 
-        # Verify file exists
-        from delegate.paths import team_dir
-        team_path = team_dir(tmp_team, TEAM)
-        file_path = team_path / uploaded["stored_path"]
+        # Verify file exists -- stored_path is absolute
+        from pathlib import Path
+        file_path = Path(uploaded["stored_path"])
         assert file_path.exists()
         assert file_path.read_bytes() == json_content
 
@@ -157,11 +154,10 @@ class TestUploadEndpoint:
         data = resp.json()
         assert len(data["uploaded"]) == 3
 
-        # Verify all files exist
-        from delegate.paths import team_dir
-        team_path = team_dir(tmp_team, TEAM)
+        # Verify all files exist -- stored_path is absolute
+        from pathlib import Path
         for uploaded in data["uploaded"]:
-            file_path = team_path / uploaded["stored_path"]
+            file_path = Path(uploaded["stored_path"])
             assert file_path.exists()
 
     def test_upload_sanitizes_filename(self, client, tmp_team):
@@ -194,6 +190,23 @@ class TestUploadEndpoint:
 
 
 class TestServeEndpoint:
+    def _serve_url(self, stored_path: str, team_path) -> str:
+        """Extract the relative uploads URL from an absolute stored_path.
+
+        stored_path is now an absolute path like /tmp/.../teams/{team}/uploads/YYYY/MM/file.ext
+        The serve endpoint expects /teams/{team}/uploads/{year}/{month}/{filename}.
+        """
+        from pathlib import Path
+        p = Path(stored_path)
+        # Find the 'uploads' segment and take everything after it
+        parts = p.parts
+        try:
+            idx = parts.index("uploads")
+            rel = "/".join(parts[idx:])  # uploads/YYYY/MM/file.ext
+        except ValueError:
+            rel = p.name
+        return f"/teams/{TEAM}/{rel}"
+
     def test_serve_uploaded_file_succeeds(self, client, tmp_team):
         """Serve an uploaded file returns correct content and headers."""
         # First upload a file
@@ -202,10 +215,10 @@ class TestServeEndpoint:
         assert upload_resp.status_code == 200
 
         uploaded = upload_resp.json()["uploaded"][0]
-        url = uploaded["url"]
 
-        # Now fetch it (prepend /teams/{team}/ to the relative URL)
-        serve_resp = client.get(f"/teams/{TEAM}/{url}")
+        # url is now an absolute path; construct serve URL from it
+        serve_url = self._serve_url(uploaded["url"], tmp_team)
+        serve_resp = client.get(serve_url)
         assert serve_resp.status_code == 200
         assert serve_resp.content == PNG_1x1
         assert serve_resp.headers["content-type"] == "image/png"
@@ -218,7 +231,7 @@ class TestServeEndpoint:
         upload_resp = client.post(f"/teams/{TEAM}/uploads", files=files)
         uploaded = upload_resp.json()["uploaded"][0]
 
-        serve_resp = client.get(f"/teams/{TEAM}/{uploaded['url']}")
+        serve_resp = client.get(self._serve_url(uploaded["url"], tmp_team))
         assert serve_resp.status_code == 200
         assert serve_resp.headers["content-disposition"] == "inline"
 
@@ -230,7 +243,7 @@ class TestServeEndpoint:
         upload_resp = client.post(f"/teams/{TEAM}/uploads", files=files)
         uploaded = upload_resp.json()["uploaded"][0]
 
-        serve_resp = client.get(f"/teams/{TEAM}/{uploaded['url']}")
+        serve_resp = client.get(self._serve_url(uploaded["url"], tmp_team))
         assert serve_resp.status_code == 200
         # SVG should be forced to download, not inline
         assert "attachment" in serve_resp.headers["content-disposition"]
@@ -243,7 +256,7 @@ class TestServeEndpoint:
         upload_resp = client.post(f"/teams/{TEAM}/uploads", files=files)
         uploaded = upload_resp.json()["uploaded"][0]
 
-        serve_resp = client.get(f"/teams/{TEAM}/{uploaded['url']}")
+        serve_resp = client.get(self._serve_url(uploaded["url"], tmp_team))
         assert serve_resp.status_code == 200
         assert "content-security-policy" in serve_resp.headers
         assert "default-src 'none'" in serve_resp.headers["content-security-policy"]
@@ -281,7 +294,7 @@ class TestServeEndpoint:
         upload_resp = client.post(f"/teams/{TEAM}/uploads", files=files)
         uploaded = upload_resp.json()["uploaded"][0]
 
-        serve_resp = client.get(f"/teams/{TEAM}/{uploaded['url']}")
+        serve_resp = client.get(self._serve_url(uploaded["url"], tmp_team))
         assert serve_resp.status_code == 200
         # JSON should be downloaded, not shown inline
         assert "attachment" in serve_resp.headers["content-disposition"]

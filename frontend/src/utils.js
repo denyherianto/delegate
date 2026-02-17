@@ -237,53 +237,41 @@ export function linkifyTaskRefs(html) {
 /**
  * Normalise a file path for the /teams/{team}/files/content endpoint.
  *
- * The backend accepts exactly two path kinds:
- *   - **Absolute** (starts with "/") — used directly.
- *   - **Delegate-relative** — resolved from hc_home (~/.delegate).
- *     e.g. "teams/self/shared/spec.md" → ~/.delegate/teams/self/shared/spec.md
- *
- * This function converts any raw path (absolute or legacy relative) into
- * one of those two forms.
+ * Absolute paths pass through unchanged.  Old delegate-relative paths
+ * (no leading "/") also pass through -- the backend resolves them from
+ * hc_home for backward compatibility.
  */
 export function toApiPath(raw, team) {
-  let p = raw;
-
-  // Absolute path inside delegate home → strip to delegate-relative.
-  const home = hcHome.value;
-  if (home && p.startsWith(home + "/")) {
-    p = p.substring(home.length + 1);
-  }
-
-  // Path is either absolute (starts with /) or delegate-relative (no leading /).
-  // Pass through as-is — backend resolves relative paths from ~/.delegate.
-  return p;
+  // Absolute paths and delegate-relative paths both pass through as-is.
+  // Backend resolves relative paths from ~/.delegate for backward compat.
+  return raw;
 }
 
 /**
  * Shorten a file path for display.
  *
- * Delegate-internal paths (absolute or delegate-relative) are shown
- * relative to hc_home.  External paths are shown in full.
+ * Absolute paths under the user home directory are tilde-shortened
+ * (e.g. /Users/x/.delegate/teams/... -> ~/.delegate/teams/...).
+ * Other paths are shown in full.
  */
 export function displayFilePath(path) {
   if (!path) return path;
-  // Already delegate-relative
-  if (path.startsWith("teams/")) return path;
-  // Absolute inside delegate home → strip to delegate-relative
   const home = hcHome.value;
-  if (home && path.startsWith(home + "/")) {
-    return path.substring(home.length + 1);
+  if (!home) return path;
+  // hcHome = "/Users/x/.delegate"; derive user home as its parent
+  const userHome = home.replace(/\/\.delegate$/, "");
+  if (userHome && path.startsWith(userHome + "/")) {
+    return "~" + path.substring(userHome.length);
   }
   return path;
 }
 
 export function linkifyFilePaths(html) {
   // Match:
-  //  1. Tilde-prefixed paths: ~/.delegate/…, ~/anything/… (must come first to beat the teams/ keyword match)
-  //  2. Delegate-relative paths: teams/…, shared/…, agents/…, worktrees/… (no extension required)
-  //  3. Absolute paths with extensions, optionally followed by more path segments
+  //  1. Tilde-prefixed paths: ~/anything/path
+  //  2. Absolute paths with at least 2 segments: /foo/bar (avoids bare "/" or single-segment paths)
   return html.replace(/(^[^<]+|>[^<]*)/g, match =>
-    match.replace(/(?:~\/[\w\-\.\/]+[\w\/]|\b(?:teams|shared|agents|worktrees)\/[\w\-\.\/]+\w|\/[\w\-\.\/]+\.[\w]+(?:\/[\w\-\.\/]*\w)*\/?)/g, path => {
+    match.replace(/(?:~\/[\w\-\.\/]+[\w\/]|\/[\w\-\.\/]+\/[\w\-\.\/]*\w)/g, path => {
       const display = displayFilePath(path);
       return '<span class="file-link copyable" data-file-path="' + esc(path) + '">' + esc(display) + copyBtnHtml(path) + "</span>";
     })

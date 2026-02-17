@@ -1409,9 +1409,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             except IOError as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
-            # Build response
-            stored_path = f"uploads/{year}/{month}/{final_filename}"
-            url = f"uploads/{year}/{month}/{final_filename}"
+            # Build response -- use absolute path so the frontend can pass it
+            # directly to the file viewer without any path manipulation.
+            stored_path = str(final_path)
+            url = str(final_path)
 
             uploaded.append({
                 "original_name": filename,
@@ -2425,18 +2426,16 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     def _resolve_file_path(team: str, path: str) -> Path:
         """Resolve a file path from an API ``path`` parameter.
 
-        Two path kinds are supported:
-
-        * **Absolute** (starts with ``/``) — used directly.
-        * **Delegate-relative** (anything else) — resolved from ``hc_home``
-          (typically ``~/.delegate``).  E.g. ``teams/self/shared/spec.md``
-          resolves to ``~/.delegate/teams/self/shared/spec.md``.
+        Paths starting with ``/`` are treated as absolute and used directly.
+        Other paths are resolved relative to ``hc_home`` for backward
+        compatibility with older stored paths.
 
         Returns the resolved ``Path``, or raises 404.
         """
         if path.startswith("/"):
             target = Path(path).resolve()
         else:
+            # Backward compat: resolve delegate-relative paths from hc_home
             target = (hc_home / path).resolve()
 
         if not target.exists():
