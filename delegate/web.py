@@ -1793,7 +1793,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 task = _get_task(hc_home, t, task_id)
                 task["team"] = t
                 return task
-            except (FileNotFoundError, Exception):
+            except FileNotFoundError:
+                continue
+            except Exception:
+                logger.exception("Unexpected error in get_task_global for task %d team %s", task_id, t)
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
@@ -1809,7 +1812,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 ended = datetime.fromisoformat(completed_at.replace("Z", "+00:00")) if completed_at else datetime.now(timezone.utc)
                 elapsed_seconds = (ended - created).total_seconds()
                 return {"task_id": task_id, "elapsed_seconds": elapsed_seconds, "branch": task.get("branch", ""), **stats}
-            except (FileNotFoundError, Exception):
+            except FileNotFoundError:
+                continue
+            except Exception:
+                logger.exception("Unexpected error in get_task_stats_global for task %d team %s", task_id, t)
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
@@ -1821,7 +1827,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 task = _get_task(hc_home, t, task_id)
                 diff_dict = _get_task_diff(hc_home, t, task_id)
                 return {"task_id": task_id, "branch": task.get("branch", ""), "repo": task.get("repo", []), "diff": diff_dict, "merge_base": task.get("merge_base", {}), "merge_tip": task.get("merge_tip", {})}
-            except (FileNotFoundError, Exception):
+            except FileNotFoundError:
+                continue
+            except Exception:
+                logger.exception("Unexpected error in get_task_diff_global for task %d team %s", task_id, t)
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
@@ -1834,7 +1843,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             try:
                 _get_task(hc_home, t, task_id)
                 return get_task_timeline(hc_home, t, task_id, limit=limit)
-            except (FileNotFoundError, Exception):
+            except FileNotFoundError:
+                continue
+            except Exception:
+                logger.exception("Unexpected error in get_task_activity_global for task %d team %s", task_id, t)
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 

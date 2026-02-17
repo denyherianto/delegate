@@ -7,6 +7,9 @@ Verifies:
   doesn't accidentally route /api/tasks/42 to the stats endpoint
 """
 
+import logging
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -108,3 +111,67 @@ class TestRouteOrdering:
         # Task object has 'title', stats object has 'elapsed_seconds'
         assert "title" in data
         assert "elapsed_seconds" not in data
+
+# ---------------------------------------------------------------------------
+# Exception logging: unexpected errors are logged, not silently swallowed
+# ---------------------------------------------------------------------------
+
+
+class TestUnexpectedExceptionLogging:
+    """Verify that unexpected exceptions are logged (not silently swallowed) across
+    all global task endpoints.  Each endpoint must still return 404 so the
+    cross-team scan can continue, but the error must appear in the log so it
+    can be diagnosed.
+    """
+
+    def test_get_task_global_logs_unexpected_exception(self, tmp_team, caplog):
+        """GET /api/tasks/{task_id}: unexpected _get_task exception is logged."""
+        app = create_app(hc_home=tmp_team)
+        client = TestClient(app)
+
+        with patch("delegate.web._get_task", side_effect=ValueError("data corruption")):
+            with caplog.at_level(logging.ERROR, logger="delegate.web"):
+                resp = client.get("/api/tasks/42")
+
+        assert resp.status_code == 404
+        assert any("Unexpected error" in r.message for r in caplog.records)
+        assert any("get_task_global" in r.message for r in caplog.records)
+
+    def test_get_task_stats_global_logs_unexpected_exception(self, tmp_team, caplog):
+        """GET /api/tasks/{task_id}/stats: unexpected _get_task exception is logged."""
+        app = create_app(hc_home=tmp_team)
+        client = TestClient(app)
+
+        with patch("delegate.web._get_task", side_effect=ValueError("data corruption")):
+            with caplog.at_level(logging.ERROR, logger="delegate.web"):
+                resp = client.get("/api/tasks/42/stats")
+
+        assert resp.status_code == 404
+        assert any("Unexpected error" in r.message for r in caplog.records)
+        assert any("get_task_stats_global" in r.message for r in caplog.records)
+
+    def test_get_task_diff_global_logs_unexpected_exception(self, tmp_team, caplog):
+        """GET /api/tasks/{task_id}/diff: unexpected _get_task exception is logged."""
+        app = create_app(hc_home=tmp_team)
+        client = TestClient(app)
+
+        with patch("delegate.web._get_task", side_effect=ValueError("data corruption")):
+            with caplog.at_level(logging.ERROR, logger="delegate.web"):
+                resp = client.get("/api/tasks/42/diff")
+
+        assert resp.status_code == 404
+        assert any("Unexpected error" in r.message for r in caplog.records)
+        assert any("get_task_diff_global" in r.message for r in caplog.records)
+
+    def test_get_task_activity_global_logs_unexpected_exception(self, tmp_team, caplog):
+        """GET /api/tasks/{task_id}/activity: unexpected _get_task exception is logged."""
+        app = create_app(hc_home=tmp_team)
+        client = TestClient(app)
+
+        with patch("delegate.web._get_task", side_effect=ValueError("data corruption")):
+            with caplog.at_level(logging.ERROR, logger="delegate.web"):
+                resp = client.get("/api/tasks/42/activity")
+
+        assert resp.status_code == 404
+        assert any("Unexpected error" in r.message for r in caplog.records)
+        assert any("get_task_activity_global" in r.message for r in caplog.records)
