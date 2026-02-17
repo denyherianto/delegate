@@ -59,6 +59,8 @@ python -m delegate.task detach <home> <task_id> <file_path>
 
 Attach early: specs before work starts, screenshots/previews during review. Attachments are visible in the task detail panel in the UI.
 
+When creating or modifying files in the team's `shared/` directory, attach each such file to the task. This ensures files are discoverable from the task panel without needing the directory path.
+
 ## Dependencies
 
 Specify with `--depends-on <ids>`. A task with incomplete dependencies must NOT be assigned. When a task completes, check if blocked tasks are now unblocked.

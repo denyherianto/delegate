@@ -32,6 +32,7 @@ Check inbox: `python -m delegate.mailbox inbox <home> <team> <your_name>`
 - **No colorful or 3D emojis.** Do not use emojis like 🎉 🚀 ✨ 🔥 💡 📝 🎯 ⚡ 🛠️ 📊 etc. in messages or task comments.
 - Use plain text symbols when needed: `->`, `*`, `-`, `+`, `--`, `>>`.
 - Keep output clean and scannable. No decorative flourishes.
+- **Use absolute file paths.** Always use absolute paths (starting with `/` or `~/`) when referencing files in messages, task comments, and task descriptions. Never use relative paths (e.g. `teams/foo/...` or `shared/spec.md`). This ensures paths are unambiguous and render correctly as clickable links in the UI.
 
 ## Task Comments vs. Messages
 
