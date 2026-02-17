@@ -731,6 +731,11 @@ function App() {
   );
 }
 
+// ── Register PWA service worker ──
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+
 // ── Mount ──
 render(<App />, document.getElementById("app"));
 

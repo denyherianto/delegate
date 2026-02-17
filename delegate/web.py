@@ -44,7 +44,7 @@ from pathlib import Path
 
 import yaml
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -2588,6 +2588,29 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             html = html.replace('"/static/app.js"', f'"/static/app.js{_cache_bust}"')
             html = html.replace('"/static/styles.css"', f'"/static/styles.css{_cache_bust}"')
         return html
+
+    @app.get("/manifest.json")
+    def manifest():
+        port = int(os.environ.get("DELEGATE_PORT", "3548"))
+        name = "Delegate" if port == 3548 else f"Delegate :{port}"
+        return JSONResponse({
+            "name": name,
+            "short_name": name,
+            "start_url": "/",
+            "display": "standalone",
+            "background_color": "#1e1e1e",
+            "theme_color": "#1e1e1e",
+            "id": "/",
+            "icons": [
+                {"src": "/static/pwa-icon-192.png", "sizes": "192x192", "type": "image/png"},
+                {"src": "/static/pwa-icon-512.png", "sizes": "512x512", "type": "image/png"},
+            ]
+        })
+
+    @app.get("/sw.js")
+    def service_worker():
+        sw_path = _static_dir / "sw.js"
+        return FileResponse(sw_path, media_type="application/javascript")
 
     @app.get("/", response_class=HTMLResponse)
     def index():
