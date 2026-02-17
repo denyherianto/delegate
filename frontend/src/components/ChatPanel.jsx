@@ -758,7 +758,7 @@ export function ChatPanel() {
     }
   }, [allAgents]);
 
-  // Sound on new messages — only when the message involves the human
+  // Sound on new messages — only when a message is sent TO the human
   useEffect(() => {
     const chatMsgs = msgs.filter(m => m.type === "chat");
     if (chatMsgs.length > 0) {
@@ -767,8 +767,7 @@ export function ChatPanel() {
       if (lastMsgTsRef.current && newest > lastMsgTsRef.current && !cooldownRef.current) {
         const human = (humanName.value || "human").toLowerCase();
         const isToHuman = (newestMsg.recipient || "").toLowerCase() === human;
-        const isFromHuman = (newestMsg.sender || "").toLowerCase() === human;
-        if (isToHuman || isFromHuman) {
+        if (isToHuman) {
           playMsgSound();
         }
       }
