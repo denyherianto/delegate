@@ -745,16 +745,20 @@ function App() {
 
   return (
     <>
-      <PwaBanner />
-      <Sidebar />
-      <div class="main">
-        <div class="main-header">
-          <NotificationBell />
-        </div>
-        <div class="content">
-          <ChatPanel />
-          <TasksPanel />
-          <AgentsPanel />
+      <div style="display:flex;flex-direction:column;width:100%;height:100%">
+        <PwaBanner />
+        <div style="display:flex;flex-direction:row;flex:1;min-height:0">
+          <Sidebar />
+          <div class="main">
+            <div class="main-header">
+              <NotificationBell />
+            </div>
+            <div class="content">
+              <ChatPanel />
+              <TasksPanel />
+              <AgentsPanel />
+            </div>
+          </div>
         </div>
       </div>
       <MissionControl />
