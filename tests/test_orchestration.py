@@ -579,6 +579,9 @@ class TestEnsureTaskInfra:
                        check=True, capture_output=True)
         subprocess.run(["git", "-C", str(repo_path), "commit", "-m", "init"],
                        check=True, capture_output=True)
+        # Ensure default branch is named "main" (older Git defaults to "master")
+        subprocess.run(["git", "-C", str(repo_path), "branch", "-M", "main"],
+                       check=True, capture_output=True)
         register_repo(tmp_team, TEAM, str(repo_path), name="myrepo")
 
         # Create a task with a repo (no worktree creation — just DB + branch)
