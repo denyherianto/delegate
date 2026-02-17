@@ -1528,8 +1528,8 @@ export function ChatPanel() {
                       </span>
                     </>
                   )}
-                  <span class="msg-time" dangerouslySetInnerHTML={{ __html: fmtTimestamp(m.timestamp) }} />
                   <span class="msg-checkmark" dangerouslySetInnerHTML={{ __html: msgStatusIcon(m) }} />
+                  <span class="msg-time" dangerouslySetInnerHTML={{ __html: fmtTimestamp(m.timestamp) }} />
                 </div>
                 <MemoizedMessageContent content={m.content} team={team} messageId={m.id} isBoss={isBoss} />
               </div>
