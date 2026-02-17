@@ -1553,7 +1553,7 @@ export function ChatPanel() {
         <button class="chat-jump-btn" onClick={jumpToBottom} title="Jump to latest">
           <span class="chat-jump-label">Jump to latest</span>
           <span class="chat-jump-sep">|</span>
-          <span class="chat-jump-shortcut">{navigator.platform.includes('Mac') ? '\u2318\u2193' : 'Ctrl+End'}</span>
+          <span class="chat-jump-shortcut">{navigator.platform.includes('Mac') ? '\u2318 + \u2193' : 'Ctrl + End'}</span>
         </button>
       )}
 
