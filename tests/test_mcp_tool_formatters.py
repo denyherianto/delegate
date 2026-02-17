@@ -28,23 +28,23 @@ def _block(name: str, **kwargs) -> object:
 class TestTaskCreate:
     def test_basic_high_priority(self):
         tool, detail = _extract_tool_summary(
-            _block("task_create", task_id=45, title="Fix the bug", priority="high")
+            _block("task_create", title="Fix the bug", priority="high")
         )
         assert tool == "task"
-        assert detail == 'create T0045: "Fix the bug" (high)'
+        assert detail == 'create: "Fix the bug" (high)'
 
     def test_medium_priority_omitted(self):
         # priority "medium" is the default and should NOT appear in detail
         _, detail = _extract_tool_summary(
-            _block("task_create", task_id=45, title="Fix the bug", priority="medium")
+            _block("task_create", title="Fix the bug", priority="medium")
         )
-        assert detail == 'create T0045: "Fix the bug"'
+        assert detail == 'create: "Fix the bug"'
         assert "medium" not in detail
 
     def test_missing_priority_omitted(self):
         # missing priority treated same as medium — omit
         _, detail = _extract_tool_summary(
-            _block("task_create", task_id=1, title="No priority")
+            _block("task_create", title="No priority")
         )
         assert "medium" not in detail
         assert "(" not in detail
@@ -52,22 +52,23 @@ class TestTaskCreate:
     def test_title_truncated_to_40_chars(self):
         long_title = "A" * 50
         _, detail = _extract_tool_summary(
-            _block("task_create", task_id=1, title=long_title, priority="low")
+            _block("task_create", title=long_title, priority="low")
         )
         assert f'"{"A" * 40}"' in detail
         assert "A" * 41 not in detail
 
     def test_empty_title(self):
         _, detail = _extract_tool_summary(
-            _block("task_create", task_id=2, title="", priority="low")
+            _block("task_create", title="", priority="low")
         )
-        assert detail == 'create T0002: "" (low)'
+        assert detail == 'create: "" (low)'
 
-    def test_task_id_zero_padded(self):
+    def test_no_task_id_in_detail(self):
+        # task_id is not in task_create input — should never appear in output
         _, detail = _extract_tool_summary(
-            _block("task_create", task_id=3, title="Short", priority="high")
+            _block("task_create", title="Some task", priority="high")
         )
-        assert "T0003" in detail
+        assert "T0" not in detail
 
 
 class TestTaskAssign:

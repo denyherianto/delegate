@@ -366,7 +366,7 @@ MCP_TOOL_FORMATTERS: dict[str, Any] = {
     # Task management — category: "task"
     "task_create": lambda inp: (
         "task",
-        f'create T{inp.get("task_id", 0):04d}: "{inp.get("title", "")[:40]}"'
+        f'create: "{inp.get("title", "")[:40]}"'
         + (f' ({inp["priority"]})' if inp.get("priority") and inp["priority"] != "medium" else ""),
     ),
     "task_assign": lambda inp: (
