@@ -23,6 +23,7 @@ Commands:
     delegate nuke                                    — destroy all delegate state (requires confirmation)
 """
 
+import platform
 import subprocess
 import sys
 from pathlib import Path
@@ -207,6 +208,32 @@ def _auto_setup(hc_home: Path, success) -> None:
 # delegate start / stop / status
 # ──────────────────────────────────────────────────────────────
 
+DEFAULT_PORT = 3548
+
+
+def _open_ui(url: str, port: int) -> None:
+    """Try to open the PWA (macOS); fall back to browser."""
+    import webbrowser
+
+    if platform.system() == "Darwin":
+        app_name = "Delegate" if port == DEFAULT_PORT else f"Delegate :{port}"
+        try:
+            result = subprocess.run(
+                ["open", "-a", app_name],
+                capture_output=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return  # PWA opened successfully
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+    # Fallback: open in browser
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
+
+
 @main.command()
 @click.option("--port", type=int, default=3548, help="Port for the web UI (default: 3548).")
 @click.option("--interval", type=float, default=1.0, help="Poll interval in seconds.")
@@ -231,7 +258,6 @@ def start(
     dev: bool,
 ) -> None:
     """Start delegate (web UI + agent orchestration)."""
-    import webbrowser
     import time
     from delegate.daemon import start_daemon, is_running
     from delegate.doctor import run_doctor, print_doctor_report
@@ -295,10 +321,7 @@ def start(
         success(f"Delegate already running (PID {pid})")
         success(f"UI: {url}")
         # Server is up — open browser immediately regardless of --foreground
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
+        _open_ui(url, port)
         return
 
     success(f"Starting delegate on port {port}...")
@@ -310,10 +333,7 @@ def start(
 
         def _open_browser() -> None:
             time.sleep(2)
-            try:
-                webbrowser.open(url)
-            except Exception:
-                pass
+            _open_ui(url, port)
 
         threading.Thread(target=_open_browser, daemon=True).start()
 
@@ -344,10 +364,7 @@ def start(
         success(f"UI: {url}")
 
         time.sleep(1.5)
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
+        _open_ui(url, port)
 
 
 @main.command()
