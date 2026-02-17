@@ -7,11 +7,29 @@ Schema is managed by ``delegate.db`` — this module only reads/writes data.
 """
 
 import argparse
+import json
 from pathlib import Path
 
 from delegate.config import SYSTEM_USER
 from delegate.db import get_connection
 from delegate.paths import resolve_team_uuid as _team
+
+
+def _parse_result_column(rows: list[dict]) -> list[dict]:
+    """Parse the ``result`` TEXT column from JSON string → dict.
+
+    The ``result`` column is stored as ``json.dumps(obj)`` on write, so
+    when read back via ``dict(row)`` it's still a plain string.  This
+    helper parses it in-place so the API returns a proper object.
+    """
+    for row in rows:
+        raw = row.get("result")
+        if isinstance(raw, str):
+            try:
+                row["result"] = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                pass  # leave as-is if it can't be parsed
+    return rows
 
 
 def log_event(hc_home: Path, team: str, description: str, *, task_id: int | None = None) -> int:
@@ -85,7 +103,7 @@ def get_messages(
         rows = conn.execute(query, params).fetchall()
         conn.close()
         # Reverse to return oldest-first
-        return [dict(row) for row in reversed(rows)]
+        return _parse_result_column([dict(row) for row in reversed(rows)])
     else:
         # Normal pagination or no limit
         query += " ORDER BY id ASC"
@@ -94,7 +112,7 @@ def get_messages(
             params.append(limit)
         rows = conn.execute(query, params).fetchall()
         conn.close()
-        return [dict(row) for row in rows]
+        return _parse_result_column([dict(row) for row in rows])
 
 
 def get_task_activity(

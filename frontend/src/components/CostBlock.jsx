@@ -17,10 +17,22 @@ export function CostBlock({ result }) {
     );
   }
 
-  const { today, this_week, top_tasks } = result;
+  // result may be a JSON string if loaded from DB (not yet parsed)
+  const data = typeof result === "string" ? (() => { try { return JSON.parse(result); } catch { return null; } })() : result;
+  if (!data || !data.today || !data.this_week) {
+    return (
+      <div class="cost-block error">
+        <div class="cost-header">Cost Summary</div>
+        <div class="cost-body">Error loading cost data</div>
+      </div>
+    );
+  }
+
+  const { today, this_week, top_tasks } = data;
 
   const formatCost = (amount) => {
-    return `$${amount.toFixed(2)}`;
+    if (amount == null) return "$0.00";
+    return `$${Number(amount).toFixed(2)}`;
   };
 
   const formatTaskTitle = (title) => {
