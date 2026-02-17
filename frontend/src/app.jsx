@@ -558,6 +558,18 @@ function App() {
           sender: entry.sender ?? ""
         };
 
+        // Push a visual separator at the START of each turn
+        const log = _pt.activityLog[team];
+        if (log) {
+          log.push({
+            type: "turn_separator",
+            agent: entry.agent,
+            timestamp: new Date().toISOString(),
+            task_id: entry.task_id ?? null,
+            sender: entry.sender ?? ""
+          });
+        }
+
         const mgrName = _pt.managerName[team];
         if (mgrName && mgrName === entry.agent) {
           _pt.managerCtx[team] = entry;
@@ -575,19 +587,6 @@ function App() {
             inTurn: false,
             taskId: _pt.turnState[team][entry.agent].taskId
           };
-        }
-
-        // Push a visual separator instead of clearing the log
-        const log = _pt.activityLog[team];
-        if (log) {
-          const turnInfo = _pt.turnState[team]?.[entry.agent];
-          _pt.activityLog[team].push({
-            type: "turn_separator",
-            agent: entry.agent,
-            timestamp: new Date().toISOString(),
-            task_id: entry.task_id,
-            sender: turnInfo?.sender ?? ""
-          });
         }
 
         const ctx = _pt.managerCtx[team];
