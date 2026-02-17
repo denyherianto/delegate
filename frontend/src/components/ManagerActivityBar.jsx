@@ -52,14 +52,14 @@ export function ManagerActivityBar() {
   const turnCtx = managerTurnContext.value;
   const lastActivity = agentLastActivity.value;
 
-  // Safety timeout: clear if no activity for 30s (SSE stall / disconnect).
+  // Safety timeout: clear if no activity for 120s (SSE stall / disconnect).
   useEffect(() => {
     if (!turnCtx) return;
     const timer = setTimeout(() => {
       if (managerTurnContext.value && managerTurnContext.value.agent === turnCtx.agent) {
         managerTurnContext.value = null;
       }
-    }, 30000);
+    }, 120000);
     return () => clearTimeout(timer);
   }, [turnCtx?.agent, turnCtx?.timestamp]);
 
