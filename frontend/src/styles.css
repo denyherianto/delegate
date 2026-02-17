@@ -352,14 +352,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   flex-shrink: 0;
-  min-width: 60px;
-  max-width: 72px;
   cursor: pointer;
 }
 .sb-agent-name:hover {
   text-decoration: underline;
 }
 .sb-agent-status {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   color: var(--text-muted);
   font-size: 10px;
   flex: 1;
