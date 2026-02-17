@@ -271,7 +271,7 @@ export function linkifyFilePaths(html) {
   //  1. Tilde-prefixed paths: ~/anything/path
   //  2. Absolute paths with at least 2 segments: /foo/bar (avoids bare "/" or single-segment paths)
   return html.replace(/(^[^<]+|>[^<]*)/g, match =>
-    match.replace(/(?:~\/[\w\-\.\/]+[\w\/]|\/[\w\-\.\/]+\/[\w\-\.\/]*\w)/g, path => {
+    match.replace(/(?:(?<=\s|^)~\/[\w\-\.\/]+[\w\/]|(?<=\s|^)\/[\w\-\.\/]+\/[\w\-\.\/]*\w)/g, path => {
       const display = displayFilePath(path);
       return '<span class="file-link copyable" data-file-path="' + esc(path) + '">' + esc(display) + copyBtnHtml(path) + "</span>";
     })
