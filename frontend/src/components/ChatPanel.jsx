@@ -1027,11 +1027,11 @@ export function ChatPanel() {
       } else if (cmd.name === 'cost') {
         result = await api.fetchCostSummary(team);
       } else if (cmd.name === 'agent') {
-        // Parse /agent add <name> [--role X] [--seniority X] [--bio 'X']
+        // Parse /agent add <name> [--role X] [--model X] [--bio 'X']
         const tokens = cmd.args.split(/\s+/).filter(t => t);
 
         if (tokens.length === 0 || tokens[0] !== 'add') {
-          result = { error: 'Usage: /agent add <name> [--role <role>] [--seniority junior|senior] [--bio \'...\']', exit_code: -1 };
+          result = { error: 'Usage: /agent add <name> [--role <role>] [--model opus|sonnet] [--bio \'...\']', exit_code: -1 };
         } else {
           let nameToken = null;
           const options = {};
@@ -1041,7 +1041,7 @@ export function ChatPanel() {
             const token = tokens[i];
             if (token.startsWith('--')) {
               const flag = token.slice(2);
-              if (flag === 'role' || flag === 'seniority') {
+              if (flag === 'role' || flag === 'model') {
                 if (i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) {
                   options[flag] = tokens[i + 1];
                   i += 2;

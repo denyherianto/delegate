@@ -28,7 +28,7 @@ export const COMMANDS = {
   agent: {
     name: 'agent',
     description: 'Add an agent to the team (e.g. /agent add --role engineer)',
-    usage: '/agent add [name] [--role <role>] [--seniority junior|senior] [--bio \'...\']',
+    usage: '/agent add [name] [--role <role>] [--model opus|sonnet] [--bio \'...\']',
   },
 };
 
