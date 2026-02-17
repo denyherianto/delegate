@@ -388,10 +388,15 @@ function FileView({ filePath }) {
 
   const highlightedHtml = useMemo(() => {
     if (!fileData?.content || fileData.is_binary || fileData.is_directory) return null;
-    const lang = hlLang(ext, filePath);
-    if (!lang) return null;
     try {
-      return hljs.highlight(fileData.content, { language: lang }).value;
+      const lang = hlLang(ext, filePath);
+      if (lang) {
+        return hljs.highlight(fileData.content, { language: lang }).value;
+      }
+      // Auto-detect language for extensions not in EXT_TO_LANG
+      const result = hljs.highlightAuto(fileData.content);
+      if (result.relevance > 5) return result.value;
+      return null; // low confidence -- fall back to plain text
     } catch {
       return null;
     }
