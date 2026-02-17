@@ -39,6 +39,7 @@ from delegate.paths import (
 )
 from delegate.mailbox import read_inbox
 from delegate.task import format_task_id
+from delegate.agent import DEFAULT_MODEL, DEFAULT_MANAGER_MODEL, ALLOWED_MODELS
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,8 @@ logger = logging.getLogger(__name__)
 # Constants (mirrored from agent.py for identical output)
 # ---------------------------------------------------------------------------
 
-DEFAULT_SENIORITY = "junior"
+# Legacy seniority -> model mapping for backward compatibility
+_SENIORITY_MAP = {"senior": "opus", "junior": "sonnet"}
 
 # Context window: how many recent processed messages to include per turn
 HISTORY_WITH_PEER = 8       # messages with the primary sender (both directions)
@@ -74,7 +76,12 @@ class Prompt:
         self._ad = _resolve_agent_dir(hc_home, team, agent)
         self._state = yaml.safe_load((self._ad / "state.yaml").read_text()) or {}
         self._role = self._state.get("role", "engineer")
-        self._seniority = self._state.get("seniority", DEFAULT_SENIORITY)
+        # Resolve model: prefer direct 'model' field, fall back from legacy 'seniority'
+        self._model = (
+            self._state.get("model")
+            or _SENIORITY_MAP.get(self._state.get("seniority", ""), None)
+            or (DEFAULT_MANAGER_MODEL if self._role == "manager" else DEFAULT_MODEL)
+        )
 
     # ------------------------------------------------------------------
     # Preamble (formerly: system prompt)
@@ -102,7 +109,7 @@ class Prompt:
         team = self.team
         agent = self.agent
         role = self._role
-        seniority = self._seniority
+        model_name = self._model
         human_name = get_default_human(hc_home) or "human"
         manager_name = get_member_by_role(hc_home, team, "manager") or "delegate"
 
@@ -113,7 +120,7 @@ class Prompt:
 
 === AGENT IDENTITY ===
 
-You are {agent} (role: {role}, seniority: {seniority}), a team member in the Delegate system.
+You are {agent} (role: {role}, model: {model_name}), a team member in the Delegate system.
 {human_name} is the human team member. You report to {manager_name} (manager).
 
 CRITICAL: You communicate ONLY by using MCP tools. Your conversational

@@ -65,6 +65,7 @@ class _MockTelephone:
         self._effective_write_paths: list[str] | None = None
         self.add_dirs: list = kwargs.get("add_dirs", [])
         self.allowed_domains: list[str] = kwargs.get("allowed_domains", ["*"])
+        self.model: str | None = kwargs.get("model", None)
         self.turns = 0
 
     async def send(self, prompt: str):

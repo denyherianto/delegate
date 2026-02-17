@@ -44,8 +44,9 @@ from delegate.agent import (
     _read_state,
     _next_worklog_number,
     _process_turn_messages,
-    SENIORITY_MODELS,
-    DEFAULT_SENIORITY,
+    ALLOWED_MODELS,
+    DEFAULT_MODEL,
+    DEFAULT_MANAGER_MODEL,
     MAX_BATCH_SIZE,
 )
 from delegate.mailbox import (
@@ -655,12 +656,17 @@ async def run_turn(
     # --- Agent setup ---
     ad = _agent_dir(hc_home, team, agent)
     state = _read_state(ad)
-    seniority = state.get("seniority", DEFAULT_SENIORITY)
     role = state.get("role", "engineer")
 
     # Set logging caller context for all log lines during this turn
     _prev_caller = log_caller.set(f"{agent}:{role}")
-    model = SENIORITY_MODELS.get(seniority, SENIORITY_MODELS[DEFAULT_SENIORITY])
+    # Resolve model: prefer direct 'model' field, fall back from legacy 'seniority'
+    _SENIORITY_MAP = {"senior": "opus", "junior": "sonnet"}
+    model = (
+        state.get("model")
+        or _SENIORITY_MAP.get(state.get("seniority", ""), None)
+        or (DEFAULT_MANAGER_MODEL if role == "manager" else DEFAULT_MODEL)
+    )
     token_budget = state.get("token_budget")
     max_turns = max(1, token_budget // 4000) if token_budget else None
 
@@ -768,6 +774,15 @@ async def run_turn(
             await tel.close()
             tel = None
             exchange.put(team, agent, None)
+
+    if tel is not None and tel.model != model:
+        logger.info(
+            "Model changed for %s/%s (%s -> %s) — replacing telephone",
+            team, agent, tel.model, model,
+        )
+        await tel.close()
+        tel = None
+        exchange.put(team, agent, None)
 
     if tel is not None and tel.preamble != preamble:
         logger.info("Preamble changed for %s/%s — rotating telephone", team, agent)

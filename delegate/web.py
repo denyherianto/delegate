@@ -1576,7 +1576,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     class AddAgentRequest(BaseModel):
         name: str | None = None
         role: str | None = None
-        seniority: str | None = None
+        model: str | None = None
         bio: str | None = None
 
     @app.post("/teams/{team}/agents/add")
@@ -1585,16 +1585,16 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         kwargs = {"hc_home": hc_home, "team_name": team, "agent_name": req.name}
         if req.role is not None:
             kwargs["role"] = req.role
-        if req.seniority is not None:
-            kwargs["seniority"] = req.seniority
+        if req.model is not None:
+            kwargs["model"] = req.model
         if req.bio is not None:
             kwargs["bio"] = req.bio
         try:
             agent_name = add_agent(**kwargs)
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        seniority_display = req.seniority or ("junior" if req.role != "manager" else "senior")
-        return {"message": f"Added agent '{agent_name}' to team '{team}' (role: {req.role or 'engineer'}, seniority: {seniority_display})"}
+        resolved_model = req.model or ("opus" if req.role == "manager" else "sonnet")
+        return {"message": f"Added agent '{agent_name}' to team '{team}' (role: {req.role or 'engineer'}, model: {resolved_model})"}
 
     @app.get("/teams/{team}/default-cwd")
     def get_default_cwd(team: str):

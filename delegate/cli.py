@@ -409,6 +409,12 @@ def team() -> None:
     help="Local repo path(s) for the team.  Repeat for multiple repos: --repo /path/a --repo /path/b",
 )
 @click.option("--interactive", is_flag=True, help="Prompt for bios and charter overrides.")
+@click.option(
+    "--model", default=None,
+    help="Model assignment. Either a single model ('opus' or 'sonnet') to apply to all agents, "
+         "or comma-separated name:model pairs (e.g. 'alice:opus,bob:sonnet'). "
+         "Defaults: opus for manager, sonnet for engineers.",
+)
 @click.pass_context
 def team_create(
     ctx: click.Context,
@@ -416,6 +422,7 @@ def team_create(
     agents: str,
     repos: tuple[str, ...],
     interactive: bool,
+    model: str | None,
 ) -> None:
     """Create a new team."""
     from delegate.bootstrap import bootstrap
@@ -466,12 +473,46 @@ def team_create(
             else:
                 parsed_agents.append((token, "engineer"))
 
+    # Parse --model option into a models dict for bootstrap
+    # Formats: "opus" (all agents), or "alice:opus,bob:sonnet" (per-agent)
+    models_dict: dict[str, str] | None = None
+    if model is not None:
+        valid_models = ("opus", "sonnet")
+        model_stripped = model.strip()
+        if model_stripped in valid_models:
+            # Single model applies to all agents via wildcard key
+            models_dict = {"*": model_stripped}
+        elif ":" in model_stripped:
+            # Per-agent name:model pairs
+            models_dict = {}
+            for token in model_stripped.split(","):
+                token = token.strip()
+                if not token:
+                    continue
+                if ":" not in token:
+                    raise click.ClickException(
+                        f"Invalid --model format '{token}'. Use 'opus', 'sonnet', or 'name:model' pairs."
+                    )
+                agent_name, agent_model = token.split(":", 1)
+                agent_name = agent_name.strip()
+                agent_model = agent_model.strip()
+                if agent_model not in valid_models:
+                    raise click.ClickException(
+                        f"Invalid model '{agent_model}' for agent '{agent_name}'. Must be 'opus' or 'sonnet'."
+                    )
+                models_dict[agent_name] = agent_model
+        else:
+            raise click.ClickException(
+                f"Invalid --model value '{model_stripped}'. Use 'opus', 'sonnet', or 'name:model' pairs."
+            )
+
     bootstrap(
         hc_home,
         team_name=name,
         manager="delegate",
         agents=parsed_agents,
         interactive=interactive,
+        models=models_dict,
     )
 
     success(f"Created team '{name}'")
@@ -585,15 +626,15 @@ def agent() -> None:
     help="Role for the new agent (default: engineer).",
 )
 @click.option(
-    "--seniority", default=None, type=click.Choice(["junior", "senior"]),
-    help="Seniority level: junior (Sonnet) or senior (Opus). Default: junior for most roles, senior for manager.",
+    "--model", default=None, type=click.Choice(["opus", "sonnet"]),
+    help="Model: opus or sonnet. Default: sonnet for most roles, opus for manager.",
 )
 @click.option(
     "--bio", default=None,
     help="Short bio/description of the agent's strengths and focus.",
 )
 @click.pass_context
-def agent_add(ctx: click.Context, team: str, name: str | None, role: str, seniority: str, bio: str | None) -> None:
+def agent_add(ctx: click.Context, team: str, name: str | None, role: str, model: str, bio: str | None) -> None:
     """Add a new agent to an existing team.
 
     TEAM is the team name.  NAME is the new agent's name (optional - auto-generated if omitted).
@@ -603,11 +644,12 @@ def agent_add(ctx: click.Context, team: str, name: str | None, role: str, senior
 
     hc_home = _get_home(ctx)
     try:
-        agent_name = add_agent(hc_home, team_name=team, agent_name=name, role=role, seniority=seniority, bio=bio)
+        agent_name = add_agent(hc_home, team_name=team, agent_name=name, role=role, model=model, bio=bio)
     except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc))
 
-    success(f"Added agent '{agent_name}' to team '{team}' (role: {role}, seniority: {seniority or 'junior' if role != 'manager' else 'senior'})")
+    resolved_model = model or ("opus" if role == "manager" else "sonnet")
+    success(f"Added agent '{agent_name}' to team '{team}' (role: {role}, model: {resolved_model})")
 
 
 # ──────────────────────────────────────────────────────────────

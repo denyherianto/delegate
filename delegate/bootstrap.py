@@ -102,15 +102,15 @@ AGENT_SUBDIRS = [
 ]
 
 
-def _default_seniority(role: str) -> str:
-    """Manager defaults to senior; all other roles default to junior."""
-    return "senior" if role == "manager" else "junior"
+def _default_model(role: str) -> str:
+    """Manager defaults to opus; all other roles default to sonnet."""
+    return "opus" if role == "manager" else "sonnet"
 
 
-def _default_state(role: str, seniority: str | None = None) -> dict:
-    if seniority is None:
-        seniority = _default_seniority(role)
-    return {"role": role, "seniority": seniority, "pid": None, "token_budget": None}
+def _default_state(role: str, model: str | None = None) -> dict:
+    if model is None:
+        model = _default_model(role)
+    return {"role": role, "model": model, "pid": None, "token_budget": None}
 
 
 def make_roster(
@@ -181,6 +181,7 @@ def bootstrap(
     manager: str = "delegate",
     agents: list[tuple[str, str]] | list[str] | None = None,
     interactive: bool = False,
+    models: dict[str, str] | None = None,
 ) -> None:
     """Create the team directory structure under ``hc_home/teams/<team_name>/``.
 
@@ -197,6 +198,9 @@ def bootstrap(
             (which default to role ``"engineer"``).
             Can also be an integer-as-string to auto-generate names.
         interactive: If True, prompt for bios and charter overrides.
+        models: Optional mapping of agent name -> model (``"opus"`` or ``"sonnet"``).
+            Supports a special ``"*"`` key to set a default for all agents.
+            Per-agent entries override the wildcard.
 
     Safe to call multiple times — does not overwrite existing files.
     """
@@ -335,10 +339,14 @@ def bootstrap(
         if not context.exists():
             context.write_text("")
 
-        # State — includes role
+        # State — includes role and model
         state_file = member_dir / "state.yaml"
         if not state_file.exists():
-            state_file.write_text(yaml.dump(_default_state(role), default_flow_style=False))
+            # Resolve model: per-agent override > wildcard > role default
+            agent_model: str | None = None
+            if models:
+                agent_model = models.get(name) or models.get("*")
+            state_file.write_text(yaml.dump(_default_state(role, agent_model), default_flow_style=False))
 
     # --- Per-team SQLite DB ---
     ensure_schema(hc_home, team_name)
@@ -361,7 +369,7 @@ def add_agent(
     team_name: str,
     agent_name: str | None = None,
     role: str = "engineer",
-    seniority: str | None = None,
+    model: str | None = None,
     bio: str | None = None,
 ) -> None:
     """Add a new agent to an existing team.
@@ -375,8 +383,8 @@ def add_agent(
         team_name: Name of the existing team.
         agent_name: Name for the new agent. If None, a random name is generated.
         role: Agent role (default ``"engineer"``).
-        seniority: ``"junior"`` or ``"senior"``.  Defaults based on role
-            (manager → senior, others → junior).
+        model: ``"opus"`` or ``"sonnet"``.  Defaults based on role
+            (manager → opus, others → sonnet).
         bio: Optional bio text.  If omitted a placeholder is written.
 
     Returns:
@@ -387,10 +395,11 @@ def add_agent(
         ValueError: If the agent name already exists on this team
             or conflicts with a human member name.
     """
-    if seniority is None:
-        seniority = _default_seniority(role)
-    if seniority not in ("junior", "senior"):
-        raise ValueError(f"Invalid seniority '{seniority}'. Must be 'junior' or 'senior'.")
+    from delegate.agent import ALLOWED_MODELS
+    if model is None:
+        model = _default_model(role)
+    if model not in ALLOWED_MODELS:
+        raise ValueError(f"Invalid model '{model}'. Must be one of: {', '.join(ALLOWED_MODELS)}.")
     td = _team_dir(hc_home, team_name)
     if not td.is_dir():
         raise FileNotFoundError(f"Team '{team_name}' does not exist")
@@ -448,7 +457,7 @@ def add_agent(
 
     # State
     (member_dir / "state.yaml").write_text(
-        yaml.dump(_default_state(role, seniority), default_flow_style=False)
+        yaml.dump(_default_state(role, model), default_flow_style=False)
     )
 
     # --- register agent in member_ids translation table ---

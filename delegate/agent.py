@@ -33,12 +33,10 @@ DEFAULT_IDLE_TIMEOUT = 600
 CONTEXT_MSGS_SAME_SENDER = 5   # from the primary sender of the new message
 CONTEXT_MSGS_OTHERS = 3         # most recent from anyone else
 
-# Model mapping by seniority
-SENIORITY_MODELS = {
-    "senior": "opus",
-    "junior": "sonnet",
-}
-DEFAULT_SENIORITY = "junior"
+# Allowed model values and defaults
+ALLOWED_MODELS = ("opus", "sonnet")
+DEFAULT_MODEL = "sonnet"
+DEFAULT_MANAGER_MODEL = "opus"
 
 
 # ---------------------------------------------------------------------------
@@ -329,7 +327,7 @@ def build_system_prompt(
     1. TEAM CHARTER — identical for all agents on the team (cache prefix)
     2. ROLE CHARTER — from charter/roles/<role>.md (shared per role)
     3. TEAM OVERRIDES — per-team customizations
-    4. AGENT IDENTITY — name, role, seniority, human name
+    4. AGENT IDENTITY — name, role, model, human name
     5. COMMANDS — mailbox, task CLI (includes agent-specific paths)
     6. REFLECTIONS — inlined from notes/reflections.md (agent-specific)
     7. REFERENCE FILES — file pointers (journals, notes, shared, roster, bios)
@@ -343,7 +341,9 @@ def build_system_prompt(
 
     state = yaml.safe_load((ad / "state.yaml").read_text()) or {}
     role = state.get("role", "engineer")
-    seniority = state.get("seniority", DEFAULT_SENIORITY)
+    # Resolve model: prefer "model" field, fall back from legacy "seniority"
+    _SENIORITY_MAP = {"senior": "opus", "junior": "sonnet"}
+    model_name = state.get("model") or _SENIORITY_MAP.get(state.get("seniority", ""), None) or (DEFAULT_MANAGER_MODEL if role == "manager" else DEFAULT_MODEL)
     human_name = get_default_human(hc_home) or "human"
     manager_name = get_member_by_role(hc_home, team, "manager") or "delegate"
 
@@ -456,7 +456,7 @@ def build_system_prompt(
 
 === AGENT IDENTITY ===
 
-You are {agent} (role: {role}, seniority: {seniority}), a team member in the Delegate system.
+You are {agent} (role: {role}, model: {model_name}), a team member in the Delegate system.
 {human_name} is the human team member. You report to {manager_name} (manager).
 
 CRITICAL: You communicate ONLY by using MCP tools. Your conversational
