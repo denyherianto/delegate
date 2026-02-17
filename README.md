@@ -31,6 +31,9 @@ Most AI coding tools give you **one agent, one task, then it's gone**. Delegate 
 
 ## Quickstart
 
+> **Requires Python 3.12+.** Check with `python3 --version`.
+> On macOS: `brew install python@3.13` · On Ubuntu: `sudo apt install python3.12` · Or download from [python.org](https://www.python.org/downloads/).
+
 ```bash
 pip install delegate-ai
 cd to/directory/having/git/repo # optional, just makes config easier
