@@ -2777,6 +2777,30 @@ select option:hover {
   word-break: break-all;
 }
 
+.shell-stderr-toggle {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-mono);
+  transition: color 0.15s;
+}
+
+.shell-stderr-toggle:hover {
+  color: var(--text-secondary);
+}
+
+.shell-stderr-chevron {
+  display: inline-block;
+  width: 1em;
+  font-family: var(--font-mono);
+}
+
 .shell-output-loading {
   padding: 24px;
   text-align: center;

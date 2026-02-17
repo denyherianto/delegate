@@ -10,6 +10,7 @@ import { handleCopyClick } from "../utils.js";
 export function ShellOutputBlock({ result, onErrorState }) {
   const [expanded, setExpanded] = useState(false);
   const [shouldCollapse, setShouldCollapse] = useState(false);
+  const [stderrExpanded, setStderrExpanded] = useState(false);
   const contentRef = useRef();
 
   const running = !result;
@@ -89,10 +90,24 @@ export function ShellOutputBlock({ result, onErrorState }) {
             <pre>{error}</pre>
           </div>
         )}
-        {stderr && (
-          <div class={hasError ? "shell-output-stderr" : "shell-output-stderr-neutral"}>
-            <div class={hasError ? "shell-output-stderr-label" : "shell-output-stderr-neutral-label"}>stderr:</div>
+        {stderr && hasError && (
+          <div class="shell-output-stderr">
+            <div class="shell-output-stderr-label">stderr:</div>
             <pre>{stderr}</pre>
+          </div>
+        )}
+        {stderr && !hasError && (
+          <div class="shell-output-stderr-neutral">
+            <button
+              class="shell-stderr-toggle"
+              onClick={() => setStderrExpanded(!stderrExpanded)}
+            >
+              <span class="shell-stderr-chevron">{stderrExpanded ? 'v' : '>'}</span>
+              {' '}stderr ({stderr.split('\n').length} lines)
+            </button>
+            {stderrExpanded && (
+              <pre>{stderr}</pre>
+            )}
           </div>
         )}
       </div>
