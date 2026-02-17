@@ -17,12 +17,12 @@ function isStandalone() {
 
 // Set up the beforeinstallprompt listener once at module load time so we
 // capture the event even if PwaBanner hasn't mounted yet.
-if (\!isStandalone()) {
+if (!isStandalone()) {
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     deferredInstallEvent = e;
     // Only show if user hasn't permanently dismissed
-    if (\!localStorage.getItem(lsKey("pwa-banner-dismissed"))) {
+    if (!localStorage.getItem(lsKey("pwa-banner-dismissed"))) {
       showInstallBanner.value = true;
       // Install banner takes priority — hide the "use the app" banner
       showUseAppBanner.value = false;
@@ -35,7 +35,7 @@ if (\!isStandalone()) {
 // dismissed this session. The install banner (if it appears) overrides this.
 function initUseAppBanner() {
   if (isStandalone()) return;
-  if (localStorage.getItem(lsKey("pwa-installed")) \!== "true") return;
+  if (localStorage.getItem(lsKey("pwa-installed")) !== "true") return;
   // Per-session dismiss: use a sessionStorage flag
   if (sessionStorage.getItem("pwa-use-app-dismissed")) return;
   showUseAppBanner.value = true;
@@ -46,7 +46,7 @@ initUseAppBanner();
 export function PwaBanner() {
   // Install banner handlers
   function handleInstall() {
-    if (\!deferredInstallEvent) return;
+    if (!deferredInstallEvent) return;
     deferredInstallEvent.prompt();
     deferredInstallEvent.userChoice.then((choice) => {
       if (choice.outcome === "accepted") {

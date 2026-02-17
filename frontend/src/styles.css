@@ -2192,6 +2192,82 @@ select option:hover {
   flex-shrink: 0;
 }
 
+/* ── Syntax highlighting (Delegate theme) ── */
+.hljs {
+  color: var(--text-primary);
+  background: transparent;
+}
+
+/* Keywords, built-ins */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name { color: #4ade80; }          /* accent green */
+
+/* Strings, regex */
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute,
+.hljs-template-tag,
+.hljs-template-variable { color: #cca700; }  /* semantic-orange */
+
+/* Comments, meta */
+.hljs-comment,
+.hljs-quote { color: #6a6a6a; font-style: italic; }  /* text-muted */
+
+/* Numbers, constants, literals */
+.hljs-number,
+.hljs-literal,
+.hljs-bullet { color: #569cd6; }        /* cmd-blue */
+
+/* Types, classes */
+.hljs-type,
+.hljs-title.class_,
+.hljs-title.class_.inherited__ { color: #e2c08d; }  /* semantic-yellow */
+
+/* Functions, methods */
+.hljs-title,
+.hljs-title.function_ { color: #c4c4c4; }  /* text-primary -- keep functions neutral */
+
+/* Variables, params */
+.hljs-variable,
+.hljs-params { color: #9cdcfe; }        /* light blue (VS Code-inspired) */
+
+/* Properties, attributes */
+.hljs-attr,
+.hljs-property { color: #9cdcfe; }
+
+/* Operators, punctuation */
+.hljs-operator,
+.hljs-punctuation { color: #858585; }   /* text-secondary */
+
+/* Tags (HTML/XML) */
+.hljs-tag { color: #4ade80; }
+
+/* Sections, selectors */
+.hljs-section,
+.hljs-selector-id,
+.hljs-selector-class { color: #e2c08d; }
+
+/* Deletions (diff) */
+.hljs-deletion { color: #e88b8b; }      /* diff-del-text */
+
+/* Emphasis, strong */
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: bold; }
+
+/* Symbol, link */
+.hljs-symbol,
+.hljs-link { color: #569cd6; }
+
+/* Meta, preprocessor */
+.hljs-meta,
+.hljs-meta .hljs-keyword { color: #858585; }
+
+/* Subst (template literals) */
+.hljs-subst { color: var(--text-primary); }
+
 /* ================================================================
    Task activity timeline (in task panel)
    ================================================================ */

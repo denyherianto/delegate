@@ -11,6 +11,73 @@ import {
   renderMarkdown, msgStatusIcon, taskIdStr, toApiPath, displayFilePath,
 } from "../utils.js";
 
+import hljs from "highlight.js/lib/core";
+import javascript from "highlight.js/lib/languages/javascript";
+import typescript from "highlight.js/lib/languages/typescript";
+import python from "highlight.js/lib/languages/python";
+import go from "highlight.js/lib/languages/go";
+import rust from "highlight.js/lib/languages/rust";
+import java from "highlight.js/lib/languages/java";
+import xml from "highlight.js/lib/languages/xml";       // also covers HTML
+import css from "highlight.js/lib/languages/css";
+import json from "highlight.js/lib/languages/json";
+import yaml from "highlight.js/lib/languages/yaml";
+import ini from "highlight.js/lib/languages/ini";        // covers TOML
+import bash from "highlight.js/lib/languages/bash";
+import sql from "highlight.js/lib/languages/sql";
+import markdown from "highlight.js/lib/languages/markdown";
+import diff from "highlight.js/lib/languages/diff";
+import dockerfile from "highlight.js/lib/languages/dockerfile";
+import makefile from "highlight.js/lib/languages/makefile";
+import plaintext from "highlight.js/lib/languages/plaintext";
+
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("go", go);
+hljs.registerLanguage("rust", rust);
+hljs.registerLanguage("java", java);
+hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("yaml", yaml);
+hljs.registerLanguage("ini", ini);
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("markdown", markdown);
+hljs.registerLanguage("diff", diff);
+hljs.registerLanguage("dockerfile", dockerfile);
+hljs.registerLanguage("makefile", makefile);
+hljs.registerLanguage("plaintext", plaintext);
+
+const EXT_TO_LANG = {
+  js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript",
+  ts: "typescript", tsx: "typescript",
+  py: "python", pyw: "python",
+  go: "go",
+  rs: "rust",
+  java: "java",
+  html: "xml", htm: "xml", xml: "xml", svg: "xml",
+  css: "css", scss: "css", less: "css",
+  json: "json",
+  yaml: "yaml", yml: "yaml",
+  toml: "ini", ini: "ini", cfg: "ini",
+  sh: "bash", bash: "bash", zsh: "bash",
+  sql: "sql",
+  md: "markdown", markdown: "markdown",
+  diff: "diff", patch: "diff",
+  dockerfile: "dockerfile",
+  makefile: "makefile",
+};
+
+function hlLang(ext, fileName) {
+  // Check exact filename matches first (for files like Makefile, Dockerfile)
+  const base = fileName ? fileName.split("/").pop().toLowerCase() : "";
+  if (base === "makefile" || base === "gnumakefile") return "makefile";
+  if (base === "dockerfile") return "dockerfile";
+  return EXT_TO_LANG[ext] || null;
+}
+
 // ── Diff viewer (task diff) ──
 function DiffView({ taskId }) {
   const team = currentTeam.value;
@@ -356,6 +423,17 @@ function FileView({ filePath }) {
     [fileData?.content, ext]
   );
 
+  const highlightedHtml = useMemo(() => {
+    if (!fileData?.content || fileData.is_binary || fileData.is_directory) return null;
+    const lang = hlLang(ext, filePath);
+    if (!lang) return null;
+    try {
+      return hljs.highlight(fileData.content, { language: lang }).value;
+    } catch {
+      return null;
+    }
+  }, [fileData?.content, ext, filePath]);
+
   return (
     <>
       <div class="file-viewer-header">
@@ -409,7 +487,9 @@ function FileView({ filePath }) {
                   sandbox="allow-same-origin"
                 />
               </div>
-            : <div class="file-viewer-content"><pre class="file-viewer-code"><code>{fileData.content}</code></pre></div>
+            : highlightedHtml
+              ? <div class="file-viewer-content"><pre class="file-viewer-code"><code class="hljs" dangerouslySetInnerHTML={{ __html: highlightedHtml }} /></pre></div>
+              : <div class="file-viewer-content"><pre class="file-viewer-code"><code>{fileData.content}</code></pre></div>
         }
       </div>
     </>
