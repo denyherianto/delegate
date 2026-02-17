@@ -8,12 +8,12 @@ export function HelpOverlay() {
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
   const navigationShortcuts = [
-    { key: "c", description: "Go to Chat" },
     { key: "t", description: "Go to Tasks" },
     { key: "a", description: "Go to Agents" },
     { key: "s", description: "Toggle sidebar" },
     { key: "n", description: "Toggle notifications" },
-    { key: isMac ? "Cmd+K" : "Ctrl+K", description: "Switch team" },
+    { key: "Shift+M", description: "Toggle Mission Control" },
+    { key: isMac ? "Cmd+K" : "Ctrl+K", description: "Switch project" },
   ];
 
   const actionShortcuts = [

@@ -318,6 +318,21 @@ export async function rejectTask(taskId, reason, summary = "") {
   return r.json();
 }
 
+// --- Project creation ---
+
+export async function createProject({ name, repoPath, agentCount = 2, model = "sonnet" }) {
+  const r = await fetch("/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, repo_path: repoPath, agent_count: agentCount, model }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
 // --- File Upload ---
 
 export async function uploadFiles(team, files, onProgress) {

@@ -13,6 +13,7 @@ import {
   fetchWorkflows,
   isInputFocused,
   allTeamsAgents, allTeamsTurnState,
+  agentThinking, missionControlCollapsed, missionControlManuallyCollapsed,
   applyBootstrapId, lsKey,
 } from "./state.js";
 import * as api from "./api.js";
@@ -29,6 +30,8 @@ import { NotificationPopover } from "./components/NotificationPopover.jsx";
 import { TeamSwitcher } from "./components/TeamSwitcher.jsx";
 import { NoTeamsModal } from "./components/NoTeamsModal.jsx";
 import { PwaBanner } from "./components/PwaBanner.jsx";
+import { MissionControl } from "./components/MissionControl.jsx";
+import { NewProjectModal } from "./components/NewProjectModal.jsx";
 import { showToast, showActionToast, showReturnToast } from "./toast.js";
 
 // ── Per-team backing stores (plain objects, not signals) ──
@@ -41,6 +44,7 @@ const _pt = {
   managerCtx:  {},   // team → ctx | null
   managerName: {},   // team → managerAgentName | null
   turnState:   {},   // team → { agentName: { inTurn: bool, taskId: num|null } }
+  thinking:    {},   // team → { agentName: { text, timestamp } }
 };
 const MAX_LOG_ENTRIES = 500;
 
@@ -64,6 +68,7 @@ function _syncSignals(team) {
       agentTurnState.value     = _pt.turnState[t]   ? { ..._pt.turnState[t] }   : {};
       managerTurnContext.value = _pt.managerCtx[t]  ?? null;
       allTeamsTurnState.value  = { ..._pt.turnState };  // All teams' turn state
+      agentThinking.value      = _pt.thinking[t]    ? { ..._pt.thinking[t] }    : {};
     });
   });
 }
@@ -78,6 +83,7 @@ function _syncSignalsNow(team) {
     agentTurnState.value     = _pt.turnState[team]   ? { ..._pt.turnState[team] }   : {};
     managerTurnContext.value = _pt.managerCtx[team]  ?? null;
     allTeamsTurnState.value  = { ..._pt.turnState };  // All teams' turn state
+    agentThinking.value      = _pt.thinking[team]    ? { ..._pt.thinking[team] }    : {};
   });
 }
 
@@ -147,9 +153,15 @@ function App() {
         bellPopoverOpen.value = !bellPopoverOpen.value;
         return;
       }
-      if (e.key === "c" && !e.metaKey && !e.ctrlKey && !e.altKey && !isHelpOpen()) { navigateTab("chat"); return; }
       if (e.key === "t" && !e.metaKey && !e.ctrlKey && !e.altKey && !isHelpOpen()) { navigateTab("tasks"); return; }
       if (e.key === "a" && !e.metaKey && !e.ctrlKey && !e.altKey && !isHelpOpen()) { navigateTab("agents"); return; }
+      if (e.key === "M" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && !isHelpOpen()) {
+        // Shift+M toggles Mission Control
+        const next = !missionControlCollapsed.value;
+        missionControlCollapsed.value = next;
+        missionControlManuallyCollapsed.value = next;
+        return;
+      }
       if (e.key === "m" && !e.metaKey && !e.ctrlKey && !e.altKey && !isHelpOpen()) {
         e.preventDefault();
         const micBtn = document.querySelector(".chat-tool-btn[title*='recording'], .chat-tool-btn[title='Voice input']");
@@ -531,6 +543,7 @@ function App() {
       if (!_pt.activity[team])    _pt.activity[team]    = {};
       if (!_pt.activityLog[team]) _pt.activityLog[team] = [];
       if (!_pt.turnState[team])   _pt.turnState[team]   = {};
+      if (!_pt.thinking[team])    _pt.thinking[team]    = {};
 
       // Fetch manager name for this team (one-time, best-effort)
       if (_pt.managerName[team] === undefined) {
@@ -590,6 +603,11 @@ function App() {
           };
         }
 
+        // Clear thinking for this agent (turn is over)
+        if (_pt.thinking[team]) {
+          delete _pt.thinking[team][entry.agent];
+        }
+
         const ctx = _pt.managerCtx[team];
         if (ctx && ctx.agent === entry.agent) {
           _pt.managerCtx[team] = null;
@@ -597,6 +615,23 @@ function App() {
         }
 
         if (isCurrent) _syncSignals(team);
+        return;
+      }
+
+      // ── agent_thinking (Mission Control live text) ──
+      if (entry.type === "agent_thinking") {
+        if (!_pt.thinking[team]) _pt.thinking[team] = {};
+        _pt.thinking[team][entry.agent] = {
+          text: entry.text,
+          timestamp: entry.timestamp,
+        };
+        if (isCurrent) _syncSignals(team);
+        return;
+      }
+
+      // ── teams_refresh (new project created) ──
+      if (entry.type === "teams_refresh") {
+        api.fetchTeams().then(t => { teams.value = t; }).catch(() => {});
         return;
       }
 
@@ -722,12 +757,14 @@ function App() {
           <AgentsPanel />
         </div>
       </div>
+      <MissionControl />
       <TaskSidePanel />
       <DiffPanel />
       <HelpOverlay />
       <NotificationPopover />
       <TeamSwitcher open={teamSwitcherOpen.value} onClose={() => teamSwitcherOpen.value = false} />
       <NoTeamsModal />
+      <NewProjectModal />
       <ToastContainer />
     </>
   );

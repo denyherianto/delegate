@@ -1,61 +1,13 @@
-import { useCallback, useState, useEffect } from "preact/hooks";
+import { useCallback } from "preact/hooks";
 import {
-  currentTeam, teams, tasks, agents, agentStatsMap,
-  activeTab, openPanel,
-  agentActivityLog, agentTurnState, sidebarCollapsed,
-  navigate, navigateTab, crossTeamActiveAgents,
-  allTeamsAgents, allTeamsTurnState,
-  lsKey,
+  currentTeam, teams, activeTab,
+  sidebarCollapsed, projectModalOpen,
+  navigate, navigateTab, lsKey,
 } from "../state.js";
-import {
-  cap, taskIdStr, getAgentDotClass,
-} from "../utils.js";
-
-const THINKING_WORDS = [
-  "thinking",
-  "pondering",
-  "noodling",
-  "considering",
-  "mulling",
-  "reasoning",
-  "deliberating",
-  "reflecting",
-  "processing",
-  "contemplating",
-];
-
-// CyclingVerb component cycles through thinking synonyms with animated transition
-function CyclingVerb() {
-  const [index, setIndex] = useState(0);
-  const [isTransitioning, setIsTransitioning] = useState(false);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setIsTransitioning(true);
-      setTimeout(() => {
-        setIndex((prev) => (prev + 1) % THINKING_WORDS.length);
-        setIsTransitioning(false);
-      }, 200);
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <span class={"cycling-verb" + (isTransitioning ? " cycling-out" : " cycling-in")}>
-      {THINKING_WORDS[index]}…
-    </span>
-  );
-}
+import { cap } from "../utils.js";
 
 // ── SVG Icons ──
-function ChatIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 3h12a1 1 0 011 1v8a1 1 0 01-1 1H6l-3 3V4a1 1 0 011-1z" />
-    </svg>
-  );
-}
+
 function AgentsIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -67,6 +19,14 @@ function TasksIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="12" height="12" rx="1" /><path d="M6 9l2 2 4-4" />
+    </svg>
+  );
+}
+function PlusIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <line x1="7" y1="2" x2="7" y2="12" />
+      <line x1="2" y1="7" x2="12" y2="7" />
     </svg>
   );
 }
@@ -87,8 +47,8 @@ function DelegateChevron() {
   );
 }
 
+// No "chat" nav item — clicking a project opens its chat
 const NAV_ITEMS = [
-  { key: "chat", label: "Chat", Icon: ChatIcon },
   { key: "tasks", label: "Tasks", Icon: TasksIcon },
   { key: "agents", label: "Agents", Icon: AgentsIcon },
 ];
@@ -114,215 +74,49 @@ function Logo() {
   );
 }
 
-// Map task status to display verb (returns null for statuses with no agent-facing verb)
-function getStatusVerb(taskStatus) {
-  switch (taskStatus) {
-    case "in_progress": return "working on";
-    case "in_review": return "reviewing";
-    case "merge_failed": return "fixing";
-    case "todo": return "assigned";
-    default: return null;
-  }
-}
+// ── Project list ──
+function ProjectList({ collapsed }) {
+  const teamList = teams.value || [];
+  const current = currentTeam.value;
 
-// ── Agent widget ──
-function AgentsWidget({ collapsed }) {
-  const currentTeamName = currentTeam.value;
-  const allAgentsList = allTeamsAgents.value;
-  const allTurnState = allTeamsTurnState.value;
-  const allTasks = tasks.value;
-  const statsMap = agentStatsMap.value;
-  const activityLog = agentActivityLog.value;
-
-  if (collapsed || !allAgentsList.length) return null;
-
-  // Group agents by team
-  const teamGroups = {};
-  for (const a of allAgentsList) {
-    const t = a.team || "unknown";
-    if (!teamGroups[t]) teamGroups[t] = [];
-    teamGroups[t].push(a);
-  }
-
-  // Sort teams: current team first, then alphabetical
-  const teamNames = Object.keys(teamGroups).sort((a, b) => {
-    if (a === currentTeamName) return -1;
-    if (b === currentTeamName) return 1;
-    return a.localeCompare(b);
-  });
-
-  // Check if any agents are active across all teams
-  const hasActiveAgents = teamNames.some(teamName => {
-    const teamAgents = teamGroups[teamName];
-    const turnState = allTurnState[teamName] || {};
-    return teamAgents.some(a => {
-      const turn = turnState[a.name];
-      const inTurn = turn?.inTurn ?? false;
-      const lastTaskId = turn?.taskId ?? null;
-      return inTurn || lastTaskId;
-    });
-  });
+  if (collapsed) return null;
 
   return (
-    <div class="sb-widget sb-agents-widget">
-      <div class="sb-widget-header">
-        {hasActiveAgents ? "Active Teams" : "No Active Teams"}
+    <div class="sb-projects">
+      <div class="sb-projects-header">
+        <span class="sb-projects-label">Projects</span>
+        <button
+          class="sb-projects-add"
+          onClick={() => { projectModalOpen.value = true; }}
+          title="New project"
+        >
+          <PlusIcon />
+        </button>
       </div>
-      <div class="sb-agents-scroll">
-        {teamNames.map(teamName => {
-          const teamAgents = teamGroups[teamName];
-          const turnState = allTurnState[teamName] || {};
-
-          // Compute status for each agent
-          const agentsWithStatus = teamAgents.map(a => {
-            const turn = turnState[a.name];
-            const inTurn = turn?.inTurn ?? false;
-            const lastTaskId = turn?.taskId ?? null;
-            const sender = turn?.sender ?? "";
-
-            let status = "idle";
-            let displayTaskId = null;
-            let respondingTo = null;
-            let taskStatus = null;
-
-            if (inTurn) {
-              status = "working";
-              if (lastTaskId) {
-                displayTaskId = lastTaskId;
-                const task = allTasks.find(t => t.id === lastTaskId);
-                if (task) {
-                  taskStatus = task.status;
-                }
-              } else if (sender) {
-                respondingTo = sender;
-              }
-            } else if (lastTaskId) {
-              status = "waiting";
-              displayTaskId = lastTaskId;
-              const task = allTasks.find(t => t.id === lastTaskId);
-              if (task) {
-                taskStatus = task.status;
-              }
-            }
-
-            return { agent: a, status, displayTaskId, respondingTo, taskStatus };
-          });
-
-          // Split into active and idle
-          const active = agentsWithStatus.filter(a => a.status !== "idle");
-          const idle = agentsWithStatus.filter(a => a.status === "idle");
-
-          // Skip this team if nobody is active
-          if (active.length === 0) return null;
-
-          // Sort active: working first, then waiting, alpha within
-          active.sort((a, b) => {
-            const order = { working: 0, waiting: 1 };
-            const diff = (order[a.status] ?? 9) - (order[b.status] ?? 9);
-            return diff !== 0 ? diff : a.agent.name.localeCompare(b.agent.name);
-          });
-
-          const isCurrentTeam = teamName === currentTeamName;
-
-          return (
-            <div key={teamName} class="sb-team-group">
-              <div class="sb-team-name">{teamName}</div>
-              {active.map(({ agent: a, status, displayTaskId, respondingTo, taskStatus }) => {
-                let dotClass = getAgentDotClass(a, allTasks, (statsMap[a.team] || {})[a.name]);
-
-                // Get last 1 tool invocation for this agent (only for current team)
-                const agentActivities = isCurrentTeam
-                  ? activityLog
-                      .filter(entry => entry.agent === a.name && entry.type === "agent_activity")
-                      .slice(-1)
-                  : [];
-
-                const verb = taskStatus ? getStatusVerb(taskStatus) : null;
-
-                // Check if agent has recent tool activity (within 10s)
-                const hasRecentToolActivity = agentActivities.length > 0 && agentActivities[0].tool;
-
-                // Show cycling verb when: working status, no specific verb, and no recent tool activity
-                const showCyclingVerb = status === "working" && !verb && !hasRecentToolActivity;
-
-                return (
-                  <div
-                    key={a.name}
-                    class="sb-agent-row"
-                  >
-                    <div class="sb-agent-line1">
-                      <span class={"sb-dot " + dotClass}></span>
-                      <span
-                        class="sb-agent-name"
-                        onClick={(e) => { e.stopPropagation(); openPanel("agent", a.name); }}
-                      >
-                        {cap(a.name)}
-                      </span>
-                      <span class="sb-agent-status">
-                        {respondingTo ? (
-                          <>
-                            responding to <span class="sb-agent-task-link">{cap(respondingTo)}</span>
-                          </>
-                        ) : (
-                          <>
-                            {displayTaskId && verb ? (
-                              <>
-                                {verb}{" "}
-                                <span
-                                  class="sb-agent-task-link"
-                                  onClick={(e) => { e.stopPropagation(); openPanel("task", displayTaskId); }}
-                                >
-                                  {taskIdStr(displayTaskId)}
-                                </span>
-                              </>
-                            ) : showCyclingVerb ? (
-                              <CyclingVerb />
-                            ) : (
-                              status
-                            )}
-                          </>
-                        )}
-                      </span>
-                    </div>
-                    {agentActivities.map((act, idx) => {
-                      const toolDetail = act.tool
-                        ? `${act.tool.toLowerCase()}${act.detail ? ": " + act.detail.split("/").pop().substring(0, 24) : ""}`
-                        : "";
-                      return toolDetail ? (
-                        <div key={idx} class="sb-agent-tool-line">{toolDetail}</div>
-                      ) : null;
-                    })}
-                  </div>
-                );
-              })}
-              {idle.map(({ agent: a }) => {
-                const dotClass = "dot-offline";
-                return (
-                  <div
-                    key={a.name}
-                    class="sb-agent-row"
-                  >
-                    <div class="sb-agent-line1">
-                      <span class={"sb-dot " + dotClass}></span>
-                      <span
-                        class="sb-agent-name"
-                        onClick={(e) => { e.stopPropagation(); openPanel("agent", a.name); }}
-                      >
-                        {cap(a.name)}
-                      </span>
-                      <span class="sb-agent-status">idle</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
-      </div>
+      {teamList.length > 0 && (
+        <div class="sb-projects-list">
+          {teamList.map(t => {
+            const name = typeof t === "object" ? t.name : t;
+            const isCurrent = name === current;
+            return (
+              <button
+                key={name}
+                class={"sb-project-item" + (isCurrent ? " active" : "")}
+                onClick={() => navigate(name, "chat")}
+              >
+                <span class="sb-project-dot"></span>
+                <span class="sb-project-name">{cap(name)}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {teamList.length === 0 && (
+        <div class="sb-projects-empty">No projects yet</div>
+      )}
     </div>
   );
 }
-
 
 // ── Main Sidebar ──
 export function Sidebar() {
@@ -349,7 +143,7 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Nav */}
+      {/* Nav: Tasks + Agents (always visible, even collapsed) */}
       <nav class="sb-nav">
         {NAV_ITEMS.map(({ key, label, Icon }) => (
           <button
@@ -364,10 +158,8 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Widgets */}
-      <div class="sb-widgets">
-        <AgentsWidget collapsed={collapsed} />
-      </div>
+      {/* Projects: hidden when collapsed */}
+      <ProjectList collapsed={collapsed} />
     </div>
   );
 }

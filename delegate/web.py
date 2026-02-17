@@ -1629,6 +1629,71 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         resolved_model = req.model or ("opus" if req.role == "manager" else "sonnet")
         return {"message": f"Added agent '{agent_name}' to team '{team}' (role: {req.role or 'engineer'}, model: {resolved_model})"}
 
+    # --- Project (team) creation from UI ---
+
+    class CreateProjectRequest(BaseModel):
+        name: str
+        repo_path: str
+        agent_count: int = 2
+        model: str = "sonnet"
+
+    @app.post("/projects")
+    def create_project(req: CreateProjectRequest):
+        """Create a new project (team) from the UI.
+
+        Bootstraps the team, registers the repo, and installs the default
+        workflow.  Broadcasts a ``teams_refresh`` SSE event so all open
+        tabs update their sidebar immediately.
+        """
+        from delegate.bootstrap import bootstrap
+        from delegate.repo import register_repo
+        from delegate.activity import broadcast_teams_refresh
+
+        name = req.name.strip().lower().replace(" ", "-")
+
+        # Validate name
+        if not name or not name.replace("-", "").replace("_", "").isalnum():
+            raise HTTPException(status_code=400, detail="Invalid project name. Use lowercase letters, numbers, hyphens.")
+        if not Path(req.repo_path).is_dir():
+            raise HTTPException(status_code=400, detail=f"Repository path does not exist: {req.repo_path}")
+
+        # Check for duplicate
+        from delegate.db import get_connection
+        conn = get_connection(hc_home)
+        existing = conn.execute("SELECT 1 FROM teams WHERE name = ?", (name,)).fetchone()
+        if existing:
+            raise HTTPException(status_code=409, detail=f"Project '{name}' already exists")
+
+        # Generate agent names
+        agent_list = [(f"agent-{i+1}", "engineer") for i in range(req.agent_count)]
+
+        # Bootstrap
+        models_dict = {"*": req.model} if req.model in ("opus", "sonnet") else None
+        try:
+            bootstrap(hc_home, team_name=name, agents=agent_list, models=models_dict)
+        except (ValueError, FileExistsError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        # Register repo
+        try:
+            register_repo(hc_home, name, req.repo_path)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=f"Failed to register repo: {exc}")
+
+        # Register default workflow
+        try:
+            from delegate.workflow import register_workflow, get_latest_version
+            builtin = Path(__file__).parent / "workflows" / "default.py"
+            if builtin.is_file() and get_latest_version(hc_home, name, "default") is None:
+                register_workflow(hc_home, name, builtin)
+        except Exception:
+            logger.warning("Could not register default workflow for project '%s'", name, exc_info=True)
+
+        # Notify all SSE clients to refresh their team list
+        broadcast_teams_refresh()
+
+        return {"name": name, "status": "created"}
+
     @app.get("/teams/{team}/default-cwd")
     def get_default_cwd(team: str):
         """Return the default working directory for shell commands in a team.

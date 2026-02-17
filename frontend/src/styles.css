@@ -386,7 +386,415 @@ body {
   white-space: nowrap;
 }
 
+/* ── Project list in sidebar ── */
+.sb-projects {
+  padding: 4px 8px 8px;
+  border-top: 1px solid var(--border-subtle);
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.sb-projects-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 6px;
+}
+.sb-projects-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.sb-projects-add {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+.sb-projects-add:hover { color: var(--text-primary); background: var(--bg-hover); }
+.sb-projects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sb-project-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: left;
+}
+.sb-project-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.sb-project-item.active {
+  background: var(--bg-active);
+  color: var(--text-heading);
+}
+.sb-project-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.sb-project-item.active .sb-project-dot {
+  background: var(--dot-active);
+}
+.sb-project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-projects-empty {
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 8px 4px;
+  text-align: center;
+}
+
 @media (max-width: 900px) { .sb { display: none; } }
+
+/* ================================================================
+   Mission Control (right panel)
+   ================================================================ */
+.mc {
+  width: 320px;
+  min-width: 320px;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  transition: width 150ms ease, min-width 150ms ease, opacity 150ms ease;
+  flex-shrink: 0;
+}
+.mc-collapsed {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-left: none;
+  opacity: 0;
+}
+
+.mc-header {
+  height: 48px;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.mc-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.mc-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+.mc-toggle:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+.mc-cards {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* ── Agent card ── */
+.mc-card {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: opacity 300ms ease;
+}
+.mc-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.mc-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.mc-dot.dot-active  { background: var(--dot-active); }
+.mc-dot.dot-waiting { background: var(--dot-stale); }
+
+.mc-agent-name {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.mc-agent-name:hover { text-decoration: underline; }
+
+.mc-agent-team {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.mc-card-task {
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 3px 0 2px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mc-card-task:hover { text-decoration: underline; }
+
+.mc-task-id {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-right: 4px;
+}
+.mc-task-title {
+  color: var(--text-secondary);
+}
+
+/* ── Thinking line — Cursor-style ── */
+.mc-thinking {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 0 2px 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.mc-thinking-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dot-active);
+  animation: mc-pulse 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+@keyframes mc-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.mc-thinking-text {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.4;
+}
+
+/* ── Tool lines ── */
+.mc-tool-line {
+  padding-left: 14px;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mc-empty {
+  padding: 24px 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+@media (max-width: 1200px) { .mc { display: none; } }
+
+/* ================================================================
+   New Project Modal
+   ================================================================ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--backdrop-bg);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.npm-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  width: 440px;
+  max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+.npm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.npm-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-heading);
+  margin: 0;
+}
+.npm-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  border-radius: 4px;
+}
+.npm-close:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+.npm-form {
+  padding: 20px;
+}
+.npm-field {
+  margin-bottom: 16px;
+}
+.npm-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.npm-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  outline: none;
+  box-sizing: border-box;
+}
+.npm-input:focus { border-color: var(--dot-active); }
+.npm-input::placeholder { color: var(--text-faint); }
+
+.npm-hint {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 4px;
+  display: block;
+}
+
+.npm-row {
+  display: flex;
+  gap: 16px;
+}
+.npm-field-half { flex: 1; }
+
+.npm-stepper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.npm-stepper-btn {
+  width: 28px;
+  height: 28px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.npm-stepper-btn:hover { background: var(--bg-hover); }
+.npm-stepper-btn:disabled { opacity: 0.4; cursor: default; }
+.npm-stepper-value {
+  font-size: 16px;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  color: var(--text-primary);
+  min-width: 20px;
+  text-align: center;
+}
+
+.npm-select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  cursor: pointer;
+}
+.npm-select:focus { border-color: var(--dot-active); }
+
+.npm-error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #ef4444;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+
+.npm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.npm-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+}
+.npm-btn:disabled { opacity: 0.5; cursor: default; }
+.npm-btn-cancel {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+.npm-btn-cancel:hover { background: var(--bg-active); }
+.npm-btn-create {
+  background: var(--dot-active);
+  color: #000;
+}
+.npm-btn-create:hover { background: #22c55e; }
 
 /* ================================================================
    Tasks panel

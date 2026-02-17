@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "preact/hooks";
-import { currentTeam, teams, tasks, agents, navigate, activeTab, taskTeamFilter } from "../state.js";
+import { currentTeam, teams, tasks, agents, navigate } from "../state.js";
 import { cap } from "../utils.js";
 
 /**
@@ -59,11 +59,8 @@ export function TeamSwitcher({ open, onClose }) {
   const selectTeam = useCallback((teamName) => {
     const current = currentTeam.value;
     if (teamName !== current) {
-      const currentTab = activeTab.value || "chat";
-      navigate(teamName, currentTab);
-      if (currentTab === "tasks") {
-        taskTeamFilter.value = teamName;
-      }
+      // Always open the project's chat when switching
+      navigate(teamName, "chat");
     }
     onClose();
   }, [onClose]);
@@ -116,7 +113,7 @@ export function TeamSwitcher({ open, onClose }) {
             ref={inputRef}
             type="text"
             class="team-switcher-input"
-            placeholder="Switch team..."
+            placeholder="Switch project..."
             value={query}
             onInput={(e) => {
               setQuery(e.target.value);
@@ -126,7 +123,7 @@ export function TeamSwitcher({ open, onClose }) {
         </div>
         <div class="team-switcher-list" ref={listRef}>
           {filteredTeams.length === 0 ? (
-            <div class="team-switcher-empty">No teams found</div>
+            <div class="team-switcher-empty">No projects found</div>
           ) : (
             filteredTeams.map((team, idx) => (
               <div

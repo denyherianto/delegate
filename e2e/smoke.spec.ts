@@ -21,8 +21,8 @@ test.describe("Smoke tests", () => {
     // Sidebar should be visible with nav buttons
     await expect(page.locator(".sb-nav-btn").first()).toBeVisible();
 
-    // Chat tab should be active
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    // Chat panel should be visible (no Chat nav button — clicking project opens chat)
+    await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
 
     // Should see at least one chat message from the seeded data
     await expect(page.locator(".msg, .msg-event").first()).toBeVisible({
@@ -33,8 +33,8 @@ test.describe("Smoke tests", () => {
   test("tab switching works (Chat → Tasks → Agents)", async ({ page }) => {
     await page.goto("/chat");
 
-    // Wait for initial load
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    // Wait for initial load — chat panel should be visible
+    await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
 
     // Switch to Tasks tab
     await page.locator(".sb-nav-btn", { hasText: "Tasks" }).click();
@@ -55,8 +55,8 @@ test.describe("Smoke tests", () => {
       timeout: 5_000,
     });
 
-    // Switch back to Chat
-    await page.locator(".sb-nav-btn", { hasText: "Chat" }).click();
+    // Switch back to Chat via project click in sidebar
+    await page.locator(".sb-project-item").first().click();
     await expect(page).toHaveURL(/\/chat/);
   });
 

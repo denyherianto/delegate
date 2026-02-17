@@ -59,7 +59,7 @@ from delegate.mailbox import (
 from delegate.prompt import Prompt
 from delegate.telephone import Telephone, TelephoneUsage
 from delegate.task import format_task_id
-from delegate.activity import broadcast as broadcast_activity, broadcast_turn_event
+from delegate.activity import broadcast as broadcast_activity, broadcast_thinking, broadcast_turn_event
 from delegate.paths import team_dir
 
 logger = logging.getLogger(__name__)
@@ -683,6 +683,8 @@ async def _stream_telephone(
                 tool_name, detail = _extract_tool_summary(block)
                 if tool_name:
                     broadcast_activity(agent, team, tool_name, detail, task_id=current_task_id)
+                elif hasattr(block, "text") and block.text:
+                    broadcast_thinking(agent, team, block.text, task_id=current_task_id)
 
     turn_tokens += tel.total_usage() - starting_usage
 

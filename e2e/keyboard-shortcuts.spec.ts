@@ -4,7 +4,6 @@ import { test, expect } from "@playwright/test";
  * Keyboard shortcut tests.
  *
  * Tests all global keyboard shortcuts defined in app.jsx:
- *   - c : Navigate to Chat tab
  *   - t : Navigate to Tasks tab
  *   - a : Navigate to Agents tab
  *   - s : Toggle sidebar collapse
@@ -13,12 +12,15 @@ import { test, expect } from "@playwright/test";
  *   - r : Focus chat input
  *   - / : Search messages
  *   - ? : Toggle help overlay
+ *   - Shift+M : Toggle Mission Control
  *   - Esc : Close panels / blur input
  *
  * Also verifies:
  *   - Shortcuts work when side panels are open (except help overlay)
  *   - Component-level shortcuts (j/k nav) don't leak to global handler
  *   - Escape properly closes panels and blurs inputs
+ *
+ * NOTE: The "c" shortcut for Chat was removed — clicking a project opens chat.
  */
 
 const TEAM = "testteam";
@@ -35,19 +37,9 @@ const blurActiveElement = (page: import("@playwright/test").Page) =>
   page.evaluate(() => (document.activeElement as HTMLElement)?.blur?.());
 
 test.describe("Keyboard shortcuts", () => {
-  test("c navigates to Chat tab", async ({ page }) => {
-    await page.goto("/tasks");
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Tasks");
-    await blurActiveElement(page);
-
-    await page.keyboard.press("c");
-    await expect(page).toHaveURL(/\/chat/);
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
-  });
-
   test("t navigates to Tasks tab", async ({ page }) => {
     await page.goto("/chat");
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
     await blurActiveElement(page);
 
     await page.keyboard.press("t");
@@ -57,7 +49,7 @@ test.describe("Keyboard shortcuts", () => {
 
   test("a navigates to Agents tab", async ({ page }) => {
     await page.goto("/chat");
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
     await blurActiveElement(page);
 
     await page.keyboard.press("a");
@@ -68,7 +60,7 @@ test.describe("Keyboard shortcuts", () => {
   test("s toggles sidebar collapse", async ({ page }) => {
     await page.goto("/chat");
     // Wait for page to be ready (keyboard handler registered in useEffect)
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
     await blurActiveElement(page);
 
     // Sidebar should start expanded
@@ -87,7 +79,7 @@ test.describe("Keyboard shortcuts", () => {
   test("? toggles help overlay", async ({ page }) => {
     await page.goto("/chat");
     // Wait for page to be ready (keyboard handler registered in useEffect)
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
     await blurActiveElement(page);
 
     // Help overlay should not be visible initially
@@ -106,7 +98,7 @@ test.describe("Keyboard shortcuts", () => {
   test("Escape closes help overlay", async ({ page }) => {
     await page.goto("/chat");
     // Wait for page to be ready (keyboard handler registered in useEffect)
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
     await blurActiveElement(page);
 
     // Open help overlay with '?'
@@ -122,7 +114,7 @@ test.describe("Keyboard shortcuts", () => {
   test("r focuses chat input", async ({ page }) => {
     await page.goto("/chat");
     // Wait for page to be ready (keyboard handler registered in useEffect)
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
     await blurActiveElement(page);
 
     // Chat input (contentEditable div) should not be focused initially
@@ -137,7 +129,7 @@ test.describe("Keyboard shortcuts", () => {
   test("/ expands and focuses search input", async ({ page }) => {
     await page.goto("/chat");
     // Wait for page to be ready (keyboard handler registered in useEffect)
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
     await blurActiveElement(page);
 
     // Press '/' to expand search and focus input
@@ -153,7 +145,7 @@ test.describe("Keyboard shortcuts", () => {
   test("Escape blurs chat input when focused", async ({ page }) => {
     await page.goto("/chat");
     // Wait for page to be ready (keyboard handler registered in useEffect)
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
     await blurActiveElement(page);
 
     // Focus the chat input (contentEditable div) with 'r'
@@ -199,10 +191,10 @@ test.describe("Keyboard shortcuts", () => {
     await expect(panel).toBeVisible({ timeout: 3_000 });
     await blurActiveElement(page);
 
-    // Press 'c' to navigate to Chat — should work even with panel open
-    await page.keyboard.press("c");
-    await expect(page).toHaveURL(/\/chat/);
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    // Press 'a' to navigate to Agents — should work even with panel open
+    await page.keyboard.press("a");
+    await expect(page).toHaveURL(/\/agents/);
+    await expect(page.locator(".sb-nav-btn.active")).toContainText("Agents");
   });
 
   test("sidebar toggle works when task panel is open", async ({ page }) => {
@@ -237,7 +229,7 @@ test.describe("Keyboard shortcuts", () => {
   test("help overlay blocks all other shortcuts", async ({ page }) => {
     await page.goto("/chat");
     // Wait for page to be ready (keyboard handler registered in useEffect)
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
     await blurActiveElement(page);
 
     // Open help overlay
@@ -249,7 +241,6 @@ test.describe("Keyboard shortcuts", () => {
     await page.keyboard.press("t");
     // Should still be on chat tab
     await expect(page).toHaveURL(/\/chat/);
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
 
     // Help overlay should still be visible
     await expect(helpOverlay).toBeVisible();
@@ -298,7 +289,7 @@ test.describe("Keyboard shortcuts", () => {
     page,
   }) => {
     await page.goto("/chat");
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
 
     // Focus the contentEditable chat input
     const chatInput = page.locator(".chat-input");
@@ -310,7 +301,6 @@ test.describe("Keyboard shortcuts", () => {
 
     // Should still be on chat tab
     await expect(page).toHaveURL(/\/chat/);
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
 
     // Input should contain 't' (contentEditable uses textContent)
     await expect(chatInput).toHaveText("t");
@@ -320,7 +310,7 @@ test.describe("Keyboard shortcuts", () => {
     page,
   }) => {
     await page.goto("/chat");
-    await expect(page.locator(".sb-nav-btn.active")).toContainText("Chat");
+    await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
 
     const chatInput = page.locator(".chat-input");
     await chatInput.click();
@@ -342,10 +332,10 @@ test.describe("Keyboard shortcuts", () => {
     await expect(chatInput).toBeFocused(); // still focused on chat input
     await expect(chatInput).toHaveText("s/");
 
-    // Type 'c' — should NOT navigate to chat (already there, but verify URL is stable)
-    await page.keyboard.type("c");
+    // Type 'a' — should NOT navigate to agents
+    await page.keyboard.type("a");
     await expect(page).toHaveURL(/\/chat/);
-    await expect(chatInput).toHaveText("s/c");
+    await expect(chatInput).toHaveText("s/a");
   });
 
   test("Enter opens selected task in tasks panel", async ({ page }) => {

@@ -176,6 +176,46 @@ def broadcast_task_update(task_id: int, team: str, changes: dict[str, Any]) -> N
     _push_to_subscribers(payload)
 
 
+def broadcast_thinking(
+    agent: str,
+    team: str,
+    text: str,
+    *,
+    task_id: int | None = None,
+) -> None:
+    """Broadcast a thinking/text snippet to SSE clients (ephemeral, not stored).
+
+    Called from the turn execution loop for every text block in the SDK
+    response stream.  The frontend uses these to show live "thinking"
+    indicators in Mission Control.
+
+    Truncated to 300 chars to keep SSE payloads small.
+    """
+    snippet = text[:300]
+    payload = {
+        "type": "agent_thinking",
+        "agent": agent,
+        "team": team,
+        "text": snippet,
+        "task_id": task_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    _push_to_subscribers(payload)
+
+
+def broadcast_teams_refresh() -> None:
+    """Notify all SSE clients to re-fetch the teams/projects list.
+
+    Called after a new project is created via the UI so all open tabs
+    update their sidebar immediately.
+    """
+    payload = {
+        "type": "teams_refresh",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    _push_to_subscribers(payload)
+
+
 def broadcast_turn_event(
     event_type: str,
     agent: str,
