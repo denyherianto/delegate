@@ -11,7 +11,7 @@ The merge sequence for a task in ``in_approval`` with an approved review
       when commit-by-commit rebase fails (intermediate conflicts).
    b. If squash-apply also fails (true content conflict): capture the
       conflicting hunks, escalate to the manager with detailed context
-      and ``git reset --soft`` instructions for the DRI.
+      and ``rebase_to_main`` MCP tool instructions for the DRI.
 4. Run pre-merge script / tests inside the temp worktree.
 5. If tests fail: remove temp worktree/branch, escalate to manager.
 6. Fast-forward main:

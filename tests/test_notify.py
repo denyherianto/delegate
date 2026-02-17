@@ -151,7 +151,7 @@ class TestNotifyConflict:
         inbox = read_inbox(notify_team, TEAM, "edison", unread_only=True)
         body = inbox[0].body
 
-        assert "reset --soft" in body.lower()
+        assert "rebase_to_main" in body
         assert "alice" in body
 
     def test_no_details_shows_placeholder(self, notify_team):

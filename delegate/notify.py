@@ -149,8 +149,7 @@ def notify_conflict(
 
     When *conflict_context* is provided (from ``_capture_conflict_hunks``),
     the notification includes specific file/hunk details and instructions
-    for the DRI to resolve using ``git reset --soft`` (since agents cannot
-    run ``git rebase``).
+    for the DRI to resolve using the ``rebase_to_main`` MCP tool.
 
     Args:
         hc_home: Delegate home directory.
@@ -171,7 +170,7 @@ def notify_conflict(
     dri = task.get("dri", assignee)
 
     if conflict_context:
-        # Rich notification with conflict hunks and reset --soft instructions
+        # Rich notification with conflict hunks and rebase_to_main instructions
         body = (
             f"MERGE_CONFLICT: {format_task_id(task_id)}\n"
             f"\n"
@@ -186,19 +185,16 @@ def notify_conflict(
             f"{conflict_context}\n"
             f"\n"
             f"RESOLUTION STEPS (for {dri}):\n"
-            f"Since agents cannot run git rebase, use reset --soft instead:\n"
+            f"Use the rebase_to_main MCP tool to reset onto latest main:\n"
             f"\n"
-            f"  cd <worktree for {format_task_id(task_id)}>\n"
-            f"  git fetch origin main   # (if needed, ensure main ref is current)\n"
-            f"  git reset --soft main   # moves HEAD to main, keeps all changes staged\n"
-            f"  # Now resolve any staging conflicts in the files listed above.\n"
-            f"  # The staged changes contain ALL of the feature's work.\n"
-            f"  # Edit conflicting files so they work with the current main.\n"
-            f"  git add -A\n"
-            f"  git commit -m \"rebase {format_task_id(task_id)} onto main\"\n"
-            f"\n"
-            f"Then update the task's base_sha to the current main tip:\n"
-            f"  python -m delegate.task update-base-sha <home> <team> {task_id}\n"
+            f"  1. Call rebase_to_main(task_id={task_id})\n"
+            f"     This resets HEAD to main, keeps all changes staged,\n"
+            f"     and updates base_sha automatically.\n"
+            f"  2. Resolve any conflicts in the files listed above.\n"
+            f"     The staged changes contain ALL of the feature's work.\n"
+            f"     Edit conflicting files so they work with the current main.\n"
+            f"  3. git add -A\n"
+            f"  4. git commit -m \"rebase {format_task_id(task_id)} onto main\"\n"
             f"\n"
             f"ACTION: Assign this task back to {dri}, send them these instructions,\n"
             f"and transition the task to in_progress. After they resolve and commit,\n"
@@ -215,7 +211,7 @@ def notify_conflict(
             f"\n"
             f"Suggested action:\n"
             f"  - Assign back to {dri} to resolve conflicts using\n"
-            f"    git reset --soft main, then re-submit for review"
+            f"    rebase_to_main(task_id={task_id}), then re-submit for review"
         )
 
     msg = Message(

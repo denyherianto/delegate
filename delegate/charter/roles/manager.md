@@ -91,17 +91,14 @@ The notification includes:
 - The specific conflicting files and diff hunks from both sides
 - Step-by-step resolution instructions for the DRI
 
-**Your action:** Forward the resolution instructions to the DRI, assign the task back to them (`in_progress`), and ask them to resolve using `git reset --soft main`. Agents do NOT have permission to run `git rebase` — they must use the reset --soft approach:
+**Your action:** Forward the resolution instructions to the DRI, assign the task back to them (`in_progress`), and ask them to resolve using the `rebase_to_main` MCP tool:
 
-```
-cd <worktree>
-git reset --soft main    # moves HEAD to main, keeps all changes staged
-# resolve conflicts in the affected files
-git add -A
-git commit -m "rebase TNNNN onto main"
-```
+1. DRI calls `rebase_to_main(task_id=NNNN)` — this resets HEAD to main and keeps all changes staged, then updates `base_sha` automatically.
+2. DRI resolves any conflicts in the affected files.
+3. DRI runs `git add -A && git commit -m "rebase TNNNN onto main"`.
+4. Re-submit for review.
 
-After the DRI resolves and commits, update the task's `base_sha` and re-submit for review.
+> **Note:** Agents do NOT have permission to run `git rebase` or `git reset --soft` directly — they must use the `rebase_to_main` MCP tool which performs this safely.
 
 
 ## Cancellation

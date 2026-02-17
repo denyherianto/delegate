@@ -46,7 +46,7 @@ The human's "Action Queue" in the UI shows tasks where they are the current assi
 5. Reviewer approves → `in_approval`. Manager reassigns to human. Reviewer rejects → back to `in_progress`, manager reassigns to DRI with feedback.
 6. Human approves (manual repos) or auto-merge (auto repos). Task transitions to `merging`.
 7. Merge worker attempts rebase onto main in each repo. If rebase conflicts, it falls back to squash-reapply (applying the total diff as one commit). Then runs pre-merge script, fast-forward merges.
-8. Task becomes `done` (successful merge) or `merge_failed` (true content conflict or test failure). Transient failures are retried automatically up to 3 times before escalating to the manager. On content conflicts, the manager receives detailed hunk context and `git reset --soft` resolution instructions for the DRI.
+8. Task becomes `done` (successful merge) or `merge_failed` (true content conflict or test failure). Transient failures are retried automatically up to 3 times before escalating to the manager. On content conflicts, the manager receives detailed hunk context and instructs the DRI to use the `rebase_to_main` MCP tool to resolve.
 
 ## Attachments
 
