@@ -406,8 +406,8 @@ class TestEventLogging:
         assert "Todo" in combined_msg
         assert "In Progress" in combined_msg
         assert "assigned to Bob" in combined_msg
-        # Check it uses the colon format: "T0001: Todo → In Progress, assigned to Bob"
-        assert ":" in combined_msg
+        # Check it uses the no-colon format: "T0001 Todo → In Progress, assigned to Bob"
+        assert "T0001 Todo" in combined_msg
 
     def test_transition_task_updates_both_fields(self, tmp_team):
         from delegate.task import transition_task

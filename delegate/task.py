@@ -645,7 +645,7 @@ def transition_task(hc_home: Path, team: str, task_id: int, new_status: str, new
     log_event(
         hc_home,
         team,
-        f"{format_task_id(task_id)}: {old_status} \u2192 {new_status_title}, assigned to {new_assignee.capitalize()}",
+        f"{format_task_id(task_id)} {old_status} \u2192 {new_status_title}, assigned to {new_assignee.capitalize()}",
         task_id=task_id,
     )
     _broadcast_update(task_id, team, {"status": new_status, "assignee": new_assignee})
