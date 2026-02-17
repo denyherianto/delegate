@@ -1762,6 +1762,18 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
     # --- Global task endpoints ---
 
+    @app.get("/api/tasks/{task_id}")
+    def get_task_global(task_id: int):
+        """Get a single task by ID — scans all teams."""
+        for t in _list_teams(hc_home):
+            try:
+                task = _get_task(hc_home, t, task_id)
+                task["team"] = t
+                return task
+            except (FileNotFoundError, Exception):
+                continue
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
     @app.get("/api/tasks/{task_id}/stats")
     def get_task_stats_global(task_id: int):
         """Get task stats — scans all teams for the task (legacy compat)."""

@@ -36,6 +36,11 @@ export async function fetchAllTasks() {
   return r.ok ? r.json() : [];
 }
 
+export async function fetchTask(taskId) {
+  const r = await fetch(`/api/tasks/${taskId}`);
+  return r.ok ? r.json() : null;
+}
+
 export async function fetchAgents(team) {
   const r = await fetch(`/teams/${team}/agents`);
   return r.ok ? r.json() : [];

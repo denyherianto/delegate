@@ -875,22 +875,36 @@ export function TaskSidePanel() {
       setVisitedTabs({ overview: true });
     }
 
+    // ── Synchronous fallback from signal (instant when tasks already loaded) ──
     const cached = tasks.value.find(t => t.id === id);
     if (cached) {
       setTask(cached);
       _setCache(id, { task: cached });
     }
 
-    // ── Revalidate in background ──
-    // Fetch fresh task list to catch any updates that may have been missed
-    api.fetchAllTasks().then(taskData => {
-      tasks.value = taskData;
-      const fresh = taskData.find(t => t.id === id);
-      if (fresh) {
-        setTask(fresh);
-        _setCache(id, { task: fresh });
+    // ── Primary source: direct single-task fetch (immune to signal remounts) ──
+    api.fetchTask(id).then(taskData => {
+      if (taskData) {
+        setTask(taskData);
+        _setCache(id, { task: taskData });
       }
     }).catch(() => {});
+
+    // ── Watchdog: retry if task is still null after 3 seconds ──
+    // Guards against race conditions where the initial fetch is lost
+    // due to signal-driven remounts or transient network errors.
+    const watchdog = setTimeout(() => {
+      setTask(prev => {
+        if (prev !== null) return prev; // already loaded, no-op
+        api.fetchTask(id).then(data => {
+          if (data) {
+            setTask(data);
+            _setCache(id, { task: data });
+          }
+        }).catch(() => {});
+        return prev;
+      });
+    }, 3000);
 
     // Parallelize stats + reviews loading
     (async () => {
@@ -943,6 +957,8 @@ export function TaskSidePanel() {
         setActivityRaw([]);
       });
     })();
+
+    return () => clearTimeout(watchdog);
   }, [id]);
 
   // Sync task from signal when SSE pushes updates.
