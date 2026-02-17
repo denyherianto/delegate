@@ -568,6 +568,11 @@ class TestEnsureTaskInfra:
         repo_path.mkdir(parents=True)
         subprocess.run(["git", "init", str(repo_path)], check=True,
                        capture_output=True)
+        # Configure git identity (required in CI where global config is absent)
+        subprocess.run(["git", "-C", str(repo_path), "config", "user.name", "Test"],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo_path), "config", "user.email", "test@test.com"],
+                       check=True, capture_output=True)
         # Need at least one commit for worktree creation
         (repo_path / "README.md").write_text("# Test")
         subprocess.run(["git", "-C", str(repo_path), "add", "."],
