@@ -11,44 +11,7 @@ import {
   renderMarkdown, msgStatusIcon, taskIdStr, toApiPath, displayFilePath,
 } from "../utils.js";
 
-import hljs from "highlight.js/lib/core";
-import javascript from "highlight.js/lib/languages/javascript";
-import typescript from "highlight.js/lib/languages/typescript";
-import python from "highlight.js/lib/languages/python";
-import go from "highlight.js/lib/languages/go";
-import rust from "highlight.js/lib/languages/rust";
-import java from "highlight.js/lib/languages/java";
-import xml from "highlight.js/lib/languages/xml";       // also covers HTML
-import css from "highlight.js/lib/languages/css";
-import json from "highlight.js/lib/languages/json";
-import yaml from "highlight.js/lib/languages/yaml";
-import ini from "highlight.js/lib/languages/ini";        // covers TOML
-import bash from "highlight.js/lib/languages/bash";
-import sql from "highlight.js/lib/languages/sql";
-import markdown from "highlight.js/lib/languages/markdown";
-import diff from "highlight.js/lib/languages/diff";
-import dockerfile from "highlight.js/lib/languages/dockerfile";
-import makefile from "highlight.js/lib/languages/makefile";
-import plaintext from "highlight.js/lib/languages/plaintext";
-
-hljs.registerLanguage("javascript", javascript);
-hljs.registerLanguage("typescript", typescript);
-hljs.registerLanguage("python", python);
-hljs.registerLanguage("go", go);
-hljs.registerLanguage("rust", rust);
-hljs.registerLanguage("java", java);
-hljs.registerLanguage("xml", xml);
-hljs.registerLanguage("css", css);
-hljs.registerLanguage("json", json);
-hljs.registerLanguage("yaml", yaml);
-hljs.registerLanguage("ini", ini);
-hljs.registerLanguage("bash", bash);
-hljs.registerLanguage("sql", sql);
-hljs.registerLanguage("markdown", markdown);
-hljs.registerLanguage("diff", diff);
-hljs.registerLanguage("dockerfile", dockerfile);
-hljs.registerLanguage("makefile", makefile);
-hljs.registerLanguage("plaintext", plaintext);
+import hljs from "highlight.js";
 
 const EXT_TO_LANG = {
   js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript",
