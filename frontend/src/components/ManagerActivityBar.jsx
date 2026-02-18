@@ -3,16 +3,11 @@ import {
   managerTurnContext, agentLastActivity, agentActivityLog,
   agentThinking, agents,
 } from "../state.js";
-import { cap, taskIdStr, renderMarkdown, useStreamingText } from "../utils.js";
+import { cap, renderMarkdown, useStreamingText } from "../utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function truncate(str, maxLen) {
-  if (!str || str.length <= maxLen) return str;
-  return str.slice(0, maxLen) + "\u2026";
-}
 
 const THINKING_WORDS = [
   "thinking",
@@ -28,7 +23,7 @@ const THINKING_WORDS = [
 ];
 
 // ---------------------------------------------------------------------------
-// CyclingVerb — animated thinking placeholder
+// CyclingVerb — animated thinking placeholder (shown before first text)
 // ---------------------------------------------------------------------------
 
 function CyclingVerb() {
@@ -56,15 +51,14 @@ function CyclingVerb() {
 // ---------------------------------------------------------------------------
 // DelegateThinkingFooter
 //
-// Shows Delegate's thinking inline in the chat panel when active.
-//   - Hidden when Delegate is idle (0 height)
-//   - Glass card with green accent when active
-//   - Thinking text streams in word-by-word
+// Glass card in the chat panel showing Delegate's live thinking.
+//
+// Header line:  [•••]  Delegate  thinking…
+// Body:         streamed thinking text + tool entries
 // ---------------------------------------------------------------------------
 
 export function ManagerActivityBar() {
   const turnCtx = managerTurnContext.value;
-  const lastActivity = agentLastActivity.value;
   const thinking = agentThinking.value;
   const activityLog = agentActivityLog.value;
   const streamRef = useRef(null);
@@ -92,18 +86,6 @@ export function ManagerActivityBar() {
     ? agentActivities.slice(-Math.min(unconsumedTools, 2))
     : [];
 
-  // Context: what Delegate is working on
-  let contextLabel = "";
-  if (isActive) {
-    if (turnCtx.task_id > 0 && turnCtx.sender) {
-      contextLabel = `${cap(turnCtx.sender)} · ${taskIdStr(turnCtx.task_id)}`;
-    } else if (turnCtx.task_id > 0) {
-      contextLabel = taskIdStr(turnCtx.task_id);
-    } else if (turnCtx.sender) {
-      contextLabel = cap(turnCtx.sender);
-    }
-  }
-
   // ── Hooks (always called unconditionally) ──
 
   // Safety timeout: clear if no activity for 120s (SSE stall / disconnect).
@@ -130,59 +112,30 @@ export function ManagerActivityBar() {
     return <div class="delegate-footer" />;
   }
 
-  // Status indicator for the header bar
-  const activity = lastActivity[managerName];
-  let statusText = null;
-  if (activity && activity.tool) {
-    const ageMs = Date.now() - new Date(activity.timestamp).getTime();
-    if (ageMs < 10000) {
-      const detail = activity.detail ? ": " + truncate(activity.detail, 48) : "";
-      statusText = (
-        <span class="delegate-footer-status">
-          <span class="delegate-footer-tool">{activity.tool.toLowerCase()}</span>{detail}
-        </span>
-      );
-    }
-  }
-  if (!statusText) {
-    statusText = (
-      <span class="delegate-footer-status delegate-footer-thinking">
-        <CyclingVerb />
-      </span>
-    );
-  }
-
   return (
     <div class={"delegate-footer delegate-footer-active" + (hasThinking ? " delegate-footer-expanded" : "")}>
-      {/* Header bar */}
+      {/* Header — always just: dots · Delegate · cycling verb */}
       <div class="delegate-footer-bar">
         <span class="delegate-footer-dots">
           <span class="delegate-dot" />
           <span class="delegate-dot" />
           <span class="delegate-dot" />
         </span>
-        <span class="delegate-footer-text">
-          <span class="delegate-footer-name">{cap(managerName)}</span>
-          {contextLabel && (
-            <>
-              <span class="delegate-footer-sep"> · </span>
-              <span class="delegate-footer-busy">{contextLabel}</span>
-            </>
-          )}
-        </span>
-        {statusText}
+        <span class="delegate-footer-name">{cap(managerName)}</span>
+        {!hasThinking && (
+          <span class="delegate-footer-verb"><CyclingVerb /></span>
+        )}
       </div>
 
-      {/* Thinking stream — word-by-word streaming */}
+      {/* Body — thinking stream + tools, below the header */}
       {hasThinking && (
-        <div class="delegate-footer-stream">
+        <div class="delegate-footer-body">
           <div
             class="delegate-thinking-stream"
             ref={streamRef}
             dangerouslySetInnerHTML={{ __html: renderMarkdown(revealedText) }}
           />
 
-          {/* Tool entries — last 2 from current epoch */}
           {recentTools.map((act, i) => {
             const detail = act.detail
               ? act.detail.split("/").pop().substring(0, 50)
