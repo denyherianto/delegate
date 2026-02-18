@@ -13,6 +13,7 @@ import {
   stripEmojis, handleCopyClick, toApiPath, fmtCompactDuration,
 } from "../utils.js";
 import { ReviewableDiff } from "./ReviewableDiff.jsx";
+import { ReviewerEditModal } from "./ReviewerEditModal.jsx";
 import { showToast } from "../toast.js";
 import { CopyBtn } from "./CopyBtn.jsx";
 
@@ -178,7 +179,7 @@ function RetryMergeButton({ task }) {
 }
 
 // ── Approval bar (fixed between header and tabs) ──
-function ApprovalBar({ task, currentReview, onAction }) {
+function ApprovalBar({ task, currentReview, onAction, onEdit }) {
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState("");
   const [result, setResult] = useState(null);
@@ -225,8 +226,8 @@ function ApprovalBar({ task, currentReview, onAction }) {
       </div>
     );
   }
-  // Not reviewable
-  if (status !== "in_approval") return null;
+  // Not reviewable — only show bar for in_review and in_approval
+  if (status !== "in_approval" && status !== "in_review") return null;
 
   const handleApprove = async () => {
     setLoading(true);
@@ -254,6 +255,24 @@ function ApprovalBar({ task, currentReview, onAction }) {
     }
   };
 
+  // For in_review tasks, only the Edit button is shown (no Approve/Reject yet —
+  // those are only available once the task moves to in_approval).
+  if (status === "in_review") {
+    return (
+      <div class="task-approval-bar">
+        <div class="task-approval-bar-actions">
+          <button
+            class="btn btn-secondary"
+            disabled={loading}
+            onClick={(e) => { e.stopPropagation(); if (onEdit) onEdit(); }}
+          >
+            Edit
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div class="task-approval-bar">
       <textarea
@@ -276,6 +295,13 @@ function ApprovalBar({ task, currentReview, onAction }) {
           onClick={(e) => { e.stopPropagation(); handleApprove(); }}
         >
           {loading ? "Approving..." : "\u2714 Approve"}
+        </button>
+        <button
+          class="btn btn-secondary"
+          disabled={loading}
+          onClick={(e) => { e.stopPropagation(); if (onEdit) onEdit(); }}
+        >
+          Edit
         </button>
         <button
           class="btn-reject"
@@ -913,6 +939,7 @@ export function TaskSidePanel() {
   const [activityRaw, setActivityRaw] = useState(null);
   const [activityLoaded, setActivityLoaded] = useState(false);
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   // Mark tab as visited when selected.
   // IMPORTANT: persist to _tabState synchronously FIRST, before queuing
@@ -1204,6 +1231,15 @@ export function TaskSidePanel() {
   // Called unconditionally (before early returns) to satisfy hook rules.
   const taskAge = useLiveTimer(task?.created_at ?? null);
 
+  // Derive changed file paths from the loaded diff for the edit modal.
+  // Recomputed only when diffRaw changes.
+  const changedFiles = useMemo(() => {
+    if (!diffRaw) return [];
+    return diff2HtmlParse(diffRaw).map(f =>
+      f.newName && f.newName !== "/dev/null" ? f.newName : f.oldName
+    ).filter(Boolean);
+  }, [diffRaw]);
+
   if (id === null) return null;
 
   const isOpen = id !== null;
@@ -1230,6 +1266,22 @@ export function TaskSidePanel() {
           task={t}
           onClose={() => setApproveDialogOpen(false)}
           onAction={handleAction}
+        />
+      )}
+      {showEditModal && t && (
+        <ReviewerEditModal
+          taskId={t.id}
+          changedFiles={changedFiles}
+          onDone={async (newSha) => {
+            setShowEditModal(false);
+            try {
+              await api.approveTask(t.id, "");
+              handleAction();
+            } catch (e) {
+              showToast("Failed to approve after edit: " + e.message, "error");
+            }
+          }}
+          onDiscard={() => setShowEditModal(false)}
         />
       )}
       <div class={"task-panel" + (isOpen ? " open" : "")}>
@@ -1260,7 +1312,7 @@ export function TaskSidePanel() {
           <button class="task-panel-close" onClick={close}>&times;</button>
         </div>
         {/* Approval bar (sticky, between header and tabs) */}
-        {t && <ApprovalBar task={t} currentReview={currentReview} onAction={handleAction} />}
+        {t && <ApprovalBar task={t} currentReview={currentReview} onAction={handleAction} onEdit={() => setShowEditModal(true)} />}
         {/* Tabs */}
         <div class="task-panel-tabs">
           {TABS.map(tab => (

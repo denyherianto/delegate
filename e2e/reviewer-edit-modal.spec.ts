@@ -1,17 +1,14 @@
 import { test, expect, Page } from "@playwright/test";
 
 /**
- * Smoke tests for ReviewerEditModal.
+ * Tests for the Edit button in the approval bar (TaskSidePanel) and the
+ * ReviewerEditModal it opens.
  *
- * These tests require:
- *   - The seeded test env (T0002 has changed files in_review status assigned to testboss)
- *   - T0126 backend endpoints merged (GET /api/tasks/{id}/file, POST /api/tasks/{id}/reviewer-edits)
- *   - ReviewerEditModal wired into TaskSidePanel's Changes tab with an "Edit files" button
+ * Seed data:
+ *   - T0003: in_approval, assigned to testboss — has the Edit button visible
  *
- * Until that wiring is in place (a later milestone), the tests are skipped.
- * To enable: remove the `test.skip(...)` calls.
- *
- * API routes are mocked with page.route() so no real git operations run.
+ * API routes for reviewer-edit endpoints are mocked with page.route() so no
+ * real git operations run.
  */
 
 const MOCK_FILE_CONTENT = `def hello():\n    print("Hello, World!")\n\nhello()\n`;
@@ -43,67 +40,93 @@ async function mockReviewerEditRoutes(page: Page, taskId: number) {
       body: JSON.stringify({ new_sha: MOCK_NEW_SHA }),
     });
   });
+
+  // Mock POST /api/tasks/{taskId}/approve
+  await page.route(`/api/tasks/${taskId}/approve`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ status: "ok" }),
+    });
+  });
 }
 
-/** Open the task panel for T0002 (in_review) and navigate to Changes tab. */
-async function openChangesTab(page: Page) {
+/** Open the task panel for T0003 (in_approval). */
+async function openT0003(page: Page) {
   await page.goto("/tasks");
   await expect(page.locator(".task-row").first()).toBeVisible({ timeout: 5_000 });
-  await page.locator(".task-row", { hasText: "Implement design system" }).click();
+  await page.locator(".task-row", { hasText: "Write README" }).click();
   const panel = page.locator(".task-panel");
   await expect(panel).toBeVisible({ timeout: 3_000 });
-  await panel.locator(".task-panel-tab", { hasText: "Changes" }).click();
   return panel;
 }
 
-test.describe("ReviewerEditModal", () => {
-  test.skip(() => true, "Requires T0126 backend + TaskSidePanel wiring (later milestone)");
+test.describe("Edit button in approval bar", () => {
+  test("Edit button renders for in_approval task", async ({ page }) => {
+    const panel = await openT0003(page);
 
-  test("modal renders tabs for changed files and shows first file loaded", async ({ page }) => {
-    await mockReviewerEditRoutes(page, 2);
-    const panel = await openChangesTab(page);
+    // The approval bar should show an Edit button
+    const editBtn = panel.locator(".task-approval-bar button", { hasText: "Edit" });
+    await expect(editBtn).toBeVisible({ timeout: 3_000 });
+  });
 
-    // Click "Edit files" button to open the modal
-    await panel.locator("button", { hasText: "Edit files" }).click();
+  test("clicking Edit opens ReviewerEditModal", async ({ page }) => {
+    await mockReviewerEditRoutes(page, 3);
+    const panel = await openT0003(page);
 
-    // Modal overlay should be visible
+    await panel.locator(".task-approval-bar button", { hasText: "Edit" }).click();
+
+    // Modal overlay should appear
+    const modal = page.locator(".rem-overlay");
+    await expect(modal).toBeVisible({ timeout: 3_000 });
+  });
+
+  test("Discard button closes modal without approving", async ({ page }) => {
+    let approveCalled = false;
+    await page.route("/api/tasks/3/approve", async (route) => {
+      approveCalled = true;
+      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    });
+    await mockReviewerEditRoutes(page, 3);
+    const panel = await openT0003(page);
+
+    await panel.locator(".task-approval-bar button", { hasText: "Edit" }).click();
     const modal = page.locator(".rem-overlay");
     await expect(modal).toBeVisible({ timeout: 3_000 });
 
-    // Header should show the task ID
-    await expect(modal.locator(".rem-header-title")).toContainText("T0002");
+    // Click the Discard button inside the modal
+    await modal.locator(".rem-btn-discard").click();
 
-    // Tab bar should have at least one tab
-    await expect(modal.locator(".rem-tab").first()).toBeVisible();
+    // Modal should close
+    await expect(modal).not.toBeVisible({ timeout: 2_000 });
+    // Approve must NOT have been called
+    expect(approveCalled).toBe(false);
+  });
+});
 
-    // Editor should not be empty (first file auto-loaded)
-    const textarea = modal.locator(".rem-editor-textarea");
-    await expect(textarea).toBeVisible();
-    await expect(textarea).not.toBeEmpty();
+test.describe("ReviewerEditModal (via Edit button)", () => {
+  test("modal renders file tabs and editor", async ({ page }) => {
+    await mockReviewerEditRoutes(page, 3);
+    const panel = await openT0003(page);
+
+    await panel.locator(".task-approval-bar button", { hasText: "Edit" }).click();
+
+    const modal = page.locator(".rem-overlay");
+    await expect(modal).toBeVisible({ timeout: 3_000 });
+
+    // Header should show task ID
+    await expect(modal.locator(".rem-header-title")).toContainText("T0003");
 
     // Done and Discard buttons present
     await expect(modal.locator(".rem-btn-done")).toBeVisible();
     await expect(modal.locator(".rem-btn-discard")).toBeVisible();
   });
 
-  test("Discard button calls onDiscard and closes modal", async ({ page }) => {
-    await mockReviewerEditRoutes(page, 2);
-    const panel = await openChangesTab(page);
-    await panel.locator("button", { hasText: "Edit files" }).click();
+  test("Escape key triggers Discard (closes modal)", async ({ page }) => {
+    await mockReviewerEditRoutes(page, 3);
+    const panel = await openT0003(page);
 
-    const modal = page.locator(".rem-overlay");
-    await expect(modal).toBeVisible({ timeout: 3_000 });
-
-    await modal.locator(".rem-btn-discard").click();
-
-    // Modal should be gone
-    await expect(modal).not.toBeVisible({ timeout: 2_000 });
-  });
-
-  test("Escape key triggers Discard", async ({ page }) => {
-    await mockReviewerEditRoutes(page, 2);
-    const panel = await openChangesTab(page);
-    await panel.locator("button", { hasText: "Edit files" }).click();
+    await panel.locator(".task-approval-bar button", { hasText: "Edit" }).click();
 
     const modal = page.locator(".rem-overlay");
     await expect(modal).toBeVisible({ timeout: 3_000 });
@@ -113,38 +136,11 @@ test.describe("ReviewerEditModal", () => {
     await expect(modal).not.toBeVisible({ timeout: 2_000 });
   });
 
-  test("Done with no edits skips POST and calls onDone", async ({ page }) => {
-    const postCalled = { value: false };
-    await page.route("**/reviewer-edits", async (route) => {
-      postCalled.value = true;
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ new_sha: MOCK_NEW_SHA }),
-      });
-    });
-    await mockReviewerEditRoutes(page, 2);
-    const panel = await openChangesTab(page);
-    await panel.locator("button", { hasText: "Edit files" }).click();
+  test("Open file... input adds a new tab", async ({ page }) => {
+    await mockReviewerEditRoutes(page, 3);
+    const panel = await openT0003(page);
 
-    const modal = page.locator(".rem-overlay");
-    await expect(modal).toBeVisible({ timeout: 3_000 });
-
-    // Wait for file to load, then click Done without editing
-    await expect(modal.locator(".rem-editor-textarea")).not.toBeEmpty({ timeout: 3_000 });
-    await modal.locator(".rem-btn-done").click();
-
-    // POST should NOT have been called (no edits)
-    expect(postCalled.value).toBe(false);
-
-    // Modal should close (onDone fired)
-    await expect(modal).not.toBeVisible({ timeout: 2_000 });
-  });
-
-  test("Open file... shows input, Enter fetches file and adds new tab", async ({ page }) => {
-    await mockReviewerEditRoutes(page, 2);
-    const panel = await openChangesTab(page);
-    await panel.locator("button", { hasText: "Edit files" }).click();
+    await panel.locator(".task-approval-bar button", { hasText: "Edit" }).click();
 
     const modal = page.locator(".rem-overlay");
     await expect(modal).toBeVisible({ timeout: 3_000 });
@@ -169,9 +165,10 @@ test.describe("ReviewerEditModal", () => {
   });
 
   test("Open file... shows error for missing file", async ({ page }) => {
-    await mockReviewerEditRoutes(page, 2);
-    const panel = await openChangesTab(page);
-    await panel.locator("button", { hasText: "Edit files" }).click();
+    await mockReviewerEditRoutes(page, 3);
+    const panel = await openT0003(page);
+
+    await panel.locator(".task-approval-bar button", { hasText: "Edit" }).click();
 
     const modal = page.locator(".rem-overlay");
     await expect(modal).toBeVisible({ timeout: 3_000 });

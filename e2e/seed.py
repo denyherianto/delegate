@@ -79,19 +79,31 @@ def seed(hc_home: Path) -> None:
         str(hc_home / "teams" / TEAM / "shared" / "specs" / "design-brief.md"),
     )
 
-    # T0003: done (follow valid transition chain)
+    # T0003: in_approval — used for Edit button tests in reviewer-edit-modal.spec.ts
     t3 = create_task(
         hc_home, TEAM,
         title="Write README",
-        assignee="alice",
+        assignee=HUMAN,
         description="Draft the project README with setup instructions.",
         priority="low",
     )
     change_status(hc_home, TEAM, t3["id"], "in_progress")
     change_status(hc_home, TEAM, t3["id"], "in_review")
     change_status(hc_home, TEAM, t3["id"], "in_approval")
-    change_status(hc_home, TEAM, t3["id"], "merging")
-    change_status(hc_home, TEAM, t3["id"], "done")
+
+    # T0004: done
+    t4_done = create_task(
+        hc_home, TEAM,
+        title="Create landing page",
+        assignee="alice",
+        description="Build the initial landing page.",
+        priority="low",
+    )
+    change_status(hc_home, TEAM, t4_done["id"], "in_progress")
+    change_status(hc_home, TEAM, t4_done["id"], "in_review")
+    change_status(hc_home, TEAM, t4_done["id"], "in_approval")
+    change_status(hc_home, TEAM, t4_done["id"], "merging")
+    change_status(hc_home, TEAM, t4_done["id"], "done")
 
     # --- Messages ---
     send(hc_home, TEAM, HUMAN, MANAGER, "Please kick off the project.", task_id=t1["id"])
@@ -105,7 +117,7 @@ def seed(hc_home: Path) -> None:
     log_event(hc_home, TEAM, "Bob assigned to T0002", task_id=t2["id"])
 
     # --- Second team with minimal data ---
-    t4 = create_task(
+    t5 = create_task(
         hc_home, TEAM2,
         title="Setup infrastructure",
         assignee="dana",
@@ -115,7 +127,7 @@ def seed(hc_home: Path) -> None:
     send(hc_home, TEAM2, HUMAN, "charlie", "Please coordinate with dana on setup.")
     log_event(hc_home, TEAM2, "Team created")
 
-    print(f"Seeded {hc_home} with teams '{TEAM}' and '{TEAM2}', 4 tasks total, 6 messages, 3 events")
+    print(f"Seeded {hc_home} with teams '{TEAM}' and '{TEAM2}', 5 tasks total, 6 messages, 3 events")
 
 
 if __name__ == "__main__":

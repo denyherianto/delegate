@@ -1147,6 +1147,21 @@ body {
 }
 .btn-reject:hover { background: rgba(241,76,76,0.08); }
 .btn-reject:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-secondary {
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 100ms, border-color 100ms;
+}
+.btn-secondary:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+.btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+.task-approval-bar-actions .btn-secondary { padding: 5px 14px; font-size: 12px; }
 .reject-reason-input { width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: inherit; font-size: 13px; outline: none; transition: border-color 100ms; }
 .reject-reason-input:focus { border-color: var(--border-focus); }
 .reject-reason-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
