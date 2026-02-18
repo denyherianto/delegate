@@ -2450,7 +2450,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                     ["git", "branch", "-D", temp_branch],
                     cwd=repo_dir,
                     capture_output=True,
-timeout=30,
+                    timeout=30,
                 )
                 # Clean up empty parent dirs
                 try:
