@@ -1027,11 +1027,6 @@ def merge_task(
                     reason=MergeFailureReason.WORKTREE_ERROR,
                 )
             reset_done.append((repo_name, old_head))
-            log_event(
-                hc_home, team,
-                f"{format_task_id(task_id)} agent worktree reset to {rebased_tip[:12]} ({repo_name})",
-                task_id=task_id,
-            )
     finally:
         _release_worktree_lock(exchange, team, task_id, loop)
 
