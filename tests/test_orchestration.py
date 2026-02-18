@@ -428,8 +428,8 @@ class TestNarrowSandbox:
         assert str(_td(tmp_team, TEAM)) in add_dirs_strs
 
     @patch("delegate.runtime.random.random", return_value=1.0)
-    def test_manager_no_git_dirs(self, _mock_rng, tmp_team):
-        """Manager add_dirs should NOT include .git/ paths."""
+    def test_manager_gets_git_dirs(self, _mock_rng, tmp_team):
+        """Manager add_dirs SHOULD include .git/ paths (same as workers)."""
         from delegate.repo import register_repo
         from delegate.runtime import _create_telephone
         from delegate.paths import agents_dir
@@ -450,7 +450,7 @@ class TestNarrowSandbox:
         )
         add_dirs_strs = [str(d) for d in tel.add_dirs]
         git_entries = [d for d in add_dirs_strs if d.endswith("/.git")]
-        assert git_entries == [], f"Manager should not get .git/ dirs: {git_entries}"
+        assert len(git_entries) > 0, f"Manager should get .git/ dirs: {add_dirs_strs}"
 
     @patch("delegate.runtime.random.random", return_value=1.0)
     def test_worker_gets_git_dirs(self, _mock_rng, tmp_team):

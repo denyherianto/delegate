@@ -687,16 +687,14 @@ def _create_telephone(
     tmpdir = str(Path(tempfile.gettempdir()).resolve())
 
     # Sandbox add_dirs: team working directory + tmpdir.
-    # Workers also get .git/ dirs for git add/commit in worktrees.
-    # Managers do NOT get .git/ — they don't work in worktrees.
+    # All agents (workers and managers) get .git/ dirs for git add/commit.
     team_working_dir = str(team_dir(hc_home, team))
     add_dirs = [team_working_dir, tmpdir]
 
-    if role != "manager":
-        # Repo .git/ dirs — allows git add/commit inside worktrees
-        # without opening the repo working tree to arbitrary bash writes.
-        git_dirs = _repo_git_dirs(hc_home, team)
-        add_dirs.extend(git_dirs)
+    # Repo .git/ dirs — allows git add/commit without opening the repo
+    # working tree to arbitrary bash writes.
+    git_dirs = _repo_git_dirs(hc_home, team)
+    add_dirs.extend(git_dirs)
 
     # In-process MCP server — runs inside daemon, outside agent sandbox.
     # Gives agents safe access to DB/config via tool calls instead of CLI.

@@ -18,9 +18,7 @@ writable from agent bash sessions.
 - `add_dirs` (OS sandbox) is narrowed to:
   - The agent's team working directory (`teams/<uuid>/`).
   - The platform temp directory.
-  - (Workers only) `.git/` directories of registered repos.
-- Managers get `add_dirs` for their team directory but **not** `.git/`
-  directories — they do not work in worktrees.
+  - `.git/` directories of registered repos (all agents, including managers).
 - The `protected/` subtree (DB, PID, logs, config, network allowlist)
   lives outside every agent's sandbox.
 
@@ -67,10 +65,8 @@ sanctioned `git add` / `git commit` operations in their worktree.
   via both `disallowed_tools` and `denied_bash_patterns`.
 - Worktree creation and deletion are performed exclusively by the
   daemon in `_ensure_task_infra`.
-- Workers get read-write access to repo `.git/` dirs (needed for
-  `git add`/`git commit` inside worktrees) but never to the repo
-  working tree itself.
-- Managers do **not** receive `.git/` access at all.
+- All agents (workers and managers) get read-write access to repo `.git/` dirs
+  (needed for `git add`/`git commit`) but never to the repo working tree itself.
 
 ### Why It Matters
 

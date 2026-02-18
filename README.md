@@ -159,7 +159,7 @@ All bash commands run inside an OS-level sandbox provided by Claude Code's nativ
 
 - The team's working directory (`~/.delegate/teams/<uuid>/`) — not the entire `DELEGATE_HOME`, so `protected/` and other teams' directories are never writable from bash
 - Platform temp directory (`/tmp` on Unix, `%TEMP%` on Windows)
-- Each registered repo's `.git/` directory (workers only) — so `git add` / `git commit` work inside worktrees without opening the repo working tree to arbitrary bash writes. Managers do NOT get `.git/` access since they don't work in worktrees.
+- Each registered repo's `.git/` directory — so `git add` / `git commit` work inside worktrees without opening the repo working tree to arbitrary bash writes. All agents (including managers) get `.git/` access.
 
 Even if the model crafts a bash command that bypasses the tool-level guards, the kernel blocks the write. Agents cannot `git` into unregistered repos (the sandbox blocks writes to their `.git/`), and they cannot write to the working tree of any repo via bash (only `.git/` is allowed).
 
