@@ -249,6 +249,7 @@ def _list_team_agents(hc_home: Path, team: str) -> list[dict]:
         agents.append({
             "name": d.name,
             "role": state.get("role", "engineer"),
+            "model": state.get("model", "sonnet"),
             "pid": True,  # All agents are always online — daemon dispatches turns
             "unread_inbox": unread,
             "team": team,

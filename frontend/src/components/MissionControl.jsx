@@ -37,6 +37,8 @@ function buildActiveAgentList(agentsList, turnState, allTasks) {
     result.push({
       name: a.name,
       team,
+      role: a.role || "engineer",
+      model: a.model || "sonnet",
       inTurn,
       taskId: lastTaskId,
       taskTitle,
@@ -64,8 +66,19 @@ function getRecentActivities(log, agentName, n = 5) {
 }
 
 // ---------------------------------------------------------------------------
-// Status verb mapping
+// Status summary
 // ---------------------------------------------------------------------------
+
+function getStatusSummary(agent) {
+  if (agent.taskId && agent.taskTitle) {
+    const verb = getStatusVerb(agent.taskStatus);
+    if (verb) return `${verb} ${taskIdStr(agent.taskId)}`;
+    return taskIdStr(agent.taskId);
+  }
+  if (agent.sender) return `responding to ${cap(agent.sender)}`;
+  if (agent.inTurn) return "working";
+  return "idle";
+}
 
 function getStatusVerb(taskStatus) {
   switch (taskStatus) {
@@ -78,10 +91,19 @@ function getStatusVerb(taskStatus) {
 }
 
 // ---------------------------------------------------------------------------
+// Role badge map
+// ---------------------------------------------------------------------------
+
+const roleBadgeMap = {
+  manager: "mgr",
+  engineer: "eng",
+  reviewer: "rev",
+};
+
+// ---------------------------------------------------------------------------
 // SVG Icons
 // ---------------------------------------------------------------------------
 
-/** Chevron icon for card expand/collapse */
 function ChevronIcon() {
   return (
     <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
@@ -92,7 +114,6 @@ function ChevronIcon() {
   );
 }
 
-/** Toggle icon for panel collapse/expand */
 function MCToggleIcon({ collapsed }) {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
@@ -105,7 +126,6 @@ function MCToggleIcon({ collapsed }) {
   );
 }
 
-/** Small tool-type icon for the timeline. */
 function ToolIcon({ tool }) {
   const t = tool.toLowerCase();
   const p = {
@@ -124,45 +144,29 @@ function ToolIcon({ tool }) {
   }
   if (t.includes("write") || t.includes("edit") || t.includes("patch") || t.includes("replace")) {
     return (
-      <svg {...p}>
-        <path d="M11.5 1.5l3 3L5 14H2v-3z" />
-      </svg>
+      <svg {...p}><path d="M11.5 1.5l3 3L5 14H2v-3z" /></svg>
     );
   }
   if (t.includes("bash") || t.includes("shell") || t.includes("exec") || t.includes("run")) {
     return (
-      <svg {...p}>
-        <path d="M2 12l4-4-4-4" />
-        <path d="M8 12h6" />
-      </svg>
+      <svg {...p}><path d="M2 12l4-4-4-4" /><path d="M8 12h6" /></svg>
     );
   }
   if (t.includes("search") || t.includes("grep") || t.includes("find")) {
     return (
-      <svg {...p}>
-        <circle cx="7" cy="7" r="4" />
-        <path d="M10.5 10.5L14 14" />
-      </svg>
+      <svg {...p}><circle cx="7" cy="7" r="4" /><path d="M10.5 10.5L14 14" /></svg>
     );
   }
   if (t.includes("list") || t.includes("ls") || t.includes("glob")) {
     return (
-      <svg {...p}>
-        <path d="M3 4h10" />
-        <path d="M3 8h10" />
-        <path d="M3 12h10" />
-      </svg>
+      <svg {...p}><path d="M3 4h10" /><path d="M3 8h10" /><path d="M3 12h10" /></svg>
     );
   }
-  // Default: small filled circle
   return (
-    <svg {...p}>
-      <circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none" />
-    </svg>
+    <svg {...p}><circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none" /></svg>
   );
 }
 
-/** Empty-state icon (radar / monitoring) */
 function EmptyIcon() {
   return (
     <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
@@ -184,44 +188,70 @@ function EmptyIcon() {
 // ---------------------------------------------------------------------------
 
 function AgentCard({ agent, thinking, activities, expanded, onToggle }) {
-  const thinkingRef = useRef(null);
+  const streamRef = useRef(null);
+  const prevThinkingRef = useRef(null);
+  // Track which tool entries were shown BEFORE the last thinking change
+  // so we can clear stale tools when thinking text changes
+  const [toolCutoff, setToolCutoff] = useState(0);
 
-  // Auto-scroll thinking area to bottom as new text streams in
+  // When thinking text changes significantly, reset tool cutoff
   useEffect(() => {
-    const el = thinkingRef.current;
-    if (el && thinking?.text) {
-      // Only auto-scroll if user hasn't scrolled up significantly
+    const prevText = prevThinkingRef.current;
+    const curText = thinking?.text || "";
+    if (curText && prevText !== curText) {
+      // Thinking changed — mark current activities length as cutoff
+      // so only tools AFTER this point are shown
+      setToolCutoff(activities.length);
+    }
+    prevThinkingRef.current = curText;
+  }, [thinking?.text, activities.length]);
+
+  // Auto-scroll the stream area
+  useEffect(() => {
+    const el = streamRef.current;
+    if (el) {
       const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
       if (isNearBottom) {
         el.scrollTop = el.scrollHeight;
       }
     }
-  }, [thinking?.text]);
+  }, [thinking?.text, activities.length]);
 
   const dotClass = agent.inTurn ? "dot-active" : "dot-waiting";
-  const verb = agent.taskStatus ? getStatusVerb(agent.taskStatus) : null;
+  const status = getStatusSummary(agent);
+  const roleBadge = roleBadgeMap[agent.role] || cap(agent.role);
+
+  // Only show tools added AFTER the last thinking text change
+  const visibleTools = activities.slice(toolCutoff);
 
   return (
     <div class={"mc-card" + (expanded ? " mc-card-expanded" : "")}>
-      {/* Header: dot + name + team + chevron */}
+      {/* Header: two lines — name row + status row */}
       <div class="mc-card-header" onClick={onToggle}>
         <span class={"mc-dot " + dotClass} />
-        <span
-          class="mc-agent-name"
-          onClick={(e) => { e.stopPropagation(); openPanel("agent", agent.name); }}
-        >
-          {cap(agent.name)}
-        </span>
+        <div class="mc-header-content">
+          <div class="mc-header-top">
+            <span
+              class="mc-agent-name"
+              onClick={(e) => { e.stopPropagation(); openPanel("agent", agent.name); }}
+            >
+              {cap(agent.name)}
+            </span>
+            <span class={"mc-badge mc-badge-role badge-role-" + agent.role}>{roleBadge}</span>
+            <span class="mc-badge mc-badge-model">{agent.model}</span>
+          </div>
+          <div class="mc-header-status">{status}</div>
+        </div>
         <span class="mc-agent-team">{agent.team}</span>
         <span class={"mc-chevron" + (expanded ? " mc-chevron-open" : "")}>
           <ChevronIcon />
         </span>
       </div>
 
-      {/* Expanded body */}
+      {/* Expanded body — unified activity stream */}
       {expanded && (
         <div class="mc-card-body">
-          {/* Task line */}
+          {/* Task link */}
           {agent.taskId && (
             <div
               class="mc-card-task"
@@ -229,55 +259,46 @@ function AgentCard({ agent, thinking, activities, expanded, onToggle }) {
             >
               <span class="mc-task-id">{taskIdStr(agent.taskId)}</span>
               {agent.taskTitle && (
-                <span class="mc-task-title">
-                  {verb ? `${verb} ` : ""}{agent.taskTitle}
-                </span>
+                <span class="mc-task-title">{agent.taskTitle}</span>
               )}
             </div>
           )}
 
-          {/* Responding to (non-task message) */}
-          {!agent.taskId && agent.sender && (
-            <div class="mc-card-task">
-              responding to {cap(agent.sender)}
-            </div>
-          )}
-
-          {/* Thinking trace — full scrollable inset panel */}
-          {thinking && thinking.text ? (
-            <div class="mc-thinking">
-              <div class="mc-thinking-header">
-                <span class="mc-thinking-indicator" />
-                <span>Thinking</span>
+          {/* Unified stream: thinking text + interleaved tool calls */}
+          <div class="mc-stream" ref={streamRef}>
+            {/* Current thinking text */}
+            {thinking && thinking.text ? (
+              <div class="mc-stream-thinking">
+                <div class="mc-stream-thinking-header">
+                  <span class="mc-thinking-indicator" />
+                  <span>Thinking</span>
+                </div>
+                <div class="mc-stream-thinking-text">{thinking.text}</div>
               </div>
-              <div class="mc-thinking-text" ref={thinkingRef}>
-                {thinking.text}
-              </div>
-            </div>
-          ) : agent.inTurn ? (
-            <div class="mc-idle">Waiting for model response…</div>
-          ) : null}
+            ) : agent.inTurn ? (
+              <div class="mc-stream-waiting">Waiting for model response</div>
+            ) : null}
 
-          {/* Tool timeline */}
-          {activities.length > 0 && (
-            <div class="mc-tools">
-              <div class="mc-tools-label">Recent tools</div>
-              {activities.map((act, i) => {
-                const detail = act.detail
-                  ? act.detail.split("/").pop().substring(0, 40)
-                  : "";
-                return (
-                  <div key={i} class="mc-tool-entry">
-                    <span class="mc-tool-icon">
-                      <ToolIcon tool={act.tool} />
-                    </span>
-                    <span class="mc-tool-name">{act.tool.toLowerCase()}</span>
-                    {detail && <span class="mc-tool-detail">{detail}</span>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+            {/* Tool calls that happened since last thinking change */}
+            {visibleTools.length > 0 && (
+              <div class="mc-stream-tools">
+                {visibleTools.map((act, i) => {
+                  const detail = act.detail
+                    ? act.detail.split("/").pop().substring(0, 40)
+                    : "";
+                  return (
+                    <div key={i} class="mc-tool-entry">
+                      <span class="mc-tool-icon">
+                        <ToolIcon tool={act.tool} />
+                      </span>
+                      <span class="mc-tool-name">{act.tool.toLowerCase()}</span>
+                      {detail && <span class="mc-tool-detail">{detail}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -300,7 +321,6 @@ export function MissionControl() {
   const hasActive = activeAgents.length > 0;
 
   // --- Per-card expand/collapse ---
-  // Cards that are manually collapsed by the user
   const [collapsedCards, setCollapsedCards] = useState(new Set());
 
   const toggleCard = useCallback((agentName) => {
@@ -315,21 +335,17 @@ export function MissionControl() {
     });
   }, []);
 
-  // By default agents are expanded; user can collapse individual cards
   const isExpanded = (agentName) => !collapsedCards.has(agentName);
 
   // --- Auto-collapse / expand logic ---
   const graceTimer = useRef(null);
 
   useEffect(() => {
-    // Don't auto-toggle if user manually collapsed
     if (missionControlManuallyCollapsed.value) return;
 
     if (hasActive && collapsed) {
-      // Auto-expand immediately
       missionControlCollapsed.value = false;
     } else if (!hasActive && !collapsed) {
-      // Auto-collapse after grace period
       graceTimer.current = setTimeout(() => {
         if (!missionControlManuallyCollapsed.value) {
           missionControlCollapsed.value = true;
@@ -351,7 +367,7 @@ export function MissionControl() {
   // Fully hidden when collapsed and no agents
   if (collapsed && !hasActive) return null;
 
-  // --- Rail mode (collapsed but has active agents) ---
+  // --- Rail mode ---
   if (collapsed) {
     return (
       <div class="mc mc-rail">

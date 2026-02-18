@@ -573,16 +573,36 @@ body {
 
 .mc-card-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 10px 14px;
   cursor: pointer;
-  font-size: 12px;
   user-select: none;
   transition: background 100ms ease;
   flex-shrink: 0;
 }
 .mc-card-header:hover { background: var(--bg-hover); }
+.mc-card-header .mc-dot { margin-top: 5px; }
+
+.mc-header-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mc-header-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mc-header-status {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .mc-card-body {
   display: flex;
@@ -590,7 +610,7 @@ body {
   flex: 1;
   min-height: 0;
   padding: 0 14px 10px;
-  gap: 8px;
+  gap: 6px;
   animation: mc-body-in 150ms ease;
 }
 @keyframes mc-body-in {
@@ -611,7 +631,7 @@ body {
 }
 .mc-dot.dot-waiting { background: var(--dot-stale); }
 
-/* ── Agent name + team ── */
+/* ── Agent name + badges ── */
 .mc-agent-name {
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   font-size: 12px;
@@ -621,10 +641,28 @@ body {
 }
 .mc-agent-name:hover { text-decoration: underline; }
 
+.mc-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-weight: 500;
+}
+.mc-badge-role {
+  background: var(--bg-active);
+  color: var(--text-secondary);
+}
+.mc-badge-model {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
 .mc-agent-team {
   font-size: 10px;
   color: var(--text-muted);
-  margin-left: auto;
+  flex-shrink: 0;
+  margin-top: 5px;
 }
 
 /* ── Chevron ── */
@@ -633,8 +671,8 @@ body {
   transition: transform 200ms ease;
   display: flex;
   align-items: center;
-  margin-left: 4px;
   flex-shrink: 0;
+  margin-top: 5px;
 }
 .mc-chevron-open { transform: rotate(90deg); }
 
@@ -657,23 +695,31 @@ body {
 }
 .mc-task-title { color: var(--text-secondary); }
 
-/* ── Thinking trace — full scrollable dark inset area ── */
-.mc-thinking {
+/* ── Unified activity stream (thinking + tools interleaved) ── */
+.mc-stream {
   display: flex;
   flex-direction: column;
   background: var(--bg-inset);
   border-radius: 6px;
   border: 1px solid var(--border-subtle);
-  overflow: hidden;
+  overflow-y: auto;
   flex: 1;
-  min-height: 80px;
+  min-height: 60px;
   max-height: 260px;
 }
-.mc-card-expanded .mc-thinking {
+.mc-card-expanded .mc-stream {
   max-height: none;
 }
+.mc-stream::-webkit-scrollbar { width: 4px; }
+.mc-stream::-webkit-scrollbar-track { background: transparent; }
+.mc-stream::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
 
-.mc-thinking-header {
+/* Thinking block inside stream */
+.mc-stream-thinking {
+  display: flex;
+  flex-direction: column;
+}
+.mc-stream-thinking-header {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -697,41 +743,34 @@ body {
   0%, 100% { opacity: 0.3; }
   50%      { opacity: 1; }
 }
-.mc-thinking-text {
+.mc-stream-thinking-text {
   padding: 8px 10px;
   font-size: 12px;
   line-height: 1.6;
   color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
-  overflow-y: auto;
-  flex: 1;
 }
-.mc-thinking-text::-webkit-scrollbar { width: 4px; }
-.mc-thinking-text::-webkit-scrollbar-track { background: transparent; }
-.mc-thinking-text::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
 
-/* ── Tool timeline ── */
-.mc-tools {
+/* Waiting placeholder inside stream */
+.mc-stream-waiting {
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* Tool entries inside stream */
+.mc-stream-tools {
   display: flex;
   flex-direction: column;
-  padding-left: 3px;
-  position: relative;
-}
-.mc-tools-label {
-  font-size: 10px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  margin-bottom: 4px;
-  padding-left: 18px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border-subtle);
 }
 .mc-tool-entry {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 0;
-  position: relative;
+  padding: 3px 10px;
   font-size: 11px;
   color: var(--text-muted);
   animation: mc-tool-in 200ms ease;
@@ -741,24 +780,9 @@ body {
   to   { opacity: 1; transform: translateX(0); }
 }
 
-/* Vertical connector line */
-.mc-tool-entry::before {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--border-subtle);
-}
-.mc-tool-entry:first-child::before { top: 50%; }
-.mc-tool-entry:last-child::before  { bottom: 50%; }
-.mc-tool-entry:only-child::before  { display: none; }
-
 .mc-tool-icon {
   color: var(--text-muted);
   flex-shrink: 0;
-  z-index: 1;
   display: flex;
   align-items: center;
 }
@@ -776,14 +800,6 @@ body {
   white-space: nowrap;
   flex: 1;
   min-width: 0;
-}
-
-/* ── No-thinking placeholder when card is expanded but idle ── */
-.mc-idle {
-  font-size: 11px;
-  color: var(--text-faint);
-  font-style: italic;
-  padding: 2px 0;
 }
 
 /* ── Empty state ── */
