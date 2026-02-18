@@ -13,7 +13,7 @@ import {
   fetchWorkflows,
   isInputFocused,
   allTeamsAgents, allTeamsTurnState,
-  agentThinking, missionControlCollapsed, missionControlManuallyCollapsed,
+  agentThinking,
   applyBootstrapId, lsKey,
 } from "./state.js";
 import * as api from "./api.js";
@@ -155,13 +155,6 @@ function App() {
       }
       if (e.key === "t" && !e.metaKey && !e.ctrlKey && !e.altKey && !isHelpOpen()) { navigateTab("tasks"); return; }
       if (e.key === "a" && !e.metaKey && !e.ctrlKey && !e.altKey && !isHelpOpen()) { navigateTab("agents"); return; }
-      if (e.key === "M" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && !isHelpOpen()) {
-        // Shift+M toggles Mission Control
-        const next = !missionControlCollapsed.value;
-        missionControlCollapsed.value = next;
-        missionControlManuallyCollapsed.value = next;
-        return;
-      }
       if (e.key === "m" && !e.metaKey && !e.ctrlKey && !e.altKey && !isHelpOpen()) {
         e.preventDefault();
         const micBtn = document.querySelector(".chat-tool-btn[title*='recording'], .chat-tool-btn[title='Voice input']");

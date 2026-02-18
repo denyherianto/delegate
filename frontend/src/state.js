@@ -54,8 +54,6 @@ export const sidebarCollapsed = signal(false);
 
 // ── Mission Control (right panel) ──
 export const agentThinking = signal({});  // { agentName: { text, timestamp } }
-export const missionControlCollapsed = signal(false);
-export const missionControlManuallyCollapsed = signal(false);  // user explicitly toggled
 
 // ── Project creation modal ──
 export const projectModalOpen = signal(false);
