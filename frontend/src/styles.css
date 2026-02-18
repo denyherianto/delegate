@@ -739,11 +739,22 @@ body {
 }
 .mc-task-row:hover { background: var(--bg-hover); }
 
+/* Badge in task rows is always pushed right; timer sits at fixed width after it */
+.mc-task-row .badge {
+  margin-left: auto;
+}
+
+/* Agent row timer is pushed to the right */
+.mc-row-header .mc-timer {
+  margin-left: auto;
+}
+
 /* Timer modifier for MissionControl sidebar rows — smaller, dimmer, right-aligned */
 .mc-timer {
-  margin-left: auto;
   font-size: 10px;
   color: var(--text-muted);
+  min-width: 3.5ch;
+  text-align: right;
 }
 
 .mc-task-id {

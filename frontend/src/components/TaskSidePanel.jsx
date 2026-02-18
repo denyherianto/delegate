@@ -1227,10 +1227,6 @@ export function TaskSidePanel() {
     }
   }, [task]);
 
-  // Task age timer — always visible, updates every second.
-  // Called unconditionally (before early returns) to satisfy hook rules.
-  const taskAge = useLiveTimer(task?.created_at ?? null);
-
   // Derive changed file paths from the loaded diff for the edit modal.
   // Recomputed only when diffRaw changes.
   const changedFiles = useMemo(() => {
@@ -1304,7 +1300,6 @@ export function TaskSidePanel() {
             <span class="task-panel-header-status">
               {t && <span class={"badge badge-" + t.status}>{fmtStatus(t.status)}</span>}
             </span>
-            {taskAge && <span class="live-timer">{taskAge}</span>}
           </div>
           <div class="task-panel-header-line-2">
             <span class="task-panel-title">{t ? t.title : "Loading..."}</span>
