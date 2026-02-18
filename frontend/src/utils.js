@@ -1,7 +1,9 @@
 /**
  * Pure formatting & utility helpers.
  * No side effects, no DOM access, no state.
+ * Exception: useLiveTimer is a Preact hook exported for shared use.
  */
+import { useState, useEffect } from "preact/hooks";
 import { html as diff2HtmlRender, parse as diff2HtmlParse } from "diff2html";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
@@ -470,4 +472,22 @@ export function fmtCompactDuration(ms) {
   if (h < 24) return h + "h";
   const d = Math.floor(h / 24);
   return d + "d";
+}
+
+// ── Live elapsed timer hook ──
+// Returns a compact elapsed string (e.g. "42s", "14m") that updates every
+// second.  Pass an ISO timestamp as startIso; returns null when startIso is
+// falsy.  Shared by AgentRow, TaskSidePanel, DiffPanel, etc.
+export function useLiveTimer(startIso) {
+  const [elapsed, setElapsed] = useState(() =>
+    startIso ? fmtCompactDuration(Date.now() - new Date(startIso).getTime()) : null
+  );
+  useEffect(() => {
+    if (!startIso) { setElapsed(null); return; }
+    const tick = () => setElapsed(fmtCompactDuration(Date.now() - new Date(startIso).getTime()));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [startIso]);
+  return elapsed;
 }

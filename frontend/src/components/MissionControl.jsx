@@ -4,7 +4,7 @@ import {
   agentActivityLog, agentThinking,
   openPanel, currentTeam,
 } from "../state.js";
-import { cap, taskIdStr, renderMarkdown, fmtStatus } from "../utils.js";
+import { cap, taskIdStr, renderMarkdown, fmtStatus, useLiveTimer } from "../utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -20,6 +20,7 @@ function buildAgentList(agentsList, turnState, allTasks) {
     const inTurn = turn?.inTurn ?? false;
     const lastTaskId = turn?.taskId ?? null;
     const sender = turn?.sender ?? "";
+    const turnStartedAt = inTurn ? (turn?.startedAt ?? null) : null;
 
     let taskTitle = "";
     let taskStatus = "";
@@ -41,6 +42,7 @@ function buildAgentList(agentsList, turnState, allTasks) {
       taskTitle,
       taskStatus,
       sender,
+      turnStartedAt,
     });
   }
 
@@ -172,6 +174,7 @@ function ToolIcon({ tool }) {
 function AgentRow({ agent, thinking, activities }) {
   const streamRef = useRef(null);
   const thinkingText = thinking?.text || "";
+  const turnAge = useLiveTimer(agent.inTurn ? agent.turnStartedAt : null);
 
   // Auto-scroll thinking stream to bottom — always, since scrollbar is hidden
   useEffect(() => {
@@ -198,11 +201,12 @@ function AgentRow({ agent, thinking, activities }) {
 
   return (
     <div class={"mc-row" + (agent.inTurn ? " mc-row-active" : "")} onClick={() => openPanel("agent", agent.name)}>
-      {/* ── Line 1: dot · name · status ── */}
+      {/* ── Line 1: dot · name · status · timer ── */}
       <div class="mc-row-header">
         <span class={"mc-dot " + (agent.inTurn ? "dot-active" : "dot-idle")} />
         <span class="mc-name">{cap(agent.name)}</span>
         <StatusSummary agent={agent} />
+        {agent.inTurn && turnAge && <span class="live-timer mc-timer">{turnAge}</span>}
       </div>
 
       {/* ── Active body: thinking stream + tools ── */}
@@ -234,6 +238,26 @@ function AgentRow({ agent, thinking, activities }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TaskRow — one row per active task, with a live elapsed timer
+// ---------------------------------------------------------------------------
+
+function TaskRow({ task, active }) {
+  const age = useLiveTimer(task.updated_at ?? null);
+  return (
+    <div
+      class="mc-task-row"
+      onClick={() => openPanel("task", task.id)}
+    >
+      <span class={"mc-dot " + (active ? "dot-active" : "dot-idle")} />
+      <span class="mc-task-id">{taskIdStr(task.id)}</span>
+      <span class="mc-task-assignee">{task.assignee ? cap(task.assignee) : "—"}</span>
+      {age && <span class="live-timer mc-timer">{age}</span>}
+      <span class={"badge badge-" + task.status}>{fmtStatus(task.status)}</span>
     </div>
   );
 }
@@ -291,21 +315,13 @@ export function MissionControl() {
         <div class="mc-section-heading mc-section-heading-sub">Active Tasks</div>
         {activeTasks.length === 0
           ? <div class="mc-empty">No active tasks</div>
-          : activeTasks.map(task => {
-              const active = isTaskActive(task.id, turnState, team);
-              return (
-                <div
-                  key={task.id}
-                  class="mc-task-row"
-                  onClick={() => openPanel("task", task.id)}
-                >
-                  <span class={"mc-dot " + (active ? "dot-active" : "dot-idle")} />
-                  <span class="mc-task-id">{taskIdStr(task.id)}</span>
-                  <span class="mc-task-assignee">{task.assignee ? cap(task.assignee) : "—"}</span>
-                  <span class={"badge badge-" + task.status}>{fmtStatus(task.status)}</span>
-                </div>
-              );
-            })
+          : activeTasks.map(task => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                active={isTaskActive(task.id, turnState, team)}
+              />
+            ))
         }
       </div>
     </div>

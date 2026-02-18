@@ -743,6 +743,13 @@ body {
 }
 .mc-task-row:hover { background: var(--bg-hover); }
 
+/* Timer modifier for MissionControl sidebar rows — smaller, dimmer, right-aligned */
+.mc-timer {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
 .mc-task-id {
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   font-size: 11px;
