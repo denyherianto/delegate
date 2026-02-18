@@ -334,9 +334,17 @@ def _create_temp_worktree(
 def _remove_temp_worktree(repo_dir: str, wt_path: Path, temp_branch: str) -> None:
     """Remove a disposable merge worktree and its branch (best-effort)."""
     if wt_path.exists():
-        _run_git(["worktree", "remove", str(wt_path), "--force"], cwd=repo_dir)
-    _run_git(["branch", "-D", temp_branch], cwd=repo_dir)
+        result = _run_git(["worktree", "remove", str(wt_path), "--force"], cwd=repo_dir)
+        if result.returncode != 0:
+            logger.warning(
+                "Failed to remove merge worktree at %s: %s",
+                wt_path, result.stderr.strip(),
+            )
+    # Prune git's worktree metadata regardless of whether the directory was
+    # removed — this cleans up stale .git/worktrees/<name>/ entries even if
+    # the filesystem removal failed (e.g. due to permissions).
     _run_git(["worktree", "prune"], cwd=repo_dir)
+    _run_git(["branch", "-D", temp_branch], cwd=repo_dir)
     # Clean up empty parent directories under _merge/
     try:
         parent = wt_path.parent

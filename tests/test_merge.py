@@ -437,6 +437,38 @@ class TestMergeTask:
             remaining = list(merge_wt_dir.rglob("*"))
             assert len(remaining) == 0, f"Stale merge worktree remains: {remaining}"
 
+    def test_temp_worktree_cleaned_up_on_success(self, hc_home, tmp_path):
+        """Temp merge worktree should be removed after a successful merge.
+
+        This guards against the bug that caused T0074's merge worktree to
+        be left behind: if _remove_temp_worktree fails silently, the _merge/
+        directory accumulates stale worktrees over time.
+        """
+        repo = _setup_git_repo(tmp_path)
+        branch = "alice/T0001"
+        _make_feature_branch(repo, branch)
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
+        result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
+
+        assert result.success is True
+
+        # No merge worktrees should remain under _merge/
+        merge_wt_dir = _team_dir(hc_home, SAMPLE_TEAM) / "worktrees" / "_merge"
+        assert not merge_wt_dir.exists(), (
+            f"_merge/ directory still exists after successful merge: {merge_wt_dir}"
+        )
+
+        # Verify git also has no stale worktree entries for _merge/ branches
+        worktree_list = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=str(repo), capture_output=True, text=True,
+        )
+        assert "_merge" not in worktree_list.stdout, (
+            f"Stale _merge worktree still registered in git:\n{worktree_list.stdout}"
+        )
+
     def test_rebase_onto_with_base_sha(self, hc_home, tmp_path):
         """When base_sha is set on the task, rebase uses --onto to replay
         only the agent's commits (after base_sha) onto current main."""
