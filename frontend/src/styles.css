@@ -483,13 +483,14 @@ body {
 
 /* ================================================================
    Mission Control — Right-side panel
-   Always 360px wide, always visible. Two sections: active cards + idle rows.
+   Flat list: one line per agent (dot · name · status · model).
+   Active agents expand below with a thinking stream + tool entries.
    ================================================================ */
 
 /* ── Panel container ── */
 .mc {
-  width: 360px;
-  min-width: 360px;
+  width: 340px;
+  min-width: 340px;
   height: 100%;
   background: var(--bg-sidebar);
   border-left: 1px solid var(--border-default);
@@ -521,74 +522,39 @@ body {
 .mc-body {
   flex: 1;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+  padding: 4px 0;
 }
 .mc-body::-webkit-scrollbar { width: 4px; }
 .mc-body::-webkit-scrollbar-track { background: transparent; }
 .mc-body::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
 
-/* ── Section containers ── */
-.mc-section {
-  display: flex;
-  flex-direction: column;
+/* ── Agent row (unified: idle = header only, active = header + body) ── */
+.mc-row {
+  cursor: pointer;
+  transition: background 80ms ease;
+  padding: 2px 0;
+}
+.mc-row:hover { background: var(--bg-hover); }
+
+/* Active rows get a subtle bottom separator for breathing room */
+.mc-row + .mc-row { border-top: 1px solid transparent; }
+.mc-row.mc-row-active { padding-bottom: 6px; }
+.mc-row.mc-row-active + .mc-row {
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 2px;
+  padding-top: 4px;
 }
 
-/* Section label */
-.mc-section-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 10px 14px 4px;
-}
-
-/* ── Agent card (active) — content-height only ── */
-.mc-card {
+/* Header line: dot · name · status · model — always one line */
+.mc-row-header {
   display: flex;
-  flex-direction: column;
-  background: var(--bg-card);
-  border-radius: 6px;
-  margin: 6px 8px;
-  border: 1px solid var(--border-subtle);
-}
-/* No flex:1 — cards are content-height only */
-
-.mc-card-header {
-  display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  flex-shrink: 0;
-}
-.mc-card-header .mc-dot { margin-top: 4px; }
-
-.mc-header-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.mc-header-status {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.4;
+  padding: 5px 12px;
+  min-height: 30px;
 }
 
-.mc-card-body {
-  display: flex;
-  flex-direction: column;
-  padding: 0 10px 8px;
-  gap: 6px;
-}
-
-/* ── Dot indicators ── */
+/* Dot indicator */
 .mc-dot {
   width: 6px;
   height: 6px;
@@ -597,258 +563,125 @@ body {
 }
 .mc-dot.dot-active {
   background: var(--dot-active);
-  box-shadow: 0 0 6px rgba(176,176,176,0.3);
+  box-shadow: 0 0 5px rgba(176,176,176,0.25);
+  animation: mc-pulse 1.8s ease-in-out infinite;
 }
 .mc-dot.dot-idle { background: var(--dot-stale); }
 
-/* ── Agent name ── */
-.mc-agent-name {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 11px;
+@keyframes mc-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1; }
+}
+
+/* Agent name */
+.mc-name {
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
-  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
-.mc-agent-name:hover { text-decoration: underline; }
 
-/* ── Badges ── */
-.mc-badge {
+/* Status text — fills remaining space */
+.mc-status {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Model badge — right-aligned */
+.mc-model {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   font-size: 9px;
+  color: var(--text-muted);
+  background: var(--bg-hover);
   padding: 1px 5px;
   border-radius: 3px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  font-weight: 500;
   flex-shrink: 0;
 }
-.mc-badge-model {
-  background: var(--bg-hover);
-  color: var(--text-muted);
-}
 
-/* ── Thinking block ── */
-.mc-thinking-block {
-  background: var(--bg-inset);
-  border-radius: 6px;
-  border: 1px solid var(--border-subtle);
+/* ── Active body: indented entries below header ── */
+.mc-row-body {
   display: flex;
   flex-direction: column;
+  gap: 4px;
+  padding: 0 12px 4px 26px; /* 26 = 12 padding + 6 dot + 8 gap */
 }
-.mc-thinking-label {
+
+/* Individual entry row: icon + text */
+.mc-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-height: 20px;
+}
+.mc-entry-icon {
+  color: var(--text-faint);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  margin-top: 2px;
+  opacity: 0.5;
+}
+.mc-entry-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  font-size: 10px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
 }
-.mc-thinking-indicator {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: mc-pulse 1.5s ease-in-out infinite;
-  flex-shrink: 0;
-}
-@keyframes mc-pulse {
-  0%, 100% { opacity: 0.3; }
-  50%      { opacity: 1; }
-}
-/* Thinking text: markdown rendered, soft height cap */
-.mc-thinking-text {
-  padding: 8px 10px;
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--text-muted);
+
+/* Thinking stream — continuous, fades at top, system font for readability */
+.mc-thinking-stream {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
   word-break: break-word;
-  max-height: calc(8 * 1.4 * 11px);
+  max-height: calc(10 * 1.6 * 12px);  /* ~10 lines */
   overflow-y: auto;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 20%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 20%);
 }
-.mc-thinking-text::-webkit-scrollbar { width: 4px; }
-.mc-thinking-text::-webkit-scrollbar-track { background: transparent; }
-.mc-thinking-text::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
-/* Strip paragraph margin inside thinking text */
-.mc-thinking-text p { margin: 0 0 4px; }
-.mc-thinking-text p:last-child { margin-bottom: 0; }
-.mc-thinking-text code { font-size: 11px; }
+.mc-thinking-stream::-webkit-scrollbar { display: none; }
 
-/* ── Waiting placeholder with rotating verb ── */
-.mc-stream-waiting {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 10px;
-  line-height: 1.4;
-  color: var(--text-muted);
-  padding: 2px 0;
-}
-.mc-cycling-verb {
-  display: inline-block;
-  transition: opacity 200ms ease;
-}
-.mc-cycling-in  { opacity: 1; }
-.mc-cycling-out { opacity: 0; }
-
-/* ── Tool entries ── */
-.mc-stream-tools {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.mc-tool-entry {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 10px;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-.mc-tool-entry-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.mc-tool-icon {
-  color: var(--text-muted);
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-}
+/* Tool name + detail in entry */
 .mc-tool-name {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 10px;
   color: var(--text-muted);
   flex-shrink: 0;
 }
 .mc-tool-detail {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   color: var(--text-muted);
-  font-size: 10px;
+  opacity: 0.6;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
   min-width: 0;
-  opacity: 0.7;
 }
 
-/* ── Diff snippet block (inside tool entries for Edit/Write) ── */
-.mc-diff-block {
-  background: var(--bg-inset);
-  border-radius: 4px;
-  border: 1px solid var(--border-subtle);
-  padding: 3px 6px;
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 10px;
-  line-height: 1.3;
-  overflow: hidden;
-  width: 100%;
-  box-sizing: border-box;
+/* ── Cycling verb (pre-thinking placeholder) ── */
+.mc-cycling {
+  display: inline-block;
+  transition: opacity 200ms ease;
+  opacity: 1;
 }
-.mc-diff-line {
-  white-space: pre;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.mc-diff-add {
-  color: #4caf50;
-}
-.mc-diff-del {
-  color: #ef5350;
-}
-.mc-diff-ctx {
-  color: var(--text-muted);
-}
-
-/* ── Idle rows (below active section) ── */
-.mc-section-idle {
-  border-top: 1px solid var(--border-subtle);
-}
-
-/* Team grouping header */
-.mc-idle-team-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  cursor: pointer;
-  transition: background 100ms ease;
-}
-.mc-idle-team-row:hover {
-  background: var(--bg-hover);
-}
-.mc-idle-team-name {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-.mc-idle-team-count {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 10px;
-  color: var(--text-muted);
-}
-.mc-idle-toggle {
-  margin-left: auto;
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-/* Individual idle agent row — indented under team header */
-.mc-idle-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
-  padding-left: 20px;
-  cursor: pointer;
-  transition: background 100ms ease;
-}
-.mc-idle-row:hover { background: var(--bg-hover); }
-.mc-idle-name {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  flex: 1;
-  min-width: 0;
-}
-
-/* ── Transitions: card enter / exit ── */
-.mc-card-enter {
-  animation: mc-card-in 200ms ease forwards;
-}
-@keyframes mc-card-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.mc-card-exit {
-  animation: mc-fade-out 150ms ease forwards;
-}
-.mc-idle-row-exit {
-  animation: mc-fade-out 150ms ease forwards;
-}
-@keyframes mc-fade-out {
-  from { opacity: 1; }
-  to   { opacity: 0; }
-}
+.mc-cycling-out { opacity: 0; }
 
 /* ── Empty state ── */
 .mc-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 48px 20px;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
   color: var(--text-faint);
   text-align: center;
-  flex: 1;
+  padding: 48px 20px;
 }
-.mc-empty-text { font-size: 12px; }
 
 /* ── Responsive ── */
 @media (max-width: 1200px) { .mc { display: none; } }

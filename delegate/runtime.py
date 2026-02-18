@@ -60,7 +60,7 @@ from delegate.mailbox import (
 from delegate.prompt import Prompt
 from delegate.telephone import Telephone, TelephoneUsage
 from delegate.task import format_task_id
-from delegate.activity import broadcast as broadcast_activity, broadcast_thinking, broadcast_turn_event
+from delegate.activity import broadcast as broadcast_activity, broadcast_thinking, clear_thinking_buffer, broadcast_turn_event
 from delegate.paths import team_dir
 
 logger = logging.getLogger(__name__)
@@ -1016,6 +1016,7 @@ async def run_turn(
     # Early return on error
     if error_occurred:
         _write_worklog(ad, worklog_lines)
+        clear_thinking_buffer(agent, team)
         broadcast_turn_event('turn_ended', agent, team=team, task_id=current_task_id, sender=primary_sender)
         log_caller.reset(_prev_caller)
         if worktree_lock is not None:
@@ -1145,6 +1146,7 @@ async def run_turn(
         # context.md is written by the Telephone's on_rotation callback
         # when the context window fills up and the session rotates.
 
+        clear_thinking_buffer(agent, team)
         broadcast_turn_event('turn_ended', agent, team=team, task_id=current_task_id, sender=primary_sender)
         log_caller.reset(_prev_caller)
 

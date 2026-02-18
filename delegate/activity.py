@@ -186,6 +186,13 @@ def broadcast_task_update(task_id: int, team: str, changes: dict[str, Any]) -> N
     _push_to_subscribers(payload)
 
 
+# Per-agent thinking buffer: accumulates text blocks across a turn so the
+# frontend receives the full stream (not just the latest snippet).  Keyed
+# by (team, agent).  Cleared automatically when a turn_ended event is
+# broadcast.
+_thinking_buffer: dict[tuple[str, str], str] = {}
+
+
 def broadcast_thinking(
     agent: str,
     team: str,
@@ -193,24 +200,29 @@ def broadcast_thinking(
     *,
     task_id: int | None = None,
 ) -> None:
-    """Broadcast a thinking/text snippet to SSE clients (ephemeral, not stored).
+    """Broadcast accumulated thinking text to SSE clients (ephemeral, not stored).
 
     Called from the turn execution loop for every text block in the SDK
-    response stream.  The frontend uses these to show live "thinking"
-    indicators in Mission Control.
-
-    Truncated to 300 chars to keep SSE payloads small.
+    response stream.  Each call appends to a per-agent buffer and sends
+    the full accumulated text so the frontend can render a continuous
+    scrolling stream.
     """
-    snippet = text[:300]
+    key = (team, agent)
+    _thinking_buffer[key] = _thinking_buffer.get(key, "") + text
     payload = {
         "type": "agent_thinking",
         "agent": agent,
         "team": team,
-        "text": snippet,
+        "text": _thinking_buffer[key],
         "task_id": task_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     _push_to_subscribers(payload)
+
+
+def clear_thinking_buffer(agent: str, team: str) -> None:
+    """Clear the accumulated thinking buffer for an agent (call on turn end)."""
+    _thinking_buffer.pop((team, agent), None)
 
 
 def broadcast_teams_refresh() -> None:
