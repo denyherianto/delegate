@@ -1835,6 +1835,63 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     # --- Legacy global endpoints (aggregate across all teams) ---
     # Prefixed with /api/ to avoid colliding with SPA routes (/tasks, /agents).
 
+    # In-memory PyPI version cache: {"version": str, "fetched_at": float}
+    _pypi_cache: dict = {}
+    _PYPI_CACHE_TTL = 3600  # seconds
+
+    @app.get("/api/version")
+    def get_version():
+        """Return the current installed version and latest available on PyPI.
+
+        Response:
+            {
+              "current": "0.2.6",
+              "latest": "0.3.0",    # null on fetch failure
+              "update_available": true
+            }
+
+        The PyPI response is cached in-memory for 1 hour.
+        On any fetch failure the endpoint still returns 200 with
+        ``latest: null`` and ``update_available: false``.
+        """
+        import time
+        import urllib.request
+        import json as _json
+        from importlib.metadata import version as _pkg_version
+        from packaging.version import Version
+
+        current = _pkg_version("delegate-ai")
+
+        # Serve from cache if fresh
+        now = time.monotonic()
+        cached = _pypi_cache.get("data")
+        if cached and (now - _pypi_cache.get("fetched_at", 0)) < _PYPI_CACHE_TTL:
+            latest = cached
+        else:
+            latest = None
+            try:
+                req = urllib.request.Request(
+                    "https://pypi.org/pypi/delegate-ai/json",
+                    headers={"User-Agent": "delegate-ai/version-check"},
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    if resp.status == 200:
+                        data = _json.loads(resp.read())
+                        latest = data["info"]["version"]
+                        _pypi_cache["data"] = latest
+                        _pypi_cache["fetched_at"] = now
+            except Exception:
+                pass  # network error, timeout, bad JSON — leave latest as None
+
+        update_available = False
+        if latest is not None:
+            try:
+                update_available = Version(latest) > Version(current)
+            except Exception:
+                pass
+
+        return {"current": current, "latest": latest, "update_available": update_available}
+
     @app.get("/api/tasks")
     def get_tasks(status: str | None = None, assignee: str | None = None, team: str | None = None):
         """List tasks across all teams or specific team.
