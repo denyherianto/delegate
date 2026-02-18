@@ -32,7 +32,8 @@ const THINKING_WORDS = [
 function buildStatus(turnCtx, allTasks) {
   if (!turnCtx) return null;
 
-  const sender = turnCtx.sender ? cap(turnCtx.sender) : "";
+  const rawSender = turnCtx.sender || "";
+  const sender = rawSender.toLowerCase() === "system" ? "" : (rawSender ? cap(rawSender) : "");
   const taskId = turnCtx.task_id > 0 ? turnCtx.task_id : null;
 
   if (sender && taskId) {
