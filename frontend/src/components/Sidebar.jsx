@@ -84,14 +84,6 @@ function ProjectList({ collapsed }) {
       <div class="sb-projects-header">
         {!collapsed && <span class="sb-projects-label">Projects</span>}
       </div>
-      <button
-        class="sb-new-project-btn"
-        onClick={() => { projectModalOpen.value = true; }}
-        title="New Project"
-      >
-        <PlusIcon />
-        {!collapsed && <span class="sb-nav-label">New Project</span>}
-      </button>
       {!collapsed && teamList.length > 0 && (
         <div class="sb-projects-list">
           {teamList.map(t => {
@@ -141,6 +133,16 @@ export function Sidebar() {
           {collapsed ? <DelegateChevron /> : <CollapseIcon collapsed={false} />}
         </button>
       </div>
+
+      {/* New Project: first item, always visible even collapsed */}
+      <button
+        class="sb-new-project-btn"
+        onClick={() => { projectModalOpen.value = true; }}
+        title="New Project"
+      >
+        <PlusIcon />
+        {!collapsed && <span class="sb-nav-label">New Project</span>}
+      </button>
 
       {/* Nav: Tasks + Agents (always visible, even collapsed) */}
       <nav class="sb-nav">
