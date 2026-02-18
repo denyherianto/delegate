@@ -318,6 +318,28 @@ export async function rejectTask(taskId, reason, summary = "") {
   return r.json();
 }
 
+// --- Reviewer edit endpoints ---
+
+export async function getTaskFile(taskId, path) {
+  const res = await fetch(`/api/tasks/${taskId}/file?path=${encodeURIComponent(path)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await res.text());
+  return res.json(); // { content, head_sha }
+}
+
+export async function postReviewerEdits(taskId, edits) {
+  const res = await fetch(`/api/tasks/${taskId}/reviewer-edits`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ edits }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(body.error || 'Failed'), { status: res.status, body });
+  }
+  return res.json(); // { new_sha }
+}
+
 // --- Project creation ---
 
 export async function createProject({ name, repoPath, agentCount = 2, model = "sonnet" }) {
