@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "preact/hooks";
 import { currentTeam, teams, tasks, agents, navigate } from "../state.js";
-import { cap } from "../utils.js";
+import { cap, prettyName } from "../utils.js";
 
 /**
  * Cmd+K team quick-switcher modal.
@@ -127,7 +127,7 @@ export function TeamSwitcher({ open, onClose }) {
                 class={`team-switcher-item${idx === selectedIndex ? " selected" : ""}${team.isCurrent ? " current" : ""}`}
                 onClick={() => selectTeam(team.name)}
               >
-                <div class="team-switcher-item-name">{cap(team.name)}</div>
+                <div class="team-switcher-item-name">{prettyName(team.name)}</div>
                 <div class="team-switcher-item-meta">
                   {team.agentCount} {team.agentCount === 1 ? "agent" : "agents"}
                   {team.humanCount > 0 && (

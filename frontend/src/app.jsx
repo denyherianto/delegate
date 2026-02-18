@@ -17,7 +17,7 @@ import {
   applyBootstrapId, lsKey,
 } from "./state.js";
 import * as api from "./api.js";
-import { cap } from "./utils.js";
+import { cap, prettyName } from "./utils.js";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { ChatPanel } from "./components/ChatPanel.jsx";
 import { TasksPanel } from "./components/TasksPanel.jsx";
@@ -760,7 +760,7 @@ function App() {
           <Sidebar />
           <div class="workspace">
             <div class="workspace-header">
-              <span class="workspace-project-name">{cap(projectName)}</span>
+              <span class="workspace-project-name">{prettyName(projectName)}</span>
             </div>
             <div class="workspace-body">
               <div class="main">

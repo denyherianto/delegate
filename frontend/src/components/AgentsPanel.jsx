@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "preact/hooks";
 import { currentTeam, teams, tasks, agents, agentStatsMap, activeTab, openPanel, agentActivityLog } from "../state.js";
 import {
-  cap, fmtTokensShort, fmtRelativeTime, taskIdStr,
+  cap, prettyName, fmtTokensShort, fmtRelativeTime, taskIdStr,
   roleBadgeMap, getAgentDotClass,
 } from "../utils.js";
 import { fetchAgentsCrossTeam } from "../api.js";
@@ -175,7 +175,7 @@ export function AgentsPanel() {
             { value: "all", label: "All" },
             ...teamList.map(t => {
               const name = typeof t === "object" ? t.name : t;
-              return { value: name, label: cap(name) };
+              return { value: name, label: prettyName(name) };
             })
           ]}
           onChange={handleTeamChange}
@@ -195,7 +195,7 @@ export function AgentsPanel() {
                 onClick={() => toggleTeam(teamName)}
               >
                 <span class="agent-team-toggle">{isCollapsed ? "▸" : "▾"}</span>
-                <span class="agent-team-name">{cap(teamName)}</span>
+                <span class="agent-team-name">{prettyName(teamName)}</span>
                 <span class="agent-team-count">{teamAgents.length}</span>
               </div>
               {!isCollapsed && (

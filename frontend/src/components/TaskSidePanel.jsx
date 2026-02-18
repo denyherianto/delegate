@@ -7,7 +7,7 @@ import {
 } from "../state.js";
 import * as api from "../api.js";
 import {
-  cap, esc, fmtStatus, fmtTimestamp, fmtElapsed, fmtTokens, fmtCost,
+  cap, prettyName, esc, fmtStatus, fmtTimestamp, fmtElapsed, fmtTokens, fmtCost,
   fmtRelativeTime, taskIdStr, renderMarkdown, linkifyTaskRefs, linkifyFilePaths,
   agentifyRefs, flattenDiffDict, flattenCommitsDict, diff2HtmlRender, diff2HtmlParse,
   stripEmojis, handleCopyClick, toApiPath, fmtCompactDuration,
@@ -1096,7 +1096,7 @@ export function TaskSidePanel() {
               <CopyBtn text={taskIdStr(id)} />
             </span>
             {taskTeamFilter.peek() === "all" && t && t.team && (
-              <span class="task-team-name">{cap(t.team)}</span>
+              <span class="task-team-name">{prettyName(t.team)}</span>
             )}
             <span class="task-panel-header-status">
               {t && <span class={"badge badge-" + t.status}>{fmtStatus(t.status)}</span>}

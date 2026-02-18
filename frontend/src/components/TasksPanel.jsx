@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "preact/hooks";
 import { currentTeam, tasks, activeTab, openPanel, taskTeamFilter, teams, getWorkflowStages, isInputFocused } from "../state.js";
-import { cap, fmtStatus, taskIdStr } from "../utils.js";
+import { cap, prettyName, fmtStatus, taskIdStr } from "../utils.js";
 import { playTaskSound, playApprovalSound } from "../audio.js";
 import { seedTaskCache } from "./TaskSidePanel.jsx";
 import { FilterBar, applyFilters } from "./FilterBar.jsx";
@@ -286,11 +286,11 @@ export function TasksPanel() {
           label="Project"
           value={teamFilter}
           options={[
-            { value: "current", label: cap(team) },
+            { value: "current", label: prettyName(team) },
             { value: "all", label: "All" },
             ...allTeams.filter(t => t.name !== team).map(t => ({
               value: t.name,
-              label: cap(t.name)
+              label: prettyName(t.name)
             }))
           ]}
           onChange={handleTeamFilterChange}
@@ -340,7 +340,7 @@ export function TasksPanel() {
                 <div key={teamName} class="task-team-group">
                   <div class="task-team-header" onClick={() => toggleTeamGroup(teamName)}>
                     <span class="task-team-toggle">{isCollapsed ? "\u25B6" : "\u25BC"}</span>
-                    <span class="task-team-name">{cap(teamName)}</span>
+                    <span class="task-team-name">{prettyName(teamName)}</span>
                     <span class="task-team-count">{teamTasks.length}</span>
                   </div>
                   {!isCollapsed && (

@@ -6,7 +6,7 @@ import {
   navigate, navigateTab, lsKey,
   allTeamsTurnState,
 } from "../state.js";
-import { cap } from "../utils.js";
+import { cap, prettyName } from "../utils.js";
 
 // ── SVG Icons ──
 
@@ -111,7 +111,7 @@ function ProjectList({ collapsed }) {
                 onClick={() => navigate(name, "chat")}
               >
                 <span class={"sb-project-dot" + (hasActiveAgent ? " dot-active" : " dot-idle")}></span>
-                <span class="sb-project-name">{cap(name)}</span>
+                <span class="sb-project-name">{prettyName(name)}</span>
               </button>
             );
           })}

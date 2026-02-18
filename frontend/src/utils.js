@@ -96,6 +96,15 @@ export function cap(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+// Convert a slug (hyphens/underscores as word separators) to title-case display name.
+// Examples: "my-project" -> "My Project", "q4_launch" -> "Q4 Launch"
+export function prettyName(slug) {
+  if (!slug) return "";
+  return slug
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
 export function fmtStatus(s) {
   if (!s) return "";
   return s.split("_").map(w => cap(w)).join(" ");
