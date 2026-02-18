@@ -467,37 +467,69 @@ body {
 @media (max-width: 900px) { .sb { display: none; } }
 
 /* ================================================================
-   Mission Control (right panel)
+   Mission Control — Right-side panel (Cursor-inspired)
    ================================================================ */
+
+/* ── Panel container ── */
 .mc {
-  width: 320px;
-  min-width: 320px;
-  height: 100vh;
-  position: sticky;
-  top: 0;
+  width: 360px;
+  min-width: 360px;
+  height: 100%;
   background: var(--bg-sidebar);
   border-left: 1px solid var(--border-default);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  transition: width 150ms ease, min-width 150ms ease, opacity 150ms ease;
+  overflow: hidden;
+  transition: width 200ms ease, min-width 200ms ease;
   flex-shrink: 0;
 }
-.mc-collapsed {
-  width: 0;
-  min-width: 0;
-  overflow: hidden;
-  border-left: none;
-  opacity: 0;
+
+/* Collapsed → thin rail with agent status dots */
+.mc.mc-rail {
+  width: 44px;
+  min-width: 44px;
+  align-items: center;
+}
+.mc.mc-rail .mc-title,
+.mc.mc-rail .mc-cards { display: none; }
+.mc.mc-rail .mc-header {
+  justify-content: center;
+  padding: 0;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
+/* Rail dots: vertical list of status indicators */
+.mc-rail-dots {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+}
+.mc-rail-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 150ms ease;
+  position: relative;
+}
+.mc-rail-dot:hover { transform: scale(1.5); }
+.mc-rail-dot.dot-active  { background: var(--dot-active); box-shadow: 0 0 6px rgba(176,176,176,0.4); }
+.mc-rail-dot.dot-waiting { background: var(--dot-stale); }
+.mc-rail-dot[title]::after {
+  content: attr(title);
+  display: none;
+}
+
+/* ── Header ── */
 .mc-header {
   height: 48px;
   min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
@@ -520,36 +552,70 @@ body {
 }
 .mc-toggle:hover { color: var(--text-primary); background: var(--bg-hover); }
 
+/* ── Cards container ── */
 .mc-cards {
   flex: 1;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Agent card ── */
 .mc-card {
-  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
   border-bottom: 1px solid var(--border-subtle);
-  transition: opacity 300ms ease;
 }
+.mc-card-expanded {
+  flex: 1;
+  min-height: 0;
+}
+
 .mc-card-header {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
   font-size: 12px;
+  user-select: none;
+  transition: background 100ms ease;
+  flex-shrink: 0;
 }
+.mc-card-header:hover { background: var(--bg-hover); }
+
+.mc-card-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0 14px 10px;
+  gap: 8px;
+  animation: mc-body-in 150ms ease;
+}
+@keyframes mc-body-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Dot ── */
 .mc-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
-  display: inline-block;
 }
-.mc-dot.dot-active  { background: var(--dot-active); }
+.mc-dot.dot-active {
+  background: var(--dot-active);
+  box-shadow: 0 0 6px rgba(176,176,176,0.3);
+}
 .mc-dot.dot-waiting { background: var(--dot-stale); }
 
+/* ── Agent name + team ── */
 .mc-agent-name {
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-primary);
   cursor: pointer;
 }
@@ -561,16 +627,27 @@ body {
   margin-left: auto;
 }
 
+/* ── Chevron ── */
+.mc-chevron {
+  color: var(--text-faint);
+  transition: transform 200ms ease;
+  display: flex;
+  align-items: center;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+.mc-chevron-open { transform: rotate(90deg); }
+
+/* ── Task line ── */
 .mc-card-task {
   font-size: 11px;
   color: var(--text-secondary);
-  padding: 3px 0 2px 14px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mc-card-task:hover { text-decoration: underline; }
+.mc-card-task:hover { color: var(--text-primary); }
 
 .mc-task-id {
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
@@ -578,59 +655,153 @@ body {
   font-size: 10px;
   margin-right: 4px;
 }
-.mc-task-title {
-  color: var(--text-secondary);
-}
+.mc-task-title { color: var(--text-secondary); }
 
-/* ── Thinking line — Cursor-style ── */
+/* ── Thinking trace — full scrollable dark inset area ── */
 .mc-thinking {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  background: var(--bg-inset);
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+  flex: 1;
+  min-height: 80px;
+  max-height: 260px;
+}
+.mc-card-expanded .mc-thinking {
+  max-height: none;
+}
+
+.mc-thinking-header {
+  display: flex;
+  align-items: center;
   gap: 6px;
-  padding: 4px 0 2px 14px;
-  font-size: 11px;
+  padding: 6px 10px;
+  font-size: 10px;
   color: var(--text-muted);
-  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 .mc-thinking-indicator {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--dot-active);
+  background: var(--accent);
   animation: mc-pulse 1.5s ease-in-out infinite;
   flex-shrink: 0;
-  margin-top: 4px;
 }
 @keyframes mc-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
+  0%, 100% { opacity: 0.3; }
+  50%      { opacity: 1; }
 }
 .mc-thinking-text {
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  line-height: 1.4;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  flex: 1;
+}
+.mc-thinking-text::-webkit-scrollbar { width: 4px; }
+.mc-thinking-text::-webkit-scrollbar-track { background: transparent; }
+.mc-thinking-text::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
+
+/* ── Tool timeline ── */
+.mc-tools {
+  display: flex;
+  flex-direction: column;
+  padding-left: 3px;
+  position: relative;
+}
+.mc-tools-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 4px;
+  padding-left: 18px;
+}
+.mc-tool-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  position: relative;
+  font-size: 11px;
+  color: var(--text-muted);
+  animation: mc-tool-in 200ms ease;
+}
+@keyframes mc-tool-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
-/* ── Tool lines ── */
-.mc-tool-line {
-  padding-left: 14px;
-  font-size: 10px;
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+/* Vertical connector line */
+.mc-tool-entry::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-subtle);
+}
+.mc-tool-entry:first-child::before { top: 50%; }
+.mc-tool-entry:last-child::before  { bottom: 50%; }
+.mc-tool-entry:only-child::before  { display: none; }
+
+.mc-tool-icon {
   color: var(--text-muted);
-  white-space: nowrap;
+  flex-shrink: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+}
+.mc-tool-name {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.mc-tool-detail {
+  color: var(--text-muted);
+  font-size: 10px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
+/* ── No-thinking placeholder when card is expanded but idle ── */
+.mc-idle {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-style: italic;
+  padding: 2px 0;
+}
+
+/* ── Empty state ── */
 .mc-empty {
-  padding: 24px 12px;
-  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 20px;
   color: var(--text-faint);
   text-align: center;
+  flex: 1;
 }
+.mc-empty-icon { opacity: 0.4; }
+.mc-empty-text { font-size: 12px; }
 
+/* ── Responsive ── */
 @media (max-width: 1200px) { .mc { display: none; } }
 
 /* ================================================================
