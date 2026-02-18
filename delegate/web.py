@@ -2175,6 +2175,299 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 continue
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+    # ---------------------------------------------------------------------------
+    # Reviewer edit endpoints
+    # ---------------------------------------------------------------------------
+
+    def _get_branch_head_sha(repo_dir: str, branch: str) -> str:
+        """Return the current HEAD sha for a branch in repo_dir."""
+        result = subprocess.run(
+            ["git", "rev-parse", branch],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"Could not resolve branch {branch!r}: {result.stderr.strip()}")
+        return result.stdout.strip()
+
+    def _read_file_from_branch(repo_dir: str, branch: str, file_path: str) -> str | None:
+        """Return file content at file_path on branch, or None if file doesn't exist."""
+        result = subprocess.run(
+            ["git", "show", f"{branch}:{file_path}"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return None
+        return result.stdout
+
+    @app.get("/api/tasks/{task_id}/file")
+    def get_task_file_global(task_id: int, path: str):
+        """Return file content + HEAD sha from the task branch.
+
+        Query params:
+            path: File path relative to repo root (e.g. src/foo.py)
+
+        Returns:
+            { "content": "<full text>", "head_sha": "<branch HEAD sha>" }
+
+        Errors:
+            404 if task or file not found
+        """
+        for t in _list_teams(hc_home):
+            try:
+                task = _get_task(hc_home, t, task_id)
+            except FileNotFoundError:
+                continue
+
+            branch = task.get("branch", "")
+            if not branch:
+                raise HTTPException(status_code=404, detail=f"Task {task_id} has no branch")
+
+            repos = task.get("repo", [])
+            if not repos:
+                raise HTTPException(status_code=404, detail=f"Task {task_id} has no associated repo")
+
+            from delegate.repo import get_repo_path
+            repo_name = repos[0]
+            try:
+                repo_dir = str(get_repo_path(hc_home, t, repo_name).resolve())
+            except Exception:
+                raise HTTPException(status_code=404, detail=f"Repo {repo_name!r} not found")
+
+            try:
+                head_sha = _get_branch_head_sha(repo_dir, branch)
+            except RuntimeError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+
+            content = _read_file_from_branch(repo_dir, branch, path)
+            if content is None:
+                raise HTTPException(status_code=404, detail=f"File {path!r} not found on branch {branch!r}")
+
+            return {"content": content, "head_sha": head_sha}
+
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    class ReviewerEdit(BaseModel):
+        file: str
+        content: str
+        expected_sha: str
+
+    class ReviewerEditsBody(BaseModel):
+        edits: list[ReviewerEdit]
+
+    @app.post("/api/tasks/{task_id}/reviewer-edits")
+    def post_reviewer_edits_global(task_id: int, body: ReviewerEditsBody):
+        """Commit reviewer edits to the task branch.
+
+        Request body:
+            { "edits": [ { "file": "...", "content": "...", "expected_sha": "..." } ] }
+
+        Behavior:
+            1. Check task is in in_review or in_approval (403 otherwise).
+            2. Verify all expected_sha values match current HEAD (409 if stale).
+            3. Create a temp worktree from the branch.
+            4. Write each file, skipping byte-identical content.
+            5. If any file changed: git add -A + git commit.
+            6. Clean up temp worktree (try/finally).
+            7. Return { "new_sha": "...", ["no_changes": true] }.
+
+        Errors:
+            403 if task not in in_review or in_approval
+            404 if task/repo not found
+            409 if expected_sha is stale
+        """
+        import uuid as _uuid
+
+        for t in _list_teams(hc_home):
+            try:
+                task = _get_task(hc_home, t, task_id)
+            except FileNotFoundError:
+                continue
+
+            # Status gate
+            status = task.get("status", "")
+            if status not in ("in_review", "in_approval"):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Reviewer edits are only allowed for tasks in 'in_review' or 'in_approval' status (current: {status!r})",
+                )
+
+            branch = task.get("branch", "")
+            if not branch:
+                raise HTTPException(status_code=404, detail=f"Task {task_id} has no branch")
+
+            repos = task.get("repo", [])
+            if not repos:
+                raise HTTPException(status_code=404, detail=f"Task {task_id} has no associated repo")
+
+            from delegate.repo import get_repo_path
+            repo_name = repos[0]
+            try:
+                repo_dir = str(get_repo_path(hc_home, t, repo_name).resolve())
+            except Exception:
+                raise HTTPException(status_code=404, detail=f"Repo {repo_name!r} not found")
+
+            # Stale detection
+            try:
+                current_head = _get_branch_head_sha(repo_dir, branch)
+            except RuntimeError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+
+            for edit in body.edits:
+                if edit.expected_sha != current_head:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={"error": "stale", "current_sha": current_head},
+                    )
+
+            # Determine author name
+            human_name = get_default_human(hc_home) or "reviewer"
+
+            # Create temp worktree
+            uid = _uuid.uuid4().hex[:12]
+            parts = branch.rsplit("/", 1)
+            if len(parts) == 2:
+                temp_branch = f"{parts[0]}/_review/{uid}/{parts[1]}"
+            else:
+                temp_branch = f"_review/{uid}/{branch}"
+
+            team_uuid_dir = _team_dir(hc_home, t)
+            wt_path = team_uuid_dir / "worktrees" / "_review" / uid / format_task_id(task_id)
+            wt_path.parent.mkdir(parents=True, exist_ok=True)
+
+            result = subprocess.run(
+                ["git", "worktree", "add", "-b", temp_branch, str(wt_path), branch],
+                cwd=repo_dir,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if result.returncode != 0:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to create temp worktree: {result.stderr.strip()}",
+                )
+
+            try:
+                any_changed = False
+                for edit in body.edits:
+                    dest = wt_path / edit.file
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Check if content is byte-identical to avoid no-op writes
+                    existing = _read_file_from_branch(repo_dir, branch, edit.file)
+                    if existing == edit.content:
+                        continue  # Skip identical content
+
+                    dest.write_text(edit.content, encoding="utf-8")
+                    any_changed = True
+
+                if not any_changed:
+                    return {"new_sha": current_head, "no_changes": True}
+
+                # Stage and commit
+                add_result = subprocess.run(
+                    ["git", "add", "-A"],
+                    cwd=str(wt_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if add_result.returncode != 0:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"git add failed: {add_result.stderr.strip()}",
+                    )
+
+                commit_result = subprocess.run(
+                    [
+                        "git", "commit",
+                        f"--author={human_name} <{human_name}@localhost>",
+                        "-m", f"reviewer edits — T{task_id}",
+                    ],
+                    cwd=str(wt_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if commit_result.returncode != 0:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"git commit failed: {commit_result.stderr.strip()}",
+                    )
+
+                # Get new HEAD sha from the temp worktree
+                sha_result = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=str(wt_path),
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if sha_result.returncode != 0:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Failed to read new HEAD sha after commit",
+                    )
+                new_sha = sha_result.stdout.strip()
+
+                # Fast-forward the original branch to the new commit
+                ff_result = subprocess.run(
+                    ["git", "update-ref", f"refs/heads/{branch}", new_sha],
+                    cwd=repo_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                if ff_result.returncode != 0:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to advance branch: {ff_result.stderr.strip()}",
+                    )
+
+                return {"new_sha": new_sha}
+
+            finally:
+                # Best-effort cleanup of temp worktree and branch
+                subprocess.run(
+                    ["git", "worktree", "remove", str(wt_path), "--force"],
+                    cwd=repo_dir,
+                    capture_output=True,
+                    timeout=30,
+                )
+                subprocess.run(
+                    ["git", "worktree", "prune"],
+                    cwd=repo_dir,
+                    capture_output=True,
+                    timeout=30,
+                )
+                subprocess.run(
+                    ["git", "branch", "-D", temp_branch],
+                    cwd=repo_dir,
+                    capture_output=True,
+timeout=30,
+                )
+                # Clean up empty parent dirs
+                try:
+                    parent = wt_path.parent
+                    while parent.name != "_review" and parent != parent.parent:
+                        if parent.exists() and not any(parent.iterdir()):
+                            parent.rmdir()
+                            parent = parent.parent
+                        else:
+                            break
+                    if parent.name == "_review" and parent.exists() and not any(parent.iterdir()):
+                        parent.rmdir()
+                except OSError:
+                    pass
+
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
     @app.get("/api/messages")
     def get_messages(since: str | None = None, between: str | None = None, type: str | None = None, limit: int | None = None, before_id: int | None = None, team: str | None = None):
         """Messages across all teams or specific team.
