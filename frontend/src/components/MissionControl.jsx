@@ -53,11 +53,9 @@ function buildAgentList(agentsList, turnState, allTasks) {
   return result;
 }
 
-/** Get last N activity entries for a given agent from the log. */
-function getRecentActivities(log, agentName, n = 4) {
-  return log
-    .filter(e => e.agent === agentName && e.type === "agent_activity")
-    .slice(-n);
+/** Get all activity entries for a given agent from the log. */
+function getAgentActivities(log, agentName) {
+  return log.filter(e => e.agent === agentName && e.type === "agent_activity");
 }
 
 // ---------------------------------------------------------------------------
@@ -183,32 +181,19 @@ function AgentRow({ agent, thinking, activities }) {
 
   const hasThinking = thinkingText.length > 0;
 
-  // ── Tool epoch logic ──
-  // The backend inserts "---" into thinking text when new thinking arrives
-  // after tools ran.  Count separators = epoch.  Only show tools that
-  // arrived in the current (latest) epoch.
-  const epoch = (thinkingText.match(/\n\n---\n\n/g) || []).length;
-  const epochToolCountRef = useRef(0);
-  const prevEpochRef = useRef(0);
-  const prevActivityLenRef = useRef(0);
-
-  // Reset tool count when epoch advances (new thinking after tools)
-  if (epoch !== prevEpochRef.current) {
-    epochToolCountRef.current = 0;
-    prevActivityLenRef.current = activities.length;
-    prevEpochRef.current = epoch;
-  }
-
-  // Count new tools in this epoch
-  if (activities.length > prevActivityLenRef.current) {
-    epochToolCountRef.current += activities.length - prevActivityLenRef.current;
-    prevActivityLenRef.current = activities.length;
-  }
-
-  // Show last 2 tools from this epoch only
-  const toolsInEpoch = epochToolCountRef.current;
-  const recentTools = toolsInEpoch > 0
-    ? activities.slice(-Math.min(toolsInEpoch, 2))
+  // ── Tool display: show last 2 tools, but hide if thinking arrived after them ──
+  // The backend inserts "---" breaks when thinking resumes after tool calls.
+  // If the text ends mid-thinking (no trailing ---), tools from before that
+  // thinking block are stale.  We detect this by checking: did the last
+  // activity arrive before or after the last --- break?
+  //
+  // Simple heuristic: count --- breaks = number of tool→thinking transitions.
+  // If breaks >= activities.length, all tools have been "consumed" by subsequent
+  // thinking.  Otherwise, show the trailing tools.
+  const breaks = (thinkingText.match(/\n\n---\n\n/g) || []).length;
+  const unconsumedTools = Math.max(0, activities.length - breaks);
+  const recentTools = unconsumedTools > 0
+    ? activities.slice(-Math.min(unconsumedTools, 2))
     : [];
 
   return (
@@ -294,7 +279,7 @@ export function MissionControl() {
                 key={`${a.team}-${a.name}`}
                 agent={a}
                 thinking={thinking[a.name]}
-                activities={getRecentActivities(activityLog, a.name)}
+                activities={getAgentActivities(activityLog, a.name)}
               />
             ))
         }
