@@ -68,6 +68,22 @@ function getRecentActivities(log, agentName, n = 3) {
     .slice(-n);
 }
 
+/**
+ * Group idle agents by team. Returns array of { team, agents } sorted
+ * alphabetically by team name.
+ */
+function groupIdleByTeam(idle) {
+  const groups = {};
+  for (const a of idle) {
+    const t = a.team || "unknown";
+    if (!groups[t]) groups[t] = [];
+    groups[t].push(a);
+  }
+  return Object.keys(groups)
+    .sort()
+    .map(team => ({ team, agents: groups[team] }));
+}
+
 // ---------------------------------------------------------------------------
 // Status summary
 // ---------------------------------------------------------------------------
@@ -193,41 +209,23 @@ function AgentCard({ agent, thinking, activities }) {
 
   return (
     <div class="mc-card">
-      {/* Header */}
+      {/* Header: [dot] [name+status, flex:1] [model-badge] */}
       <div class="mc-card-header">
         <span class="mc-dot dot-active" />
         <div class="mc-header-content">
-          <div class="mc-header-top">
-            <span
-              class="mc-agent-name"
-              onClick={() => openPanel("agent", agent.name)}
-            >
-              {cap(agent.name)}
-            </span>
-            <span class={"mc-badge mc-badge-role badge-role-" + agent.role}>{cap(agent.role)}</span>
-            <span class="mc-badge mc-badge-model">{agent.model}</span>
-            <span class="mc-agent-team">{agent.team}</span>
-          </div>
-          {/* Status line */}
-          <div class="mc-header-status">{status}</div>
+          <span
+            class="mc-agent-name"
+            onClick={() => openPanel("agent", agent.name)}
+          >
+            {cap(agent.name)}
+          </span>
+          <span class="mc-header-status">{status}</span>
         </div>
+        <span class="mc-badge mc-badge-model">{agent.model}</span>
       </div>
 
       {/* Card body */}
       <div class="mc-card-body">
-        {/* Task link */}
-        {agent.taskId && (
-          <div
-            class="mc-card-task"
-            onClick={() => openPanel("task", agent.taskId)}
-          >
-            <span class="mc-task-id">{taskIdStr(agent.taskId)}</span>
-            {agent.taskTitle && (
-              <span class="mc-task-title">{agent.taskTitle}</span>
-            )}
-          </div>
-        )}
-
         {/* Thinking text — markdown rendered, soft height cap */}
         {thinkingHtml ? (
           <div class="mc-thinking-block">
@@ -238,7 +236,7 @@ function AgentCard({ agent, thinking, activities }) {
             <div
               class="mc-thinking-text agent-markdown-content"
               dangerouslySetInnerHTML={{ __html: thinkingHtml }}
-            />
+/>
           </div>
         ) : agent.inTurn ? (
           <div class="mc-stream-waiting"><CyclingVerb /></div>
@@ -292,9 +290,7 @@ function IdleRow({ agent }) {
     <div class="mc-idle-row" onClick={() => openPanel("agent", agent.name)}>
       <span class="mc-dot dot-idle" />
       <span class="mc-idle-name">{cap(agent.name)}</span>
-      <span class={"mc-badge mc-badge-role badge-role-" + agent.role}>{cap(agent.role)}</span>
       <span class="mc-badge mc-badge-model">{agent.model}</span>
-      <span class="mc-idle-team">{agent.team}</span>
     </div>
   );
 }
@@ -311,6 +307,18 @@ export function MissionControl() {
   const activityLog = agentActivityLog.value;
 
   const { active, idle } = buildAgentLists(allAgentsList, turnState, allTasks);
+
+  // ── Collapsed team state (all teams start collapsed) ──
+  const [collapsedTeams, setCollapsedTeams] = useState({});
+
+  function toggleTeam(teamName) {
+    setCollapsedTeams(prev => ({ ...prev, [teamName]: !prev[teamName] }));
+  }
+
+  // Teams are collapsed by default (absent key = collapsed)
+  function isCollapsed(teamName) {
+    return collapsedTeams[teamName] !== false;
+  }
 
   // ── Transition tracking ──
   // We track which agents are "exiting" from each section so we can play
@@ -374,6 +382,8 @@ export function MissionControl() {
 
   const showActiveSection = active.length > 0 || exitingCards.length > 0;
 
+  const idleGroups = groupIdleByTeam(idle);
+
   return (
     <div class="mc">
       <div class="mc-header">
@@ -409,18 +419,35 @@ export function MissionControl() {
           </div>
         )}
 
-        {/* ── Idle section ── */}
+        {/* ── Idle section — grouped by team, each team collapsible ── */}
         {idle.length > 0 && (
           <div class="mc-section mc-section-idle">
             <div class="mc-section-label">Idle</div>
-            {idle.map(a => (
-              <div
-                key={`${a.team}-${a.name}`}
-                class={exitingIdleNames.includes(a.name) ? "mc-idle-row-exit" : ""}
-              >
-                <IdleRow agent={a} />
-              </div>
-            ))}
+            {idleGroups.map(({ team, agents }) => {
+              const collapsed = isCollapsed(team);
+              return (
+                <div key={team}>
+                  {/* Team header row */}
+                  <div
+                    class="mc-idle-team-row"
+                    onClick={() => toggleTeam(team)}
+                  >
+                    <span class="mc-idle-team-name">{team}</span>
+                    <span class="mc-idle-team-count">· {agents.length} idle</span>
+                    <span class="mc-idle-toggle">{collapsed ? "▸" : "▾"}</span>
+                  </div>
+                  {/* Agent rows — only when expanded */}
+                  {!collapsed && agents.map(a => (
+                    <div
+                      key={`${a.team}-${a.name}`}
+                      class={exitingIdleNames.includes(a.name) ? "mc-idle-row-exit" : ""}
+                    >
+                      <IdleRow agent={a} />
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )}
 
