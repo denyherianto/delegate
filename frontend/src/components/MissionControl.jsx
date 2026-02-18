@@ -280,9 +280,8 @@ export function MissionControl() {
   const teamAgents = allAgentsList.filter(a => a.team === team);
   const agentRows = buildAgentList(teamAgents, turnState, allTasks);
 
-  // Manager's expanded thinking is shown in the chat footer,
-  // so suppress it here to avoid duplication.
-  const managerName = teamAgents.find(a => a.role === "manager")?.name;
+  // Manager (Delegate) lives in the chat footer — exclude from sidebar
+  const subAgentRows = agentRows.filter(a => a.role !== "manager");
 
   const EXCLUDED_STATUSES = new Set(["done", "cancelled", "rejected"]);
   const activeTasks = allTasks
@@ -292,17 +291,16 @@ export function MissionControl() {
   return (
     <div class="mc">
       <div class="mc-panel mc-agents-panel">
-        {/* Section 1: Agents */}
+        {/* Section 1: Sub-agents (Delegate shown in chat footer) */}
         <div class="mc-section-heading">Agents</div>
-        {agentRows.length === 0
+        {subAgentRows.length === 0
           ? <div class="mc-empty">No agents</div>
-          : agentRows.map(a => (
+          : subAgentRows.map(a => (
               <AgentRow
                 key={`${a.team}-${a.name}`}
                 agent={a}
                 thinking={thinking[a.name]}
                 activities={getAgentActivities(activityLog, a.name)}
-                suppressBody={a.role === "manager"}
               />
             ))
         }

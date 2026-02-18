@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
   managerTurnContext, agentLastActivity, agentActivityLog,
-  agentThinking, agents,
+  agentThinking, agents, tasks,
 } from "../state.js";
-import { cap, renderMarkdown, useStreamingText } from "../utils.js";
+import { cap, taskIdStr, renderMarkdown, useStreamingText } from "../utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -22,8 +22,33 @@ const THINKING_WORDS = [
   "contemplating",
 ];
 
+/**
+ * Build a concise status string from turn context.
+ *   - "responding to Nikhil"
+ *   - "responding to Alex about T123"
+ *   - "working on T123"
+ *   - null (fallback → cycling verb)
+ */
+function buildStatus(turnCtx, allTasks) {
+  if (!turnCtx) return null;
+
+  const sender = turnCtx.sender ? cap(turnCtx.sender) : "";
+  const taskId = turnCtx.task_id > 0 ? turnCtx.task_id : null;
+
+  if (sender && taskId) {
+    return (<>responding to {sender} · <span class="delegate-footer-taskid">{taskIdStr(taskId)}</span></>);
+  }
+  if (sender) {
+    return (<>responding to {sender}</>);
+  }
+  if (taskId) {
+    return (<>working on <span class="delegate-footer-taskid">{taskIdStr(taskId)}</span></>);
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
-// CyclingVerb — animated thinking placeholder (shown before first text)
+// CyclingVerb — animated thinking placeholder
 // ---------------------------------------------------------------------------
 
 function CyclingVerb() {
@@ -53,14 +78,15 @@ function CyclingVerb() {
 //
 // Glass card in the chat panel showing Delegate's live thinking.
 //
-// Header line:  [•••]  Delegate  thinking…
-// Body:         streamed thinking text + tool entries
+// Header:  [•••]  Delegate  · responding to Nikhil
+// Body:    streamed thinking text + tool entries
 // ---------------------------------------------------------------------------
 
 export function ManagerActivityBar() {
   const turnCtx = managerTurnContext.value;
   const thinking = agentThinking.value;
   const activityLog = agentActivityLog.value;
+  const allTasks = tasks.value;
   const streamRef = useRef(null);
 
   // Identify the manager agent
@@ -85,6 +111,9 @@ export function ManagerActivityBar() {
   const recentTools = unconsumedTools > 0
     ? agentActivities.slice(-Math.min(unconsumedTools, 2))
     : [];
+
+  // Status line: "responding to X" / "working on T123" / null
+  const status = isActive ? buildStatus(turnCtx, allTasks) : null;
 
   // ── Hooks (always called unconditionally) ──
 
@@ -114,7 +143,7 @@ export function ManagerActivityBar() {
 
   return (
     <div class={"delegate-footer delegate-footer-active" + (hasThinking ? " delegate-footer-expanded" : "")}>
-      {/* Header — always just: dots · Delegate · cycling verb */}
+      {/* Header: dots · Delegate · status */}
       <div class="delegate-footer-bar">
         <span class="delegate-footer-dots">
           <span class="delegate-dot" />
@@ -122,12 +151,13 @@ export function ManagerActivityBar() {
           <span class="delegate-dot" />
         </span>
         <span class="delegate-footer-name">{cap(managerName)}</span>
-        {!hasThinking && (
-          <span class="delegate-footer-verb"><CyclingVerb /></span>
-        )}
+        {status
+          ? <span class="delegate-footer-status">{status}</span>
+          : <span class="delegate-footer-verb"><CyclingVerb /></span>
+        }
       </div>
 
-      {/* Body — thinking stream + tools, below the header */}
+      {/* Body — thinking stream + tools */}
       {hasThinking && (
         <div class="delegate-footer-body">
           <div
