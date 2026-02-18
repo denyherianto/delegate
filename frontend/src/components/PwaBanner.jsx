@@ -37,6 +37,24 @@ if (!isStandalone()) {
       showUseAppBanner.value = false;
     }
   });
+
+  // Track successful installs via the appinstalled event (more reliable than
+  // userChoice callback since it fires when Chrome actually finishes installing).
+  window.addEventListener("appinstalled", () => {
+    localStorage.setItem(lsKey("pwa-installed"), "true");
+  });
+
+  // When the app transitions out of standalone mode (display-mode: standalone
+  // changes to false), the PWA was uninstalled. Clear the dismissed and
+  // installed flags so the banner can reappear on the next visit.
+  const standaloneQuery = window.matchMedia("(display-mode: standalone)");
+  standaloneQuery.addEventListener("change", (e) => {
+    if (!e.matches) {
+      // Transitioned out of standalone — PWA was uninstalled
+      localStorage.removeItem(lsKey("pwa-banner-dismissed"));
+      localStorage.removeItem(lsKey("pwa-installed"));
+    }
+  });
 }
 
 // Determine initial "use the app" banner visibility.
@@ -62,10 +80,7 @@ export function PwaBanner() {
   function handleInstall() {
     if (!deferredInstallEvent) return;
     deferredInstallEvent.prompt();
-    deferredInstallEvent.userChoice.then((choice) => {
-      if (choice.outcome === "accepted") {
-        localStorage.setItem(lsKey("pwa-installed"), "true");
-      }
+    deferredInstallEvent.userChoice.then(() => {
       deferredInstallEvent = null;
       showInstallBanner.value = false;
     });
