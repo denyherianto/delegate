@@ -3,7 +3,7 @@ import {
   managerTurnContext, agentLastActivity, agentActivityLog,
   agentThinking, agents, tasks, openPanel,
 } from "../state.js";
-import { cap, taskIdStr, renderMarkdown, useStreamingText } from "../utils.js";
+import { cap, taskIdStr, renderMarkdown, useStreamingText, formatToolDetail } from "../utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -177,9 +177,7 @@ export function ManagerActivityBar() {
           />
 
           {recentTools.map((act, i) => {
-            const detail = act.detail
-              ? act.detail.split("/").pop().substring(0, 50)
-              : "";
+            const detail = formatToolDetail(act.tool, act.detail);
             return (
               <div key={`${act.tool}-${act.timestamp}-${i}`} class="delegate-tool-line">
                 <span class="delegate-tool-name">{act.tool.toLowerCase()}</span>

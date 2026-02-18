@@ -4,7 +4,7 @@ import {
   agentActivityLog, agentThinking,
   openPanel, currentTeam,
 } from "../state.js";
-import { cap, taskIdStr, renderMarkdown, fmtStatus, useLiveTimer, useStreamingText } from "../utils.js";
+import { cap, taskIdStr, renderMarkdown, fmtStatus, useLiveTimer, useStreamingText, formatToolDetail } from "../utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -228,9 +228,7 @@ function AgentRow({ agent, thinking, activities, suppressBody }) {
 
           {/* Tool entries — last 2 from current epoch */}
           {recentTools.map((act, i) => {
-            const detail = act.detail
-              ? act.detail.split("/").pop().substring(0, 40)
-              : "";
+            const detail = formatToolDetail(act.tool, act.detail);
             return (
               <div key={`${act.tool}-${act.timestamp}-${i}`} class="mc-tool-line" onClick={(e) => e.stopPropagation()}>
                 <span class="mc-tool-name">{act.tool.toLowerCase()}</span>

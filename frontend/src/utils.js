@@ -233,6 +233,29 @@ export function flattenCommitsDict(commits) {
   return all;
 }
 
+// ── Tool detail formatting for Mission Control / Delegate footer ──
+const FILE_TOOLS = new Set(["Edit", "Write", "Read", "MultiEdit"]);
+
+/**
+ * Format a tool's detail string for compact display.
+ *
+ * - File tools (Edit/Write/Read/MultiEdit): show last 2 path segments
+ *   e.g. "/Users/x/dev/project/src/components/ChatPanel.jsx" → "components/ChatPanel.jsx"
+ * - Bash: show command as-is (CSS handles overflow)
+ * - Other tools: pass through as-is
+ *
+ * No hard JS truncation — CSS text-overflow: ellipsis handles the rest.
+ */
+export function formatToolDetail(toolName, detail) {
+  if (!detail) return "";
+  if (FILE_TOOLS.has(toolName)) {
+    const parts = detail.replace(/^~\//, "").split("/").filter(Boolean);
+    if (parts.length <= 2) return parts.join("/");
+    return "…/" + parts.slice(-2).join("/");
+  }
+  return detail;
+}
+
 // ── Linkify helpers (produce HTML strings for dangerouslySetInnerHTML) ──
 export function linkifyTaskRefs(html) {
   return html.replace(/(^[^<]+|>[^<]*)/g, match =>

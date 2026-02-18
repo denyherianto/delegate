@@ -59,6 +59,11 @@ export function TeamSwitcher({ open, onClose }) {
   const selectTeam = useCallback((teamName) => {
     navigate(teamName, "chat");  // always go to chat, even same team
     onClose();
+    // Focus chat input after DOM settles from team switch
+    setTimeout(() => {
+      const chatInput = document.querySelector(".chat-input");
+      if (chatInput) chatInput.focus();
+    }, 80);
   }, [onClose]);
 
   // Keyboard navigation - only re-register when modal opens/closes

@@ -172,6 +172,10 @@ function App() {
           e.preventDefault();
           const teamName = typeof teamArr[idx] === "object" ? teamArr[idx].name : teamArr[idx];
           navigate(teamName, "chat");
+          setTimeout(() => {
+            const chatInput = document.querySelector(".chat-input");
+            if (chatInput) chatInput.focus();
+          }, 80);
         }
         return;
       }
