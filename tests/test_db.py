@@ -37,6 +37,20 @@ class TestSchemaInitialization:
         assert path.exists()
         assert path.is_file()
 
+    def test_ensure_schema_rejects_team_directory(self, tmp_path):
+        """ensure_schema should raise ValueError when hc_home contains /teams/ in its path."""
+        team_dir = tmp_path / "teams" / "1a86f2ebb37b4488a342603b10ad5ca4"
+        team_dir.mkdir(parents=True)
+        with pytest.raises(ValueError, match="team directory"):
+            ensure_schema(team_dir)
+
+    def test_ensure_schema_rejects_nested_team_subdir(self, tmp_path):
+        """ensure_schema should raise ValueError for any path containing /teams/ as a component."""
+        nested = tmp_path / "teams" / "someteam" / "subdir"
+        nested.mkdir(parents=True)
+        with pytest.raises(ValueError, match="team directory"):
+            ensure_schema(nested)
+
     def test_ensure_schema_creates_schema_meta(self, tmp_team):
         """ensure_schema should create the schema_meta table."""
         conn = sqlite3.connect(str(global_db_path(tmp_team)))

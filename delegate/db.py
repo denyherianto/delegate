@@ -476,6 +476,22 @@ def _verify_db_health(conn: sqlite3.Connection) -> None:
         raise RuntimeError(f"DB health check: missing tables {missing}")
 
 
+def _validate_hc_home(hc_home: Path) -> None:
+    """Raise ValueError if hc_home looks like a team subdirectory rather than
+    the real delegate home.
+
+    The real hc_home (~/.delegate) never contains /teams/ in its path.
+    A team directory (~/.delegate/teams/<id>/) does. Passing a team
+    directory causes the global database to be silently created in the wrong
+    location, so we reject it loudly instead.
+    """
+    if "teams" in hc_home.resolve().parts:
+        raise ValueError(
+            f"hc_home looks like a team directory, not the delegate home: {hc_home}. "
+            f"Pass ~/.delegate (or DELEGATE_HOME) as hc_home, not a team subdirectory."
+        )
+
+
 def ensure_schema(hc_home: Path, team: str = "") -> None:
     """Apply any pending migrations to the global database.
 
@@ -496,6 +512,7 @@ def ensure_schema(hc_home: Path, team: str = "") -> None:
 
     Note: team parameter is kept for backward compatibility but is no longer used.
     """
+    _validate_hc_home(hc_home)
     key = str(hc_home)
     current_version = len(MIGRATIONS)
 
