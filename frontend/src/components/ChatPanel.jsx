@@ -10,6 +10,7 @@ import {
   lsKey,
 } from "../state.js";
 import * as api from "../api.js";
+import { completeFiles } from "../api.js";
 import {
   cap, esc, fmtTimestamp, renderMarkdown,
   linkifyTaskRefs, linkifyFilePaths, agentifyRefs, msgStatusIcon, taskIdStr,
@@ -22,11 +23,59 @@ import { CustomSelect } from "./CustomSelect.jsx";
 import { ManagerActivityBar } from "./ManagerActivityBar.jsx";
 import { SelectionTooltip } from "./SelectionTooltip.jsx";
 import { CommandAutocomplete } from "./CommandAutocomplete.jsx";
+import { FileAutocomplete } from "./FileAutocomplete.jsx";
 import { ShellOutputBlock } from "./ShellOutputBlock.jsx";
 import { StatusBlock } from "./StatusBlock.jsx";
 import { DiffCommandBlock } from "./DiffCommandBlock.jsx";
 import { CostBlock } from "./CostBlock.jsx";
 import { parseCommand, filterCommands, COMMANDS } from "../commands.js";
+
+// ── Shell -d directory autocomplete dropdown ──
+// Positioned above the chat input (like CommandAutocomplete).
+// Fetches suggestions for the partial path in the -d argument and renders a
+// selectable list. Parent updates the main input on selection.
+function ShellDirAutocomplete({ query, fetchSuggestions, onSelect }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [selectedIdx, setSelectedIdx] = useState(-1);
+  const debounceRef = useRef(null);
+  const latestRef = useRef(query);
+
+  useEffect(() => {
+    latestRef.current = query;
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const results = await fetchSuggestions(query);
+        if (latestRef.current !== query) return;
+        setSuggestions(results || []);
+        setSelectedIdx(-1);
+      } catch (_) {
+        setSuggestions([]);
+      }
+    }, 150);
+    return () => clearTimeout(debounceRef.current);
+  }, [query, fetchSuggestions]);
+
+  if (!suggestions.length) return null;
+
+  return (
+    <div class="command-autocomplete shell-dir-autocomplete">
+      {suggestions.slice(0, 20).map((path, idx) => {
+        const isDir = path.endsWith("/");
+        return (
+          <div
+            key={path}
+            class={`command-autocomplete-item${idx === selectedIdx ? " selected" : ""}`}
+            onMouseEnter={() => setSelectedIdx(idx)}
+            onMouseDown={(e) => { e.preventDefault(); onSelect(path); }}
+          >
+            <span class={isDir ? "shell-dir-ac-dir" : "shell-dir-ac-file"}>{path}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // ── Command message wrapper to track error state ──
 function CommandMessage({ message, parsed }) {
@@ -385,6 +434,57 @@ export function ChatPanel() {
 
   // Keep ref in sync so the keydown handler always reads current values
   acRef.current = { visible: acVisible, commands: acCommands, index: acIndex };
+
+  // ── Shell -d path autocomplete ──
+  // Show FileAutocomplete when user is in /shell mode and has typed "-d <partial>"
+  // at the end of the input (i.e. the partial path is the last word after "-d ").
+  const shellDirMatch = useMemo(() => {
+    if (!commandMode.value) return null;
+    if (acIsTypingName) return null; // still typing command name
+    if (!acParsed || acParsed.name !== "shell") return null;
+    // Match "-d " followed by the rest as the partial (can be empty string after "-d ")
+    const args = acParsed.args || "";
+    const m = args.match(/-d\s+(\S*)$/);
+    if (!m) return null;
+    return m[1]; // the partial path (may be "")
+  }, [commandMode.value, acIsTypingName, acParsed]);
+
+  const fetchShellDirSuggestions = useCallback(async (q) => {
+    const entries = await completeFiles(q);
+    return entries.map(e => e.path + (e.is_dir ? "/" : ""));
+  }, []);
+
+  // Called when user selects a path from the shell -d autocomplete.
+  // Replaces the "-d <partial>" portion at the end of the input with "-d <selected>".
+  const handleShellDirSelect = useCallback((selectedPath) => {
+    const el = inputRef.current;
+    if (!el) return;
+    const current = el.textContent || "";
+    // Replace the "-d <partial>" at end of input with "-d <selectedPath>"
+    const updated = current.replace(/-d\s+\S*$/, `-d ${selectedPath}`);
+    el.textContent = updated;
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + "px";
+    // Move cursor to end
+    const range = document.createRange();
+    const sel = window.getSelection();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    el.focus();
+    // Update controlled state so everything re-derives
+    setInputVal(updated);
+    // Update CWD if path doesn't end with "/" (file selected — shouldn't happen for -d but be safe)
+    // For directory selections, the path ends with "/" — strip it for the CWD
+    const cwdPath = selectedPath.endsWith("/") ? selectedPath.slice(0, -1) : selectedPath;
+    if (!selectedPath.endsWith("/")) {
+      // Non-dir selected: update CWD and close autocomplete by making shellDirMatch null
+      commandCwd.value = cwdPath;
+      saveTeamCwd(team, cwdPath);
+    }
+    // For dirs: keep autocomplete open so user can drill in further
+  }, [team]);
 
   // Check if text contains markdown syntax we support
   const hasMarkdown = useCallback((text) => {
@@ -1343,6 +1443,14 @@ export function ChatPanel() {
               commands={acCommands}
               selectedIndex={acIndex}
               onSelect={selectAutocomplete}
+            />
+          )}
+          {/* Shell -d path autocomplete — dropdown anchored above the input */}
+          {shellDirMatch !== null && !acVisible && (
+            <ShellDirAutocomplete
+              query={shellDirMatch}
+              fetchSuggestions={fetchShellDirSuggestions}
+              onSelect={handleShellDirSelect}
             />
           )}
           <div

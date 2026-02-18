@@ -3527,6 +3527,27 @@ select option:hover {
   font-size: 13px;
 }
 
+/* Shell -d directory autocomplete: path items share command-autocomplete-item styles */
+.shell-dir-autocomplete.command-autocomplete {
+  max-height: 240px;
+}
+.shell-dir-ac-dir {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.shell-dir-ac-file {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Hint shown after a command is recognized (e.g. "Show system status — press Enter to run") */
 .command-hint {
   padding: 2px 8px 4px;
@@ -4924,6 +4945,57 @@ select option:hover {
   color: var(--semantic-red);
   white-space: nowrap;
 }
+
+/* ── FileAutocomplete component ── */
+.file-ac-wrap {
+  position: relative;
+}
+.file-ac-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  padding: 3px 8px;
+  width: 280px;
+  outline: none;
+}
+.file-ac-input:focus {
+  border-color: var(--border-focus);
+}
+.file-ac-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 100%;
+  max-width: 480px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  z-index: 1100;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.file-ac-dropdown-above {
+  top: auto;
+  bottom: 100%;
+  margin-bottom: 2px;
+}
+.file-ac-item {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-ac-item.is-dir { color: var(--text-muted); }
+.file-ac-item.selected,
+.file-ac-item:hover { background: var(--bg-hover); }
 
 /* Editor area -- fills remaining height */
 .rem-editor-area {

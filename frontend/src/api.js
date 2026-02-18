@@ -363,6 +363,25 @@ export async function fetchVersion() {
   return res.json(); // { current, latest, update_available }
 }
 
+// --- File completion endpoints ---
+
+// Complete filesystem paths (global, for shell -d argument).
+// Returns entries: [{ path, is_dir, has_git }]
+export async function completeFiles(path) {
+  const res = await fetch(`/api/files/complete?path=${encodeURIComponent(path)}&limit=20`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.entries || [];
+}
+
+// Complete paths within a task's worktree (for reviewer file editor).
+// Returns entries: [{ path, is_dir, has_git }]
+export async function completeTaskFiles(taskId, q) {
+  const res = await fetch(`/api/tasks/${taskId}/files/complete?q=${encodeURIComponent(q)}&limit=20`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.entries || [];
+}
 // --- File Upload ---
 
 export async function uploadFiles(team, files, onProgress) {

@@ -4,7 +4,8 @@ import { EditorState } from "@codemirror/state";
 import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { oneDark } from "@codemirror/theme-one-dark";
-import { getTaskFile, postReviewerEdits } from "../api.js";
+import { getTaskFile, postReviewerEdits, completeTaskFiles } from "../api.js";
+import { FileAutocomplete } from "./FileAutocomplete.jsx";
 
 // Detect language extension from filename for syntax highlighting.
 function langExtension(filename) {
@@ -70,35 +71,36 @@ function CodeEditor({ content, onChange, filename, disabled }) {
   return <div ref={containerRef} class="rem-cm-container" />;
 }
 
-// OpenFileInput: inline text field for typing a file path.
-function OpenFileInput({ onOpen, onCancel }) {
+// OpenFileInput: inline file-path input with autocomplete from the task's worktree.
+function OpenFileInput({ onOpen, onCancel, taskId }) {
   const [value, setValue] = useState("");
   const [error, setError] = useState(null);
-  const inputRef = useRef(null);
 
-  useEffect(() => {
-    if (inputRef.current) inputRef.current.focus();
-  }, []);
+  const fetchSuggestions = useCallback(async (q) => {
+    const entries = await completeTaskFiles(taskId, q);
+    return entries.map(e => e.path + (e.is_dir ? "/" : ""));
+  }, [taskId]);
 
-  const handleKeyDown = (e) => {
-    e.stopPropagation();
-    if (e.key === "Escape") { onCancel(); return; }
-    if (e.key === "Enter") {
-      e.preventDefault();
-      if (value.trim()) onOpen(value.trim(), setError);
+  const handleSelect = useCallback((path) => {
+    if (path.endsWith("/")) {
+      // Directory selected — fill the input so user keeps typing
+      setValue(path);
+    } else {
+      // File selected — try to open it
+      if (path.trim()) onOpen(path.trim(), setError);
     }
-  };
+  }, [onOpen]);
 
   return (
     <div class="rem-open-file-row">
-      <input
-        ref={inputRef}
-        type="text"
-        class={"rem-open-file-input" + (error ? " rem-open-file-input-error" : "")}
-        placeholder="File path (e.g. src/main.py)"
+      <FileAutocomplete
         value={value}
-        onInput={(e) => { setValue(e.target.value); setError(null); }}
-        onKeyDown={handleKeyDown}
+        onChange={(v) => { setValue(v); setError(null); }}
+        onSelect={handleSelect}
+        onCancel={onCancel}
+        fetchSuggestions={fetchSuggestions}
+        placeholder="File path (e.g. src/main.py)"
+        autoFocus={true}
       />
       {error && <span class="rem-open-file-error">{error}</span>}
     </div>
@@ -413,6 +415,7 @@ export function ReviewerEditModal({ taskId, changedFiles, onDone, onDiscard }) {
             <OpenFileInput
               onOpen={handleOpenFile}
               onCancel={() => setShowOpenFile(false)}
+              taskId={taskId}
             />
           ) : (
             <button
