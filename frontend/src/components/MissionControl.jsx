@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import {
   allTeamsAgents, allTeamsTurnState, tasks,
   agentActivityLog, agentThinking,
-  openPanel,
+  openPanel, currentTeam,
 } from "../state.js";
-import { cap, taskIdStr, renderMarkdown } from "../utils.js";
+import { cap, taskIdStr, renderMarkdown, fmtStatus } from "../utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -259,6 +259,15 @@ function AgentRow({ agent, thinking, activities }) {
 }
 
 // ---------------------------------------------------------------------------
+// isTaskActive — true if any agent in the given team is inTurn on this taskId
+// ---------------------------------------------------------------------------
+
+function isTaskActive(taskId, turnState, team) {
+  const teamTurns = turnState[team] || {};
+  return Object.values(teamTurns).some(t => t.inTurn && t.taskId === taskId);
+}
+
+// ---------------------------------------------------------------------------
 // MissionControl
 // ---------------------------------------------------------------------------
 
@@ -268,30 +277,55 @@ export function MissionControl() {
   const allAgentsList = allTeamsAgents.value;
   const allTasks = tasks.value;
   const activityLog = agentActivityLog.value;
+  const team = currentTeam.value;
 
   const agents = buildAgentList(allAgentsList, turnState, allTasks);
 
-  if (agents.length === 0) {
-    return (
-      <div class="mc">
-        <div class="mc-body">
-          <div class="mc-empty">No agents</div>
-        </div>
-      </div>
-    );
-  }
+  const EXCLUDED_STATUSES = new Set(["done", "cancelled", "rejected"]);
+  const activeTasks = allTasks
+    .filter(t => t.team === team && !EXCLUDED_STATUSES.has(t.status))
+    .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
 
   return (
     <div class="mc">
       <div class="mc-body">
-        {agents.map(a => (
-          <AgentRow
-            key={`${a.team}-${a.name}`}
-            agent={a}
-            thinking={thinking[a.name]}
-            activities={getRecentActivities(activityLog, a.name)}
-          />
-        ))}
+        {/* Section 1: Agents */}
+        <div class="mc-section-heading">Agents</div>
+        {agents.length === 0
+          ? <div class="mc-empty">No agents</div>
+          : agents.map(a => (
+              <AgentRow
+                key={`${a.team}-${a.name}`}
+                agent={a}
+                thinking={thinking[a.name]}
+                activities={getRecentActivities(activityLog, a.name)}
+              />
+            ))
+        }
+
+        {/* Divider */}
+        <div class="mc-section-divider" />
+
+        {/* Section 2: Active Tasks */}
+        <div class="mc-section-heading mc-section-heading-sub">Active Tasks</div>
+        {activeTasks.length === 0
+          ? <div class="mc-empty">No active tasks</div>
+          : activeTasks.map(task => {
+              const active = isTaskActive(task.id, turnState, team);
+              return (
+                <div
+                  key={task.id}
+                  class="mc-task-row"
+                  onClick={() => openPanel("task", task.id)}
+                >
+                  <span class={"mc-dot " + (active ? "dot-active" : "dot-idle")} />
+                  <span class="mc-task-id">{taskIdStr(task.id)}</span>
+                  <span class="mc-task-assignee">{task.assignee ? cap(task.assignee) : "—"}</span>
+                  <span class="mc-task-status">{fmtStatus(task.status)}</span>
+                </div>
+              );
+            })
+        }
       </div>
     </div>
   );

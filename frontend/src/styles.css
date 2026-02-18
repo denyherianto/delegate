@@ -708,8 +708,62 @@ body {
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   font-size: 11px;
   color: var(--text-faint);
-  text-align: center;
-  padding: 48px 20px;
+  padding: 6px 12px;
+}
+
+/* ── Section headings ── */
+.mc-section-heading {
+  padding: 16px 12px 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.mc-section-heading-sub {
+  padding-top: 10px;
+}
+
+/* ── Section divider ── */
+.mc-section-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 8px 0;
+}
+
+/* ── Task rows ── */
+.mc-task-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  min-height: 28px;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+.mc-task-row:hover { background: var(--bg-hover); }
+
+.mc-task-id {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.mc-task-assignee {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mc-task-status {
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  text-transform: capitalize;
+  flex-shrink: 0;
 }
 
 /* ── Responsive ── */
