@@ -751,6 +751,7 @@ body {
   white-space: nowrap;
 }
 .mc-task-assignee {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   font-size: 11px;
   color: var(--text-muted);
   flex: 1;
