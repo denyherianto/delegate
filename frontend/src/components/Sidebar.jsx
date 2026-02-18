@@ -2,6 +2,7 @@ import { useCallback } from "preact/hooks";
 import {
   currentTeam, teams, activeTab,
   sidebarCollapsed, projectModalOpen,
+  actionItemCount, bellPopoverOpen,
   navigate, navigateTab, lsKey,
 } from "../state.js";
 import { cap } from "../utils.js";
@@ -27,6 +28,14 @@ function PlusIcon() {
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
       <line x1="7" y1="2" x2="7" y2="12" />
       <line x1="2" y1="7" x2="12" y2="7" />
+    </svg>
+  );
+}
+function BellIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4.5 6.5V6a3.5 3.5 0 017 0v.5c0 2 1 3 1 3H3.5s1-1 1-3z" />
+      <path d="M6.5 13a1.5 1.5 0 003 0" />
     </svg>
   );
 }
@@ -134,8 +143,21 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Nav: New Project + Tasks + Agents (always visible, even collapsed) */}
+      {/* Nav: Notifications + New Project + Tasks + Agents */}
       <nav class="sb-nav">
+        <button
+          class="sb-nav-btn sb-notif-btn"
+          onClick={() => { bellPopoverOpen.value = !bellPopoverOpen.value; }}
+          title="Notifications"
+        >
+          <span class="sb-notif-icon-wrap">
+            <BellIcon />
+            {actionItemCount.value > 0 && (
+              <span class="sb-notif-badge">{actionItemCount.value}</span>
+            )}
+          </span>
+          {!collapsed && <span class="sb-nav-label">Notifications</span>}
+        </button>
         <button
           class="sb-nav-btn"
           onClick={() => { projectModalOpen.value = true; }}

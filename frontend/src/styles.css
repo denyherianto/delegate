@@ -256,6 +256,31 @@ body {
 }
 .sb-nav-label { white-space: nowrap; }
 
+/* Notification button in sidebar */
+.sb-notif-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sb-notif-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 14px;
+  height: 14px;
+  background: var(--semantic-red);
+  color: white;
+  font-size: 9px;
+  font-weight: 600;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0 3px;
+}
+
 /* Widgets area */
 .sb-widgets {
   flex: 1;
@@ -401,14 +426,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 4px 6px;
+  padding: 4px 10px 6px;
 }
 .sb-projects-label {
   font-size: 10px;
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
 }
 .sb-projects-list {
   display: flex;
@@ -418,7 +443,7 @@ body {
 .sb-project-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   padding: 5px 10px;
   border: none;
@@ -478,29 +503,11 @@ body {
   flex-shrink: 0;
 }
 
-/* ── Header ── */
-.mc-header {
-  height: 48px;
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-.mc-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-/* ── Scrollable body ── */
+/* ── Scrollable body (no header — content starts immediately) ── */
 .mc-body {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 8px 0;
 }
 .mc-body::-webkit-scrollbar { width: 4px; }
 .mc-body::-webkit-scrollbar-track { background: transparent; }
@@ -551,11 +558,12 @@ body {
   50%      { opacity: 1; }
 }
 
-/* Agent name */
+/* Agent name — bright monospace, consistent with rest of product */
 .mc-name {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
+  font-weight: 400;
+  color: var(--text-primary);
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -569,19 +577,6 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* Model badge — right-aligned */
-.mc-model {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 9px;
-  color: var(--text-muted);
-  background: var(--bg-hover);
-  padding: 1px 5px;
-  border-radius: 3px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  flex-shrink: 0;
 }
 
 /* ── Active body: indented entries below header ── */
@@ -628,6 +623,18 @@ body {
   mask-image: linear-gradient(to bottom, transparent 0%, black 20%);
 }
 .mc-thinking-stream::-webkit-scrollbar { display: none; }
+.mc-thinking-stream p { margin: 0 0 4px; }
+.mc-thinking-stream p:last-child { margin-bottom: 0; }
+.mc-thinking-stream code { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-size: 11px; }
+.mc-thinking-stream pre { margin: 4px 0; overflow-x: auto; }
+.mc-thinking-stream ul, .mc-thinking-stream ol { margin: 2px 0; padding-left: 16px; }
+.mc-thinking-stream li { margin: 1px 0; }
+.mc-thinking-stream hr {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 6px 0;
+  opacity: 0.5;
+}
 
 /* Tool name + detail in entry */
 .mc-tool-name {
@@ -3708,55 +3715,7 @@ select option:hover {
    Notification Bell + Popover
    ================================================================ */
 
-/* Header bar */
-.main-header {
-  height: 48px;
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-primary);
-  flex-shrink: 0;
-}
-
-/* Bell button */
-.notif-bell {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 6px;
-  border-radius: 4px;
-  transition: color 100ms, background 100ms;
-}
-.notif-bell:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
-/* Bell badge */
-.notif-badge {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 14px;
-  height: 14px;
-  background: var(--semantic-red);
-  color: white;
-  font-size: 10px;
-  font-weight: 600;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-}
+/* Bell button + badge moved to sidebar — see .sb-notif-* styles */
 
 /* Popover backdrop */
 .notif-backdrop {
@@ -3766,11 +3725,11 @@ select option:hover {
   background: transparent;
 }
 
-/* Popover container */
+/* Popover container — anchored near sidebar bell */
 .notif-popover {
-  position: absolute;
-  top: 32px;
-  right: 8px;
+  position: fixed;
+  top: 56px;
+  left: 56px;
   width: 380px;
   max-height: 480px;
   overflow-y: auto;

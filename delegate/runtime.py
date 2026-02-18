@@ -60,7 +60,7 @@ from delegate.mailbox import (
 from delegate.prompt import Prompt
 from delegate.telephone import Telephone, TelephoneUsage
 from delegate.task import format_task_id
-from delegate.activity import broadcast as broadcast_activity, broadcast_thinking, clear_thinking_buffer, broadcast_turn_event
+from delegate.activity import broadcast as broadcast_activity, broadcast_thinking, mark_thinking_tool_break, clear_thinking_buffer, broadcast_turn_event
 from delegate.paths import team_dir
 
 logger = logging.getLogger(__name__)
@@ -739,6 +739,7 @@ async def _stream_telephone(
                 if tool_name:
                     diff = extract_edit_diff(block) if tool_name in ("Edit", "Write") else None
                     broadcast_activity(agent, team, tool_name, detail, task_id=current_task_id, diff=diff)
+                    mark_thinking_tool_break(agent, team)
                 elif hasattr(block, "text") and block.text:
                     broadcast_thinking(agent, team, block.text, task_id=current_task_id)
 

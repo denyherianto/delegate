@@ -192,6 +192,17 @@ def broadcast_task_update(task_id: int, team: str, changes: dict[str, Any]) -> N
 # broadcast.
 _thinking_buffer: dict[tuple[str, str], str] = {}
 
+# Tracks whether tool calls happened since the last thinking append for
+# a given (team, agent).  When set, the next thinking append inserts a
+# paragraph break (rendered as <hr> in markdown) to visually separate
+# logical blocks.
+_thinking_had_tools: dict[tuple[str, str], bool] = {}
+
+
+def mark_thinking_tool_break(agent: str, team: str) -> None:
+    """Signal that a tool call happened — next thinking append gets a break."""
+    _thinking_had_tools[(team, agent)] = True
+
 
 def broadcast_thinking(
     agent: str,
@@ -206,14 +217,21 @@ def broadcast_thinking(
     response stream.  Each call appends to a per-agent buffer and sends
     the full accumulated text so the frontend can render a continuous
     scrolling stream.
+
+    If tool calls happened since the last thinking append, a paragraph
+    break (``---``) is inserted to visually separate logical blocks.
     """
     key = (team, agent)
-    _thinking_buffer[key] = _thinking_buffer.get(key, "") + text
+    buf = _thinking_buffer.get(key, "")
+    if buf and _thinking_had_tools.pop(key, False):
+        buf += "\n\n---\n\n"
+    buf += text
+    _thinking_buffer[key] = buf
     payload = {
         "type": "agent_thinking",
         "agent": agent,
         "team": team,
-        "text": _thinking_buffer[key],
+        "text": buf,
         "task_id": task_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
@@ -223,6 +241,7 @@ def broadcast_thinking(
 def clear_thinking_buffer(agent: str, team: str) -> None:
     """Clear the accumulated thinking buffer for an agent (call on turn end)."""
     _thinking_buffer.pop((team, agent), None)
+    _thinking_had_tools.pop((team, agent), None)
 
 
 def broadcast_teams_refresh() -> None:

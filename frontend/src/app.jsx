@@ -25,7 +25,7 @@ import { TaskSidePanel, prefetchTaskPanelData, invalidateTaskCache, prefetchTask
 import { DiffPanel } from "./components/DiffPanel.jsx";
 import { ToastContainer } from "./components/Toast.jsx";
 import { HelpOverlay } from "./components/HelpOverlay.jsx";
-import { NotificationBell } from "./components/NotificationBell.jsx";
+
 import { NotificationPopover } from "./components/NotificationPopover.jsx";
 import { TeamSwitcher } from "./components/TeamSwitcher.jsx";
 import { NoTeamsModal } from "./components/NoTeamsModal.jsx";
@@ -754,9 +754,6 @@ function App() {
         <div style="display:flex;flex-direction:row;flex:1;min-height:0">
           <Sidebar />
           <div class="main">
-            <div class="main-header">
-              <NotificationBell />
-            </div>
             <div class="content">
               <ChatPanel />
               <TasksPanel />

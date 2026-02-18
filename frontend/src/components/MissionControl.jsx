@@ -4,7 +4,7 @@ import {
   agentActivityLog, agentThinking,
   openPanel,
 } from "../state.js";
-import { cap, taskIdStr } from "../utils.js";
+import { cap, taskIdStr, renderMarkdown } from "../utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -180,17 +180,41 @@ function AgentRow({ agent, thinking, activities }) {
   const status = getStatusSummary(agent);
   const hasThinking = thinkingText.length > 0;
 
-  // Last 2 tool activities — derived directly, no stale-count bugs
-  const recentTools = activities.slice(-2);
+  // ── Tool epoch logic ──
+  // The backend inserts "---" into thinking text when new thinking arrives
+  // after tools ran.  Count separators = epoch.  Only show tools that
+  // arrived in the current (latest) epoch.
+  const epoch = (thinkingText.match(/\n\n---\n\n/g) || []).length;
+  const epochToolCountRef = useRef(0);
+  const prevEpochRef = useRef(0);
+  const prevActivityLenRef = useRef(0);
+
+  // Reset tool count when epoch advances (new thinking after tools)
+  if (epoch !== prevEpochRef.current) {
+    epochToolCountRef.current = 0;
+    prevActivityLenRef.current = activities.length;
+    prevEpochRef.current = epoch;
+  }
+
+  // Count new tools in this epoch
+  if (activities.length > prevActivityLenRef.current) {
+    epochToolCountRef.current += activities.length - prevActivityLenRef.current;
+    prevActivityLenRef.current = activities.length;
+  }
+
+  // Show last 2 tools from this epoch only
+  const toolsInEpoch = epochToolCountRef.current;
+  const recentTools = toolsInEpoch > 0
+    ? activities.slice(-Math.min(toolsInEpoch, 2))
+    : [];
 
   return (
     <div class={"mc-row" + (agent.inTurn ? " mc-row-active" : "")} onClick={() => openPanel("agent", agent.name)}>
-      {/* ── Line 1: dot · name · status · model ── */}
+      {/* ── Line 1: dot · name · status ── */}
       <div class="mc-row-header">
         <span class={"mc-dot " + (agent.inTurn ? "dot-active" : "dot-idle")} />
         <span class="mc-name">{cap(agent.name)}</span>
         <span class="mc-status">{status}</span>
-        <span class="mc-model">{agent.model}</span>
       </div>
 
       {/* ── Active body: thinking stream + tools ── */}
@@ -200,9 +224,11 @@ function AgentRow({ agent, thinking, activities }) {
           {hasThinking ? (
             <div class="mc-entry" onClick={(e) => e.stopPropagation()}>
               <span class="mc-entry-icon"><ThinkingIcon /></span>
-              <div class="mc-thinking-stream" ref={streamRef}>
-                {thinkingText}
-              </div>
+              <div
+                class="mc-thinking-stream"
+                ref={streamRef}
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(thinkingText) }}
+              />
             </div>
           ) : (
             <div class="mc-entry">
@@ -211,7 +237,7 @@ function AgentRow({ agent, thinking, activities }) {
             </div>
           )}
 
-          {/* Tool entries — last 2 from activity log */}
+          {/* Tool entries — last 2 from current epoch */}
           {recentTools.map((act, i) => {
             const detail = act.detail
               ? act.detail.split("/").pop().substring(0, 40)
@@ -248,9 +274,6 @@ export function MissionControl() {
   if (agents.length === 0) {
     return (
       <div class="mc">
-        <div class="mc-header">
-          <span class="mc-title">Mission Control</span>
-        </div>
         <div class="mc-body">
           <div class="mc-empty">No agents</div>
         </div>
@@ -260,9 +283,6 @@ export function MissionControl() {
 
   return (
     <div class="mc">
-      <div class="mc-header">
-        <span class="mc-title">Mission Control</span>
-      </div>
       <div class="mc-body">
         {agents.map(a => (
           <AgentRow
