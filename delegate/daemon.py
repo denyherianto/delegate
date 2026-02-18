@@ -195,6 +195,7 @@ def start_daemon(
     proc = subprocess.Popen(
         cmd,
         env=env,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=stderr_fh,
         start_new_session=True,

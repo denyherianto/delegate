@@ -540,6 +540,7 @@ def _run_pre_merge(
             script_result = subprocess.run(
                 script,
                 cwd=wt_dir,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=600,
@@ -570,6 +571,7 @@ def _run_pre_merge(
         test_result = subprocess.run(
             test_cmd,
             cwd=wt_dir,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=300,
