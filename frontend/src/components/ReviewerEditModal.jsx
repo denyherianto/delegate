@@ -1,73 +1,73 @@
-import { useState, useEffect, useCallback, useRef } from "preact/hooks";
+import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks";
+import { EditorView, lineNumbers } from "@codemirror/view";
+import { EditorState } from "@codemirror/state";
+import { javascript } from "@codemirror/lang-javascript";
+import { python } from "@codemirror/lang-python";
+import { oneDark } from "@codemirror/theme-one-dark";
 import { getTaskFile, postReviewerEdits } from "../api.js";
 
-// Language detection from file extension.
-// When @codemirror packages are available, map these to CM6 language modules.
-const EXT_TO_LANG = {
-  py: "python", pyw: "python",
-  js: "javascript", jsx: "javascript", mjs: "javascript",
-  ts: "typescript", tsx: "typescript",
-  css: "css", scss: "css",
-  json: "json",
-  md: "markdown", markdown: "markdown",
-  html: "html", htm: "html",
-  sh: "bash", bash: "bash",
-  go: "go", rs: "rust", java: "java", rb: "ruby", sql: "sql",
-};
-
-function extLang(filepath) {
-  const ext = (filepath || "").split(".").pop().toLowerCase();
-  return EXT_TO_LANG[ext] || null;
+// Detect language extension from filename for syntax highlighting.
+function langExtension(filename) {
+  if (!filename) return [];
+  if (filename.endsWith(".py") || filename.endsWith(".pyw")) return [python()];
+  if (filename.match(/\.(js|jsx|mjs)$/)) return [javascript({ jsx: true })];
+  if (filename.match(/\.(ts|tsx)$/)) return [javascript({ jsx: true, typescript: true })];
+  return [];
 }
 
-// CodeEditor: textarea-based code editor.
-// Structured so CodeMirror 6 can replace the internals without changing the
-// component interface (content, onChange, lang, disabled props stay the same).
-function CodeEditor({ content, onChange, lang, disabled }) {
-  const textareaRef = useRef(null);
+// CodeEditor: CodeMirror 6-backed editor.
+// Props interface is stable: content, onChange, filename, disabled.
+// The parent uses key={activeFile} to remount on tab switch — each file gets
+// a fresh EditorView instance with the correct content and language.
+function CodeEditor({ content, onChange, filename, disabled }) {
+  const containerRef = useRef(null);
+  const viewRef = useRef(null);
 
-  // Sync content into textarea when changed externally (tab switch)
+  const extensions = useMemo(() => [
+    lineNumbers(),
+    oneDark,
+    ...langExtension(filename),
+    EditorView.updateListener.of((update) => {
+      if (update.docChanged) onChange(update.state.doc.toString());
+    }),
+    EditorView.theme({
+      "&": { height: "100%" },
+      ".cm-scroller": { overflow: "auto" },
+      // Override oneDark background to match modal background (#1a1a1a)
+      "&.cm-editor": { background: "#1a1a1a" },
+      ".cm-gutters": { background: "#1a1a1a", borderRight: "1px solid #333" },
+    }),
+    ...(disabled ? [EditorView.editable.of(false)] : []),
+  ], [filename, disabled]); // recompute when file or disabled changes
+
   useEffect(() => {
-    const ta = textareaRef.current;
-    if (ta && ta.value !== content) {
-      ta.value = content;
+    if (!containerRef.current) return;
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: content,
+        extensions,
+      }),
+      parent: containerRef.current,
+    });
+    viewRef.current = view;
+    return () => {
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, [extensions]); // re-mount when language or disabled changes
+
+  // Sync external content changes without re-mounting (e.g. if parent
+  // updates content while on the same file/key).
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current !== content) {
+      view.dispatch({ changes: { from: 0, to: current.length, insert: content } });
     }
   }, [content]);
 
-  const handleInput = useCallback((e) => {
-    onChange(e.target.value);
-  }, [onChange]);
-
-  const handleKeyDown = useCallback((e) => {
-    // Tab inserts spaces; stop propagation so modal-level handler ignores it
-    if (e.key === "Tab") {
-      e.preventDefault();
-      const ta = e.target;
-      const start = ta.selectionStart;
-      const end = ta.selectionEnd;
-      const newVal = ta.value.substring(0, start) + "    " + ta.value.substring(end);
-      ta.value = newVal;
-      ta.selectionStart = ta.selectionEnd = start + 4;
-      onChange(newVal);
-    }
-    e.stopPropagation();
-  }, [onChange]);
-
-  return (
-    <textarea
-      ref={textareaRef}
-      class="rem-editor-textarea"
-      data-lang={lang || ""}
-      defaultValue={content}
-      onInput={handleInput}
-      onKeyDown={handleKeyDown}
-      disabled={disabled}
-      spellcheck={false}
-      autocomplete="off"
-      autocorrect="off"
-      autocapitalize="off"
-    />
-  );
+  return <div ref={containerRef} class="rem-cm-container" />;
 }
 
 // OpenFileInput: inline text field for typing a file path.
@@ -345,7 +345,7 @@ export function ReviewerEditModal({ taskId, changedFiles, onDone, onDiscard }) {
     if (!modal) return;
     const handleFocusOut = (e) => {
       if (!modal.contains(e.relatedTarget)) {
-        const firstFocusable = modal.querySelector("button, textarea, input");
+        const firstFocusable = modal.querySelector("button, .cm-content, textarea, input");
         if (firstFocusable) firstFocusable.focus();
       }
     };
@@ -356,8 +356,6 @@ export function ReviewerEditModal({ taskId, changedFiles, onDone, onDiscard }) {
   // All visible tabs: changedFiles + any extra opened via "Open file..."
   const extraFiles = [...fileCache.keys()].filter(f => !changedFiles.includes(f));
   const allTabs = [...changedFiles, ...extraFiles];
-
-  const lang = activeFile ? extLang(activeFile) : null;
 
   return (
     <div class="rem-overlay" ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Edit files">
@@ -436,7 +434,7 @@ export function ReviewerEditModal({ taskId, changedFiles, onDone, onDiscard }) {
             key={activeFile}
             content={editorContent}
             onChange={handleEditorChange}
-            lang={lang}
+            filename={activeFile}
             disabled={doneLoading}
           />
         )}
