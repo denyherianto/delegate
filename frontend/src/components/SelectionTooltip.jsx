@@ -142,7 +142,9 @@ export function SelectionTooltip({ containerRef, chatInputRef }) {
 
     // Hide tooltip when clicking outside or selection changes
     const onMouseDown = (e) => {
-      if (tooltipRef.current && !tooltipRef.current.contains(e.target)) {
+      const isTooltipClick = tooltipRef.current && tooltipRef.current.contains(e.target);
+      const isOutsideContainer = !container.contains(e.target);
+      if (isTooltipClick || isOutsideContainer) {
         hideTooltip();
       }
     };
