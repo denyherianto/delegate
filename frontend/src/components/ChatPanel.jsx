@@ -694,7 +694,7 @@ export function ChatPanel() {
   // Restore filters from session storage
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem("chatFilters");
+      const raw = localStorage.getItem("chatFilters");
       if (!raw) {
         // Default: show only human <-> manager messages (events still pass through)
         const mgr = allAgents.find(a => a.role === "manager");
@@ -720,7 +720,7 @@ export function ChatPanel() {
   // Save filters
   useEffect(() => {
     try {
-      sessionStorage.setItem("chatFilters", JSON.stringify({
+      localStorage.setItem("chatFilters", JSON.stringify({
         search: filterSearch, from: filterFrom, to: filterTo,
         typeFilter, direction,
       }));
