@@ -172,7 +172,7 @@ export function AgentsPanel() {
           label="Project"
           value={selectedTeam}
           options={[
-            { value: "all", label: "All teams" },
+            { value: "all", label: "All" },
             ...teamList.map(t => {
               const name = typeof t === "object" ? t.name : t;
               return { value: name, label: cap(name) };

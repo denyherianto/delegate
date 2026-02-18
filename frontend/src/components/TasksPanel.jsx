@@ -287,7 +287,7 @@ export function TasksPanel() {
           value={teamFilter}
           options={[
             { value: "current", label: cap(team) },
-            { value: "all", label: "All teams" },
+            { value: "all", label: "All" },
             ...allTeams.filter(t => t.name !== team).map(t => ({
               value: t.name,
               label: cap(t.name)

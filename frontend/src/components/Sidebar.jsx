@@ -26,9 +26,9 @@ function TasksIcon() {
 }
 function PlusIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-      <line x1="7" y1="2" x2="7" y2="12" />
-      <line x1="2" y1="7" x2="12" y2="7" />
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <line x1="9" y1="4" x2="9" y2="14" />
+      <line x1="4" y1="9" x2="14" y2="9" />
     </svg>
   );
 }

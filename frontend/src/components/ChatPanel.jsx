@@ -1403,20 +1403,6 @@ export function ChatPanel() {
     }
   }, [filterSearch]);
 
-  // Team selector options
-  const teamOptions = useMemo(() => {
-    return teamList.map(t => {
-      const name = typeof t === "object" ? t.name : t;
-      return { value: name, label: cap(name) };
-    });
-  }, [teamList]);
-
-  const handleTeamChange = useCallback((newTeam) => {
-    if (newTeam !== team) {
-      navigate(newTeam, activeTab.value);
-    }
-  }, [team]);
-
   return (
     <div
       class="panel active"
@@ -1433,14 +1419,8 @@ export function ChatPanel() {
         </div>
       )}
 
-      {/* Consolidated filter bar with team selector */}
+      {/* Consolidated filter bar */}
       <div class="chat-filters">
-        <PillSelect
-          label="Project"
-          value={team}
-          options={teamOptions}
-          onChange={handleTeamChange}
-        />
         <PillSelect
           label="From"
           value={filterFrom}

@@ -17,6 +17,7 @@ import {
   applyBootstrapId, lsKey,
 } from "./state.js";
 import * as api from "./api.js";
+import { cap } from "./utils.js";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { ChatPanel } from "./components/ChatPanel.jsx";
 import { TasksPanel } from "./components/TasksPanel.jsx";
@@ -747,20 +748,29 @@ function App() {
     return cleanup;
   });
 
+  const projectName = currentTeam.value || "";
+
   return (
     <>
       <div style="display:flex;flex-direction:column;width:100%;height:100%">
         <PwaBanner />
         <div style="display:flex;flex-direction:row;flex:1;min-height:0">
           <Sidebar />
-          <div class="main">
-            <div class="content">
-              <ChatPanel />
-              <TasksPanel />
-              <AgentsPanel />
+          <div class="workspace">
+            <div class="workspace-header">
+              <span class="workspace-project-name">{cap(projectName)}</span>
+            </div>
+            <div class="workspace-body">
+              <div class="main">
+                <div class="content">
+                  <ChatPanel />
+                  <TasksPanel />
+                  <AgentsPanel />
+                </div>
+              </div>
+              {activeTab.value === "chat" && <MissionControl />}
             </div>
           </div>
-          {activeTab.value === "chat" && <MissionControl />}
         </div>
       </div>
       <TaskSidePanel />
