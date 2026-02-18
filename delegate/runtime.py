@@ -300,6 +300,9 @@ def _select_batch(
 
     If *human_name* is provided, the first human message (if any)
     determines the grouping anchor instead of the oldest message.
+    **When the anchor is from the human, only human messages are
+    included** — this guarantees a clean "human-directed turn" that
+    the frontend can distinguish from internal coordination turns.
 
     The inbox is assumed to be sorted by id (oldest first).
     Both ``task_id = None`` and ``task_id = N`` are valid grouping keys.
@@ -319,14 +322,30 @@ def _select_batch(
     # Human messages get priority: use the human's first message as anchor.
     priority_name = human_name
     anchor = inbox[0]
+    is_human_anchor = False
     if priority_name:
         for msg in inbox:
             if msg.sender == priority_name:
                 anchor = msg
+                is_human_anchor = True
                 break
 
     target_task_id = anchor.task_id
     target_sender = anchor.sender if target_task_id is None else None
+
+    # --- Human-only batch invariant ---
+    # When the anchor is from the human, restrict the batch to human
+    # messages only.  This ensures the turn is cleanly "human-directed"
+    # so the frontend can show inline thinking in the chat panel.
+    if is_human_anchor:
+        batch: list[Message] = []
+        for msg in inbox:
+            if msg.sender != priority_name:
+                continue
+            batch.append(msg)
+            if len(batch) >= max_size:
+                break
+        return batch
 
     # --- Per-sender eligibility ---
     # A sender is eligible only if their earliest inbox message matches
@@ -346,7 +365,7 @@ def _select_batch(
         eligible.add(sender)
 
     # --- Collect matching messages from eligible senders ---
-    batch: list[Message] = []
+    batch = []
     for msg in inbox:
         if msg.sender not in eligible:
             continue

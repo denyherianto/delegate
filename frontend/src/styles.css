@@ -1475,70 +1475,210 @@ body {
 }
 
 /* ================================================================
-   Manager activity bar
+   Delegate thinking footer — "Fusion B" glass card
+   Green left-border, frosted glass, soft green glow.
    ================================================================ */
-.manager-activity-bar {
+
+/* Base: collapsed to 0 when Delegate idle */
+.delegate-footer {
+  overflow: hidden;
+  transition: max-height 300ms ease-out, opacity 200ms ease, margin 200ms ease;
+  max-height: 0;
+  opacity: 0;
+  margin: 0 12px;
+}
+
+/* Active state: Delegate is in a turn — glass card appears */
+.delegate-footer-active {
+  max-height: 44px;
+  opacity: 1;
+  margin: 0 12px 6px;
+  background: rgba(28, 30, 28, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(74, 222, 128, 0.10);
+  border-left: 2px solid var(--dot-manager-active);
+  border-radius: 0 10px 10px 0;
+  box-shadow:
+    0 0 16px rgba(74, 222, 128, 0.04),
+    inset 0 0 0 1px rgba(74, 222, 128, 0.03);
+  animation: delegate-slide-up 250ms ease-out;
+}
+
+/* Expanded: thinking text has arrived */
+.delegate-footer-expanded {
+  max-height: 30vh;
+}
+
+@keyframes delegate-slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Header bar ── */
+.delegate-footer-bar {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 14px 4px;
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 12px;
-  min-height: 26px;
+  padding: 8px 14px 8px 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  line-height: 1.4;
 }
-.manager-typing-dots {
+
+/* Bouncing dots — green to match manager */
+.delegate-footer-dots {
   display: flex;
   align-items: center;
   gap: 3px;
   flex-shrink: 0;
 }
-.manager-typing-dot {
+.delegate-dot {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: var(--accent);
-  animation: typing-bounce 1.2s ease-in-out infinite;
+  background: var(--dot-manager-active);
+  animation: delegate-bounce 1.2s ease-in-out infinite;
 }
-.manager-typing-dot:nth-child(2) { animation-delay: 0.15s; }
-.manager-typing-dot:nth-child(3) { animation-delay: 0.3s; }
+.delegate-dot:nth-child(2) { animation-delay: 0.15s; }
+.delegate-dot:nth-child(3) { animation-delay: 0.3s; }
 
-@keyframes typing-bounce {
+@keyframes delegate-bounce {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
   30% { transform: translateY(-4px); opacity: 1; }
 }
-.manager-activity-content {
+
+/* Name — green accent to match Delegate's identity */
+.delegate-footer-text {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.4;
+  gap: 4px;
+  flex-shrink: 0;
 }
-.mgr-context { color: var(--text-primary); flex-shrink: 0; }
-.mgr-name { font-weight: 600; }
-.mgr-sep { color: var(--text-muted); }
-.mgr-task { color: var(--text-secondary); }
-.mgr-sender { color: var(--text-secondary); }
-.mgr-status { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
-.mgr-tool { font-weight: 600; color: var(--text-secondary); }
-.mgr-thinking {
-  display: inline-block;
-  overflow: hidden;
-  min-width: 140px; /* Accommodate longest word: "contemplating..." */
+.delegate-footer-name {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--accent);
+}
+.delegate-footer-sep {
+  color: var(--text-faint);
+}
+.delegate-footer-busy {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 400;
 }
 
-/* Cycling verb animation - vertical slide + fade */
+/* Status (tool or cycling verb) */
+.delegate-footer-status {
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.delegate-footer-tool {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.delegate-footer-thinking {
+  display: inline-block;
+  min-width: 140px;
+}
+
+/* ── Thinking stream area ── */
+.delegate-footer-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 14px 10px 30px;
+  animation: delegate-stream-in 250ms ease-out;
+}
+
+@keyframes delegate-stream-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Thinking text — continuous, fades at top, scrollable without scrollbar */
+.delegate-thinking-stream {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  word-break: break-word;
+  max-height: calc(8 * 1.65 * 13px);
+  overflow-y: auto;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 12%);
+}
+.delegate-thinking-stream::-webkit-scrollbar { display: none; }
+.delegate-thinking-stream { scrollbar-width: none; }
+
+/* Word-by-word streaming: new words fade in */
+.delegate-thinking-stream .word-in {
+  display: inline;
+  animation: delegate-word-in 250ms ease forwards;
+}
+@keyframes delegate-word-in {
+  from { opacity: 0; filter: blur(2px); }
+  to   { opacity: 1; filter: blur(0); }
+}
+
+/* Markdown content styling */
+.delegate-thinking-stream p { margin: 0 0 4px; }
+.delegate-thinking-stream p:last-child { margin-bottom: 0; }
+.delegate-thinking-stream code {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+}
+.delegate-thinking-stream pre { margin: 4px 0; overflow-x: auto; }
+.delegate-thinking-stream ul,
+.delegate-thinking-stream ol { margin: 2px 0; padding-left: 16px; }
+.delegate-thinking-stream li { margin: 1px 0; }
+.delegate-thinking-stream hr {
+  border: none;
+  border-top: 1px solid rgba(74, 222, 128, 0.08);
+  margin: 6px 0;
+}
+
+/* Tool entries */
+.delegate-tool-line {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.delegate-tool-name {
+  font-weight: 600;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.delegate-tool-detail {
+  color: var(--text-muted);
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Cycling verb animation */
 .cycling-verb {
   display: inline-block;
   transition: opacity 200ms ease, transform 200ms ease;
 }
-
 .cycling-verb.cycling-in {
   opacity: 1;
   transform: translateY(0);
 }
-
 .cycling-verb.cycling-out {
   opacity: 0;
   transform: translateY(-4px);

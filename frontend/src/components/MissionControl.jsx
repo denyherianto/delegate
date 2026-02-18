@@ -171,7 +171,7 @@ function ToolIcon({ tool }) {
 // AgentRow — unified: one line for all agents, expandable body for active ones
 // ---------------------------------------------------------------------------
 
-function AgentRow({ agent, thinking, activities }) {
+function AgentRow({ agent, thinking, activities, suppressBody }) {
   const streamRef = useRef(null);
   const thinkingText = thinking?.text || "";
   const turnAge = useLiveTimer(agent.inTurn ? agent.turnStartedAt : null);
@@ -185,14 +185,6 @@ function AgentRow({ agent, thinking, activities }) {
   const hasThinking = thinkingText.length > 0;
 
   // ── Tool display: show last 2 tools, but hide if thinking arrived after them ──
-  // The backend inserts "---" breaks when thinking resumes after tool calls.
-  // If the text ends mid-thinking (no trailing ---), tools from before that
-  // thinking block are stale.  We detect this by checking: did the last
-  // activity arrive before or after the last --- break?
-  //
-  // Simple heuristic: count --- breaks = number of tool→thinking transitions.
-  // If breaks >= activities.length, all tools have been "consumed" by subsequent
-  // thinking.  Otherwise, show the trailing tools.
   const breaks = (thinkingText.match(/\n\n---\n\n/g) || []).length;
   const unconsumedTools = Math.max(0, activities.length - breaks);
   const recentTools = unconsumedTools > 0
@@ -210,7 +202,7 @@ function AgentRow({ agent, thinking, activities }) {
       </div>
 
       {/* ── Active body: thinking stream + tools ── */}
-      {agent.inTurn && (
+      {agent.inTurn && !suppressBody && (
         <div class="mc-row-body">
           {/* Thinking stream (or cycling verb placeholder) */}
           {hasThinking ? (
@@ -284,7 +276,11 @@ export function MissionControl() {
   const team = currentTeam.value;
 
   const teamAgents = allAgentsList.filter(a => a.team === team);
-  const agents = buildAgentList(teamAgents, turnState, allTasks);
+  const agentRows = buildAgentList(teamAgents, turnState, allTasks);
+
+  // Manager's expanded thinking is shown in the chat footer,
+  // so suppress it here to avoid duplication.
+  const managerName = teamAgents.find(a => a.role === "manager")?.name;
 
   const EXCLUDED_STATUSES = new Set(["done", "cancelled", "rejected"]);
   const activeTasks = allTasks
@@ -296,14 +292,15 @@ export function MissionControl() {
       <div class="mc-body">
         {/* Section 1: Agents */}
         <div class="mc-section-heading">Agents</div>
-        {agents.length === 0
+        {agentRows.length === 0
           ? <div class="mc-empty">No agents</div>
-          : agents.map(a => (
+          : agentRows.map(a => (
               <AgentRow
                 key={`${a.team}-${a.name}`}
                 agent={a}
                 thinking={thinking[a.name]}
                 activities={getAgentActivities(activityLog, a.name)}
+                suppressBody={a.role === "manager"}
               />
             ))
         }
