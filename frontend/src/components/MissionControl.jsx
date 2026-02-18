@@ -302,7 +302,7 @@ export function MissionControl() {
                   <span class={"mc-dot " + (active ? "dot-active" : "dot-idle")} />
                   <span class="mc-task-id">{taskIdStr(task.id)}</span>
                   <span class="mc-task-assignee">{task.assignee ? cap(task.assignee) : "—"}</span>
-                  <span class="mc-task-status">{fmtStatus(task.status)}</span>
+                  <span class={"badge badge-" + task.status}>{fmtStatus(task.status)}</span>
                 </div>
               );
             })

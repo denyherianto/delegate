@@ -759,13 +759,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mc-task-status {
-  font-size: 10px;
-  color: var(--text-faint);
-  white-space: nowrap;
-  text-transform: capitalize;
-  flex-shrink: 0;
-}
+
 
 /* ── Responsive ── */
 @media (max-width: 1200px) { .mc { display: none; } }
