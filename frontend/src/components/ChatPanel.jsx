@@ -695,7 +695,14 @@ export function ChatPanel() {
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem("chatFilters");
-      if (!raw) return;
+      if (!raw) {
+        // Default: show only human <-> manager messages (events still pass through)
+        const mgr = allAgents.find(a => a.role === "manager");
+        setFilterFrom(humanName.value || "human");
+        if (mgr) setFilterTo(mgr.name);
+        chatFilterDirection.value = "bidi";
+        return;
+      }
       const f = JSON.parse(raw);
       if (f.search) {
         setFilterSearch(f.search);
