@@ -10,7 +10,6 @@ import {
   lsKey,
 } from "../state.js";
 import * as api from "../api.js";
-import { completeFiles } from "../api.js";
 import {
   cap, esc, fmtTimestamp, renderMarkdown,
   linkifyTaskRefs, linkifyFilePaths, agentifyRefs, msgStatusIcon, taskIdStr,
@@ -450,7 +449,7 @@ export function ChatPanel() {
   }, [commandMode.value, acIsTypingName, acParsed]);
 
   const fetchShellDirSuggestions = useCallback(async (q) => {
-    const entries = await completeFiles(q);
+    const entries = await api.completeFiles(q);
     return entries.map(e => e.path + (e.is_dir ? "/" : ""));
   }, []);
 

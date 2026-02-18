@@ -2564,9 +2564,11 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 # Security: skip symlinks to prevent traversal outside prefix dir
                 if entry.is_symlink():
                     continue
+                is_dir = entry.is_dir()
                 entries.append({
                     "path": str(entry),
-                    "is_dir": entry.is_dir(),
+                    "is_dir": is_dir,
+                    "has_git": is_dir and (entry / ".git").exists(),
                 })
         except PermissionError:
             return []
@@ -2665,7 +2667,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                     rel_p = abs_p[len(wt_root_str) + 1:]
                 else:
                     rel_p = abs_p
-                rel_entries.append({"path": rel_p, "is_dir": e["is_dir"]})
+                rel_entries.append({"path": rel_p, "is_dir": e["is_dir"], "has_git": e["has_git"]})
 
             return {"entries": rel_entries}
 
