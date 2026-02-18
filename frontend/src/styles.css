@@ -547,15 +547,22 @@ body {
   flex-shrink: 0;
 }
 
-/* ── Scrollable body (no header — content starts immediately) ── */
-.mc-body {
-  flex: 1;
+/* ── Two independently-scrollable panels: agents (top) + tasks (bottom) ── */
+.mc-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 33%;
   overflow-y: auto;
   padding: 8px 0;
 }
-.mc-body::-webkit-scrollbar { width: 4px; }
-.mc-body::-webkit-scrollbar-track { background: transparent; }
-.mc-body::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
+.mc-panel::-webkit-scrollbar { width: 4px; }
+.mc-panel::-webkit-scrollbar-track { background: transparent; }
+.mc-panel::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
+
+.mc-agents-panel {
+  border-bottom: 1px solid var(--border-default);
+}
 
 /* ── Agent row (unified: idle = header only, active = header + body) ── */
 .mc-row {
@@ -720,17 +727,6 @@ body {
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
-.mc-section-heading-sub {
-  padding-top: 10px;
-}
-
-/* ── Section divider ── */
-.mc-section-divider {
-  height: 1px;
-  background: var(--border-subtle);
-  margin: 8px 0;
-}
-
 /* ── Task rows ── */
 .mc-task-row {
   display: flex;

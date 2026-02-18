@@ -291,7 +291,7 @@ export function MissionControl() {
 
   return (
     <div class="mc">
-      <div class="mc-body">
+      <div class="mc-panel mc-agents-panel">
         {/* Section 1: Agents */}
         <div class="mc-section-heading">Agents</div>
         {agentRows.length === 0
@@ -306,12 +306,11 @@ export function MissionControl() {
               />
             ))
         }
+      </div>
 
-        {/* Divider */}
-        <div class="mc-section-divider" />
-
+      <div class="mc-panel mc-tasks-panel">
         {/* Section 2: Active Tasks */}
-        <div class="mc-section-heading mc-section-heading-sub">Active Tasks</div>
+        <div class="mc-section-heading">Active Tasks</div>
         {activeTasks.length === 0
           ? <div class="mc-empty">No active tasks</div>
           : activeTasks.map(task => (
