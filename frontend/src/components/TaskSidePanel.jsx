@@ -10,11 +10,30 @@ import {
   cap, esc, fmtStatus, fmtTimestamp, fmtElapsed, fmtTokens, fmtCost,
   fmtRelativeTime, taskIdStr, renderMarkdown, linkifyTaskRefs, linkifyFilePaths,
   agentifyRefs, flattenDiffDict, flattenCommitsDict, diff2HtmlRender, diff2HtmlParse,
-  stripEmojis, handleCopyClick, toApiPath,
+  stripEmojis, handleCopyClick, toApiPath, fmtCompactDuration,
 } from "../utils.js";
 import { ReviewableDiff } from "./ReviewableDiff.jsx";
 import { showToast } from "../toast.js";
 import { CopyBtn } from "./CopyBtn.jsx";
+
+// ── Live timer hook ──
+// Returns a compact elapsed-time string (e.g. "42s", "5m") updated every second.
+// Pass null/undefined to get null (used to hide the timer).
+function useLiveTimer(startIso) {
+  const [elapsed, setElapsed] = useState(() =>
+    startIso ? fmtCompactDuration(Date.now() - new Date(startIso).getTime()) : null
+  );
+
+  useEffect(() => {
+    if (!startIso) { setElapsed(null); return; }
+    const tick = () => setElapsed(fmtCompactDuration(Date.now() - new Date(startIso).getTime()));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [startIso]);
+
+  return elapsed;
+}
 
 // ── Per-task stale-while-revalidate cache ──
 // Keyed by taskId → { stats, diffRaw, mergePreviewRaw, currentReview, oldComments, activityRaw }
@@ -1037,6 +1056,10 @@ export function TaskSidePanel() {
     }
   }, [task]);
 
+  // Task age timer — always visible, updates every second.
+  // Called unconditionally (before early returns) to satisfy hook rules.
+  const taskAge = useLiveTimer(task?.created_at ?? null);
+
   if (id === null) return null;
 
   const isOpen = id !== null;
@@ -1078,6 +1101,7 @@ export function TaskSidePanel() {
             <span class="task-panel-header-status">
               {t && <span class={"badge badge-" + t.status}>{fmtStatus(t.status)}</span>}
             </span>
+            {taskAge && <span class="live-timer">{taskAge}</span>}
           </div>
           <div class="task-panel-header-line-2">
             <span class="task-panel-title">{t ? t.title : "Loading..."}</span>

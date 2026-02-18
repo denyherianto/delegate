@@ -447,3 +447,18 @@ export function renderFileReferences(html, team) {
     }
   });
 }
+
+// ── Compact duration formatter ──
+// Given elapsed milliseconds, returns a compact single-unit string:
+// "42s", "14m", "3h", "2d" — largest unit only.
+export function fmtCompactDuration(ms) {
+  if (ms < 0) ms = 0;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + "s";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + "m";
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + "h";
+  const d = Math.floor(h / 24);
+  return d + "d";
+}

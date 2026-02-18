@@ -2,14 +2,34 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks"
 import {
   currentTeam, diffPanelMode, diffPanelTarget, tasks,
   panelStack, pushPanel, closeAllPanels, popPanel,
-  agentActivityLog, agents,
+  agentActivityLog, agents, allTeamsTurnState,
 } from "../state.js";
 import * as api from "../api.js";
 import {
   cap, esc, fmtTimestamp, fmtElapsed, fmtTokens, fmtCost,
   flattenDiffDict, flattenCommitsDict, diff2HtmlRender, diff2HtmlParse,
   renderMarkdown, msgStatusIcon, taskIdStr, toApiPath, displayFilePath,
+  fmtCompactDuration,
 } from "../utils.js";
+
+// ── Live timer hook ──
+// Returns a compact elapsed-time string (e.g. "42s", "5m") updated every second.
+// Pass null/undefined to get null (used to hide the timer).
+function useLiveTimer(startIso) {
+  const [elapsed, setElapsed] = useState(() =>
+    startIso ? fmtCompactDuration(Date.now() - new Date(startIso).getTime()) : null
+  );
+
+  useEffect(() => {
+    if (!startIso) { setElapsed(null); return; }
+    const tick = () => setElapsed(fmtCompactDuration(Date.now() - new Date(startIso).getTime()));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [startIso]);
+
+  return elapsed;
+}
 
 import hljs from "highlight.js";
 
@@ -476,6 +496,17 @@ function panelTitle(entry, allTasks) {
   return "";
 }
 
+// ── Agent turn timer (inner component to isolate setInterval hook) ──
+function AgentTurnTimer({ agentName }) {
+  const team = currentTeam.value;
+  const turnState = allTeamsTurnState.value;
+  const turn = turnState[team]?.[agentName];
+  const startedAt = turn?.inTurn ? turn.startedAt : null;
+  const elapsed = useLiveTimer(startedAt);
+  if (!elapsed) return null;
+  return <span class="live-timer">{elapsed}</span>;
+}
+
 // ── Main DiffPanel ──
 export function DiffPanel() {
   const mode = diffPanelMode.value;
@@ -500,7 +531,12 @@ export function DiffPanel() {
         )}
         <div class="diff-panel-header">
           {mode === "diff" && <div class="diff-panel-title">{"T" + String(target).padStart(4, "0")}</div>}
-          {mode === "agent" && <div class="diff-panel-title">{cap(target || "")}</div>}
+          {mode === "agent" && (
+            <div class="diff-panel-title diff-panel-title-agent">
+              <span>{cap(target || "")}</span>
+              <AgentTurnTimer agentName={target} />
+            </div>
+          )}
           {mode === "file" && null /* FileView renders its own title */}
           <button class="diff-panel-close" onClick={close}>&times;</button>
         </div>

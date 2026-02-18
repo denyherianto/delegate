@@ -574,7 +574,8 @@ function App() {
         _pt.turnState[team][entry.agent] = {
           inTurn: true,
           taskId: entry.task_id ?? null,
-          sender: entry.sender ?? ""
+          sender: entry.sender ?? "",
+          startedAt: new Date().toISOString()
         };
 
         // Push a visual separator at the START of each turn
@@ -712,7 +713,8 @@ function App() {
           _pt.turnState[team][entry.agent] = {
             inTurn: true,
             taskId: entry.task_id ?? null,
-            sender: ""
+            sender: "",
+            startedAt: new Date().toISOString()
           };
         }
 
