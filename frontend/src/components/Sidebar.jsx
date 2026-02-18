@@ -97,7 +97,8 @@ function ProjectList({ collapsed }) {
         <div class="sb-projects-list">
           {teamList.map(t => {
             const name = typeof t === "object" ? t.name : t;
-            const isCurrent = name === current;
+            const tab = activeTab.value;
+            const isCurrent = name === current && tab === "chat";
             return (
               <button
                 key={name}

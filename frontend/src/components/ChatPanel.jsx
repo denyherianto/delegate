@@ -365,6 +365,7 @@ export function ChatPanel() {
   const wasAtBottomRef = useRef(true);
   const [showJumpBtn, setShowJumpBtn] = useState(false);
   const initialScrollDone = useRef(false);
+  const defaultsAppliedRef = useRef(false);
   const oldestMsgIdRef = useRef(null);
   const newestMsgTsRef = useRef("");
   const pollingIntervalRef = useRef(null);
@@ -691,15 +692,18 @@ export function ChatPanel() {
     lastTeamRef.current = team;
   }, [team]);
 
-  // Restore filters from session storage
+  // Restore filters from localStorage
   useEffect(() => {
     try {
       const raw = localStorage.getItem("chatFilters");
       if (!raw) {
-        // Default: show only human <-> manager messages (events still pass through)
+        if (defaultsAppliedRef.current) return;
         const mgr = allAgents.find(a => a.role === "manager");
-        setFilterFrom(humanName.value || "human");
-        if (mgr) setFilterTo(mgr.name);
+        const hName = humanName.value;
+        if (!hName || hName === "human" || !mgr) return; // bootstrap not ready yet
+        defaultsAppliedRef.current = true;
+        setFilterFrom(hName);
+        setFilterTo(mgr.name);
         chatFilterDirection.value = "bidi";
         return;
       }
@@ -715,7 +719,7 @@ export function ChatPanel() {
       else if (f.showEvents === false) setTypeFilter("chat");
       if (f.direction === "one-way") chatFilterDirection.value = "one-way";
     } catch (e) { }
-  }, []);
+  }, [allAgents]);
 
   // Save filters
   useEffect(() => {
