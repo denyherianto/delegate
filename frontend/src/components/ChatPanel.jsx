@@ -3,7 +3,7 @@ import { memo, forwardRef } from "preact/compat";
 import {
   currentTeam, messages, agents, activeTab,
   openPanel,
-  knownAgentNames, isMuted, humanName, expandedMessages,
+  knownAgentNames, isMuted, humanName,
   commandMode, commandCwd, teams, navigate,
   loadTeamCwd, saveTeamCwd, loadTeamHistory, addToHistory,
   uploadingFiles,
@@ -109,150 +109,14 @@ const LinkedDiv = forwardRef(function LinkedDiv({ html, class: cls, style }, ref
 });
 
 // ── Memoized message content rendering ──
-const MemoizedMessageContent = memo(function MemoizedMessageContent({ content, team, messageId, isBoss }) {
+const MemoizedMessageContent = memo(function MemoizedMessageContent({ content, team, isBoss }) {
   const html = useMemo(
     () => linkifyFilePaths(renderFileReferences(linkifyTaskRefs(renderMarkdown(content)), team)),
     [content, team]
   );
-  return <CollapsibleMessage html={html} messageId={messageId} isBoss={isBoss} />;
-});
-
-// ── Collapsible long message ──
-const COLLAPSE_THRESHOLD_AGENT = 67;   // ~3 lines at 14px * 1.6 line-height = 67.2px
-const COLLAPSE_THRESHOLD_HUMAN = 224;  // ~10 lines at 14px * 1.6 line-height = 224px
-
-function CollapsibleMessage({ html, messageId, isBoss }) {
-  const contentRef = useRef();
-  const [isLong, setIsLong] = useState(false);
-  const isExpanded = expandedMessages.value.has(messageId);
-  const threshold = isBoss ? COLLAPSE_THRESHOLD_HUMAN : COLLAPSE_THRESHOLD_AGENT;
-
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el) {
-      // Fallback: retry after a short delay in case ref hasn't been set yet
-      const timer = setTimeout(() => {
-        const retryEl = contentRef.current;
-        if (retryEl && retryEl.scrollHeight > threshold) {
-          setIsLong(true);
-        }
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-
-    const checkOverflow = () => {
-      if (el.scrollHeight > threshold) {
-        setIsLong(true);
-      } else {
-        setIsLong(false);
-      }
-    };
-
-    // Use requestAnimationFrame to ensure layout is complete
-    requestAnimationFrame(checkOverflow);
-
-    // Re-check on resize
-    const observer = new ResizeObserver(checkOverflow);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [html, activeTab.value, threshold]);
-
-  const toggle = useCallback(() => {
-    const next = new Set(expandedMessages.value);
-    if (next.has(messageId)) {
-      next.delete(messageId);
-    } else {
-      next.add(messageId);
-    }
-    expandedMessages.value = next;
-  }, [messageId]);
-
-  const collapsedClass = isBoss ? "collapsed-human" : "collapsed-agent";
-  const wrapperClass = "msg-content-wrapper" + (isLong && !isExpanded ? " " + collapsedClass : "");
-
   const contentClass = isBoss ? "msg-content md-content content-boss" : "msg-content md-content content-regular";
-
-  return (
-    <>
-      <div class={wrapperClass}>
-        <LinkedDiv ref={contentRef} class={contentClass} html={html} />
-        {isLong && !isExpanded && (
-          <div class="msg-fade-overlay" />
-        )}
-      </div>
-      {isLong && (
-        <button class="msg-expand-btn" onClick={toggle}>
-          {isExpanded ? 'Show less' : 'Show more'}
-        </button>
-      )}
-    </>
-  );
-}
-
-// ── Collapsible event message ──
-function CollapsibleEventMessage({ html, messageId }) {
-  const contentRef = useRef();
-  const [isLong, setIsLong] = useState(false);
-  const isExpanded = expandedMessages.value.has(messageId);
-
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el) {
-      // Fallback: retry after a short delay in case ref hasn't been set yet
-      const timer = setTimeout(() => {
-        const retryEl = contentRef.current;
-        if (retryEl && retryEl.scrollHeight > COLLAPSE_THRESHOLD_AGENT) {
-          setIsLong(true);
-        }
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-
-    const checkOverflow = () => {
-      if (el.scrollHeight > COLLAPSE_THRESHOLD_AGENT) {
-        setIsLong(true);
-      } else {
-        setIsLong(false);
-      }
-    };
-
-    // Use requestAnimationFrame to ensure layout is complete
-    requestAnimationFrame(checkOverflow);
-
-    // Re-check on resize
-    const observer = new ResizeObserver(checkOverflow);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [html, activeTab.value]);
-
-  const toggle = useCallback(() => {
-    const next = new Set(expandedMessages.value);
-    if (next.has(messageId)) {
-      next.delete(messageId);
-    } else {
-      next.add(messageId);
-    }
-    expandedMessages.value = next;
-  }, [messageId]);
-
-  const wrapperClass = "msg-event-content-wrapper" + (isLong && !isExpanded ? " collapsed-agent" : "");
-
-  return (
-    <>
-      <div class={wrapperClass}>
-        <LinkedDiv ref={contentRef} class="msg-event-text" html={html} />
-        {isLong && !isExpanded && (
-          <div class="msg-event-fade-overlay" />
-        )}
-      </div>
-      {isLong && (
-        <button class="msg-expand-btn" onClick={toggle}>
-          {isExpanded ? 'Show less' : 'Show more'}
-        </button>
-      )}
-    </>
-  );
-}
+  return <LinkedDiv class={contentClass} html={html} />;
+});
 
 // ── Voice-to-text hook ──
 function useSpeechRecognition(inputRef) {
@@ -1388,7 +1252,7 @@ export function ChatPanel() {
             const eventHtml = agentifyRefs(linkifyFilePaths(renderFileReferences(linkifyTaskRefs(esc(m.content)), team)), agNames);
             return (
               <div key={m.id || i} class="msg-event">
-                <CollapsibleEventMessage html={eventHtml} messageId={m.id || `event-${i}`} />
+                <LinkedDiv class="msg-event-text" html={eventHtml} />
                 <span class="msg-event-time">{fmtTimestamp(m.timestamp)}</span>
                 <span class="msg-event-check-spacer" />
               </div>
@@ -1430,7 +1294,7 @@ export function ChatPanel() {
                   <span class="msg-time" dangerouslySetInnerHTML={{ __html: fmtTimestamp(m.timestamp) }} />
                   <span class="msg-checkmark" dangerouslySetInnerHTML={{ __html: msgStatusIcon(m) }} />
                 </div>
-                <MemoizedMessageContent content={m.content} team={team} messageId={m.id} isBoss={isDelegate} />
+                <MemoizedMessageContent content={m.content} team={team} isBoss={isDelegate} />
               </div>
             </div>
           );

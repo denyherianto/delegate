@@ -205,9 +205,6 @@ export function getWorkflowStages(team, workflowName) {
 // ── Chat filter direction ──
 export const chatFilterDirection = signal("bidi"); // "one-way" | "bidi"
 
-// ── Expanded messages (for collapsible long messages) ──
-export const expandedMessages = signal(new Set());
-
 // ── Command mode (magic commands) ──
 export const commandMode = signal(false);
 export const commandCwd = signal('');  // current working directory for shell commands
