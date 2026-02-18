@@ -40,10 +40,14 @@ class ActivityEntry:
     detail: str
     task_id: int | None = None
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    diff: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["type"] = "agent_activity"
+        # Omit diff key entirely if None to avoid bloating events for non-edit tools
+        if d.get("diff") is None:
+            del d["diff"]
         return d
 
 
@@ -143,16 +147,22 @@ def broadcast(
     detail: str,
     *,
     task_id: int | None = None,
+    diff: list[str] | None = None,
 ) -> None:
     """Push an activity entry to the ring buffer and notify all SSE clients.
 
     This is called from the turn execution loop in ``runtime.py`` for
     every tool invocation observed in the SDK response stream.
 
+    ``diff`` is an optional list of up to 3 unified-diff lines (``+``,
+    ``-``, or context) extracted from the first hunk of an Edit/Write
+    operation.  It is included in the SSE payload so the frontend can
+    render colored diff snippets in agent cards.
+
     Safe to call from any coroutine — the queue puts are non-blocking
     (entries are silently dropped for slow subscribers).
     """
-    entry = ActivityEntry(agent=agent, team=team, tool=tool, detail=detail, task_id=task_id)
+    entry = ActivityEntry(agent=agent, team=team, tool=tool, detail=detail, task_id=task_id, diff=diff)
     _get_ring(team, agent).append(entry)
     _push_to_subscribers(entry.to_dict())
 

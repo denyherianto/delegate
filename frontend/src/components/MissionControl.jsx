@@ -251,13 +251,28 @@ function AgentCard({ agent, thinking, activities }) {
               const detail = act.detail
                 ? act.detail.split("/").pop().substring(0, 40)
                 : "";
+              const diffLines = act.diff && act.diff.length > 0 ? act.diff.slice(0, 3) : null;
               return (
                 <div key={i} class="mc-tool-entry">
-                  <span class="mc-tool-icon">
-                    <ToolIcon tool={act.tool} />
-                  </span>
-                  <span class="mc-tool-name">{act.tool.toLowerCase()}</span>
-                  {detail && <span class="mc-tool-detail">{detail}</span>}
+                  <div class="mc-tool-entry-row">
+                    <span class="mc-tool-icon">
+                      <ToolIcon tool={act.tool} />
+                    </span>
+                    <span class="mc-tool-name">{act.tool.toLowerCase()}</span>
+                    {detail && <span class="mc-tool-detail">{detail}</span>}
+                  </div>
+                  {diffLines && (
+                    <div class="mc-diff-block">
+                      {diffLines.map((line, j) => {
+                        const cls = line.startsWith("+")
+                          ? "mc-diff-line mc-diff-add"
+                          : line.startsWith("-")
+                          ? "mc-diff-line mc-diff-del"
+                          : "mc-diff-line mc-diff-ctx";
+                        return <div key={j} class={cls}>{line}</div>;
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}

@@ -28,6 +28,7 @@ lifetime is independent of DB sessions.
 """
 
 import asyncio
+import difflib
 import logging
 import os
 import random
@@ -516,6 +517,60 @@ def _extract_tool_summary(block: Any) -> tuple[str, str]:
         return short_name, f"{short_name}({keys})" if keys else short_name
 
 
+def extract_edit_diff(block: Any) -> list[str] | None:
+    """Extract up to 3 diff lines from an Edit or Write tool-use block.
+
+    For ``Edit``: diffs ``old_string`` vs ``new_string`` from the tool input.
+    For ``Write``: reads the existing file content from disk and diffs against
+    the new ``content`` field.  If the file does not exist, every new line is
+    treated as an addition.
+
+    Returns a list of up to 3 lines from the first hunk (``+``, ``-``, or
+    context lines — the ``---``/``+++`` header lines are skipped).  Returns
+    ``None`` if the block is not an Edit/Write tool or if no meaningful diff
+    can be produced.
+    """
+    if not hasattr(block, "name"):
+        return None
+
+    name = block.name
+    inp = getattr(block, "input", {}) or {}
+
+    if name == "Edit":
+        old_text = inp.get("old_string", "") or ""
+        new_text = inp.get("new_string", "") or ""
+    elif name == "Write":
+        file_path = inp.get("file_path", "") or ""
+        new_text = inp.get("content", "") or ""
+        try:
+            old_text = Path(file_path).read_text(encoding="utf-8", errors="replace") if file_path else ""
+        except OSError:
+            old_text = ""
+    else:
+        return None
+
+    if old_text == new_text:
+        return None
+
+    old_lines = old_text.splitlines(keepends=True)
+    new_lines = new_text.splitlines(keepends=True)
+
+    diff_lines: list[str] = []
+    for line in difflib.unified_diff(old_lines, new_lines, lineterm=""):
+        # Skip the --- / +++ header lines
+        if line.startswith("---") or line.startswith("+++"):
+            continue
+        # Skip the @@ hunk header lines
+        if line.startswith("@@"):
+            continue
+        # Strip trailing newlines for clean rendering
+        diff_lines.append(line.rstrip("\n\r"))
+        if len(diff_lines) >= 3:
+            break
+
+    return diff_lines if diff_lines else None
+
+
 # ---------------------------------------------------------------------------
 # Telephone creation helper
 # ---------------------------------------------------------------------------
@@ -682,7 +737,8 @@ async def _stream_telephone(
             for block in msg.content:
                 tool_name, detail = _extract_tool_summary(block)
                 if tool_name:
-                    broadcast_activity(agent, team, tool_name, detail, task_id=current_task_id)
+                    diff = extract_edit_diff(block) if tool_name in ("Edit", "Write") else None
+                    broadcast_activity(agent, team, tool_name, detail, task_id=current_task_id, diff=diff)
                 elif hasattr(block, "text") and block.text:
                     broadcast_thinking(agent, team, block.text, task_id=current_task_id)
 
