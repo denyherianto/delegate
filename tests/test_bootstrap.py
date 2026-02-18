@@ -103,10 +103,10 @@ def test_charter_shipped_with_package():
 
 
 def test_agent_subdirs_exist(tmp_team):
-    """Each agent has journals/notes/workspace/worktrees subdirectories."""
+    """Each agent has journals/notes/workspace subdirectories."""
     hc_home = tmp_team
     for name in ["manager", "alice", "bob"]:
-        for subdir in ["journals", "notes", "workspace", "worktrees"]:
+        for subdir in ["journals", "notes", "workspace"]:
             path = agent_dir(hc_home, TEAM, name) / subdir
             assert path.is_dir(), f"Missing {name}/{subdir}"
 
