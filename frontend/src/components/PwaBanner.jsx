@@ -8,16 +8,18 @@ let deferredInstallEvent = null;
 // Whether the install banner is visible (set to true when beforeinstallprompt fires)
 const showInstallBanner = signal(false);
 
-// Whether the "use the app" banner is visible (persists dismiss via localStorage)
+// Whether the "use the app" banner is visible (per-session, resets on page load)
 const showUseAppBanner = signal(false);
 
 // Are we in standalone (PWA) mode?
-// Mac/Chrome PWAs may use window-controls-overlay instead of standalone.
-// navigator.standalone is Safari-only; matchMedia covers Chrome/Edge.
+// Covers standalone, minimal-ui, and fullscreen display modes — all mean
+// the app is running outside the browser tab. navigator.standalone is
+// Safari-only; matchMedia covers Chrome/Edge.
 function isStandalone() {
   return (
     window.matchMedia("(display-mode: standalone)").matches ||
-    window.matchMedia("(display-mode: window-controls-overlay)").matches ||
+    window.matchMedia("(display-mode: minimal-ui)").matches ||
+    window.matchMedia("(display-mode: fullscreen)").matches ||
     window.navigator.standalone === true
   );
 }
@@ -38,21 +40,20 @@ if (!isStandalone()) {
 }
 
 // Determine initial "use the app" banner visibility.
-// Shown when: PWA was previously installed, we're in browser mode, and user
-// hasn't permanently dismissed it.
-// Called after mount (via useEffect) so bootstrapId is set and lsKey() is
-// consistent between this read and the dismiss write.
+// Shown when: PWA was previously installed, we're in browser mode, and the
+// user hasn't dismissed it this session.
+// Called after mount (via useEffect) to ensure the display-mode media query
+// is checked after the browser has fully initialized the display context.
 function initUseAppBanner() {
   if (isStandalone()) return;
   if (localStorage.getItem(lsKey("pwa-installed")) !== "true") return;
-  if (localStorage.getItem(lsKey("pwa-use-app-banner-dismissed")) === "true") return;
+  if (sessionStorage.getItem("pwa-use-app-dismissed")) return;
   showUseAppBanner.value = true;
 }
 
 export function PwaBanner() {
-  // Initialize the "use the app" banner after mount so bootstrapId is set
-  // and lsKey() produces the same key in both initUseAppBanner (read) and
-  // handleUseAppDismiss (write).
+  // Defer initUseAppBanner() to after mount so the browser has fully
+  // resolved the display-mode media query before we check isStandalone().
   useEffect(() => {
     initUseAppBanner();
   }, []);
@@ -75,9 +76,9 @@ export function PwaBanner() {
     showInstallBanner.value = false;
   }
 
-  // "Use the app" banner handler
+  // "Use the app" banner handler — per-session dismiss only
   function handleUseAppDismiss() {
-    localStorage.setItem(lsKey("pwa-use-app-banner-dismissed"), "true");
+    sessionStorage.setItem("pwa-use-app-dismissed", "true");
     showUseAppBanner.value = false;
   }
 
