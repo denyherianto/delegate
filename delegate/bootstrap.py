@@ -36,6 +36,7 @@ from delegate.config import get_boss, get_default_human, add_member, get_human_m
 
 # Project name must start with a lowercase letter or digit, followed by any mix
 # of lowercase letters, digits, hyphens, and underscores.
+
 _PROJECT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _PROJECT_NAME_ERROR = (
     "Project name must be lowercase letters, digits, hyphens, and underscores only"
