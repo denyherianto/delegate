@@ -4,6 +4,7 @@ import {
   sidebarCollapsed, projectModalOpen,
   actionItemCount, bellPopoverOpen,
   navigate, navigateTab, lsKey,
+  allTeamsTurnState,
 } from "../state.js";
 import { cap } from "../utils.js";
 
@@ -87,6 +88,7 @@ function Logo() {
 function ProjectList({ collapsed }) {
   const teamList = teams.value || [];
   const current = currentTeam.value;
+  const turnState = allTeamsTurnState.value;  // { teamName: { agentName: { inTurn, ... } } }
 
   return (
     <div class="sb-projects">
@@ -99,13 +101,16 @@ function ProjectList({ collapsed }) {
             const name = typeof t === "object" ? t.name : t;
             const tab = activeTab.value;
             const isCurrent = name === current && tab === "chat";
+            // Check if any agent in this team is active
+            const teamTurnState = turnState[name] || {};
+            const hasActiveAgent = Object.values(teamTurnState).some(a => a.inTurn);
             return (
               <button
                 key={name}
                 class={"sb-project-item" + (isCurrent ? " active" : "")}
                 onClick={() => navigate(name, "chat")}
               >
-                <span class="sb-project-dot"></span>
+                <span class={"sb-project-dot" + (hasActiveAgent ? " dot-active" : " dot-idle")}></span>
                 <span class="sb-project-name">{cap(name)}</span>
               </button>
             );
@@ -144,21 +149,8 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Nav: Notifications + New Project + Tasks + Agents */}
+      {/* Nav: New Project + Tasks + Agents + Notifications */}
       <nav class="sb-nav">
-        <button
-          class="sb-nav-btn sb-notif-btn"
-          onClick={() => { bellPopoverOpen.value = !bellPopoverOpen.value; }}
-          title="Notifications"
-        >
-          <span class="sb-notif-icon-wrap">
-            <BellIcon />
-            {actionItemCount.value > 0 && (
-              <span class="sb-notif-badge">{actionItemCount.value}</span>
-            )}
-          </span>
-          {!collapsed && <span class="sb-nav-label">Notifications</span>}
-        </button>
         <button
           class="sb-nav-btn"
           onClick={() => { projectModalOpen.value = true; }}
@@ -178,6 +170,19 @@ export function Sidebar() {
             {!collapsed && <span class="sb-nav-label">{label}</span>}
           </button>
         ))}
+        <button
+          class="sb-nav-btn sb-notif-btn"
+          onClick={() => { bellPopoverOpen.value = !bellPopoverOpen.value; }}
+          title="Notifications"
+        >
+          <span class="sb-notif-icon-wrap">
+            <BellIcon />
+            {actionItemCount.value > 0 && (
+              <span class="sb-notif-badge">{actionItemCount.value}</span>
+            )}
+          </span>
+          {!collapsed && <span class="sb-nav-label">Notifications</span>}
+        </button>
       </nav>
 
       {/* Projects: hidden when collapsed */}

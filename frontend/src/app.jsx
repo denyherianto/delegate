@@ -760,7 +760,7 @@ function App() {
               <AgentsPanel />
             </div>
           </div>
-          <MissionControl />
+          {activeTab.value === "chat" && <MissionControl />}
         </div>
       </div>
       <TaskSidePanel />

@@ -247,6 +247,7 @@ body {
   cursor: pointer;
   border-radius: 6px;
   transition: color 100ms, background 100ms;
+  justify-content: flex-start;
 }
 .sb-nav-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
 .sb-nav-btn.active { color: var(--text-heading); background: var(--bg-active); }
@@ -464,11 +465,19 @@ body {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--text-muted);
   flex-shrink: 0;
+  /* background controlled by dot-active/dot-idle modifier classes */
 }
-.sb-project-item.active .sb-project-dot {
+.sb-project-dot.dot-active {
   background: var(--dot-active);
+  animation: sb-dot-pulse 1.8s ease-in-out infinite;
+}
+.sb-project-dot.dot-idle {
+  background: var(--text-muted);
+}
+@keyframes sb-dot-pulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 1; }
 }
 .sb-project-name {
   overflow: hidden;
