@@ -428,13 +428,14 @@ body {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 5px 8px;
+  padding: 5px 10px;
   border: none;
   background: none;
   color: var(--text-secondary);
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 6px;
   text-align: left;
 }
 .sb-project-item:hover { background: var(--bg-hover); color: var(--text-primary); }
