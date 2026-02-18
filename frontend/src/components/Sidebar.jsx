@@ -79,21 +79,20 @@ function ProjectList({ collapsed }) {
   const teamList = teams.value || [];
   const current = currentTeam.value;
 
-  if (collapsed) return null;
-
   return (
     <div class="sb-projects">
       <div class="sb-projects-header">
-        <span class="sb-projects-label">Projects</span>
-        <button
-          class="sb-projects-add"
-          onClick={() => { projectModalOpen.value = true; }}
-          title="New project"
-        >
-          <PlusIcon />
-        </button>
+        {!collapsed && <span class="sb-projects-label">Projects</span>}
       </div>
-      {teamList.length > 0 && (
+      <button
+        class="sb-new-project-btn"
+        onClick={() => { projectModalOpen.value = true; }}
+        title="New Project"
+      >
+        <PlusIcon />
+        {!collapsed && <span class="sb-nav-label">New Project</span>}
+      </button>
+      {!collapsed && teamList.length > 0 && (
         <div class="sb-projects-list">
           {teamList.map(t => {
             const name = typeof t === "object" ? t.name : t;
@@ -111,7 +110,7 @@ function ProjectList({ collapsed }) {
           })}
         </div>
       )}
-      {teamList.length === 0 && (
+      {!collapsed && teamList.length === 0 && (
         <div class="sb-projects-empty">No projects yet</div>
       )}
     </div>

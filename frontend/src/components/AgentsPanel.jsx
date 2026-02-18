@@ -169,13 +169,13 @@ export function AgentsPanel() {
       {/* Team filter */}
       <div class="agents-team-filter-wrap">
         <PillSelect
-          label="Team"
+          label="Project"
           value={selectedTeam}
           options={[
             { value: "all", label: "All teams" },
             ...teamList.map(t => {
               const name = typeof t === "object" ? t.name : t;
-              return { value: name, label: name };
+              return { value: name, label: cap(name) };
             })
           ]}
           onChange={handleTeamChange}
@@ -195,7 +195,7 @@ export function AgentsPanel() {
                 onClick={() => toggleTeam(teamName)}
               >
                 <span class="agent-team-toggle">{isCollapsed ? "▸" : "▾"}</span>
-                <span class="agent-team-name">{teamName}</span>
+                <span class="agent-team-name">{cap(teamName)}</span>
                 <span class="agent-team-count">{teamAgents.length}</span>
               </div>
               {!isCollapsed && (

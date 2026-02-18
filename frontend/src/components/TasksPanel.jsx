@@ -283,7 +283,7 @@ export function TasksPanel() {
     <div class={`panel${activeTab.value === "tasks" ? " active" : ""}`}>
       <div class="task-filters">
         <PillSelect
-          label="Team"
+          label="Project"
           value={teamFilter}
           options={[
             { value: "current", label: cap(team) },

@@ -407,17 +407,28 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-.sb-projects-add {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: 4px;
+.sb-new-project-btn {
   display: flex;
   align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 100ms, background 100ms;
+  text-align: left;
+  box-sizing: border-box;
 }
-.sb-projects-add:hover { color: var(--text-primary); background: var(--bg-hover); }
+.sb-new-project-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
 .sb-projects-list {
   display: flex;
   flex-direction: column;

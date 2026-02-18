@@ -1425,7 +1425,7 @@ export function ChatPanel() {
       {/* Consolidated filter bar with team selector */}
       <div class="chat-filters">
         <PillSelect
-          label="Team"
+          label="Project"
           value={team}
           options={teamOptions}
           onChange={handleTeamChange}
