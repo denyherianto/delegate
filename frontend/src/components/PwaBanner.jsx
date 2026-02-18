@@ -1,3 +1,4 @@
+import { useEffect } from "preact/hooks";
 import { signal } from "@preact/signals";
 import { lsKey } from "../state.js";
 
@@ -7,13 +8,16 @@ let deferredInstallEvent = null;
 // Whether the install banner is visible (set to true when beforeinstallprompt fires)
 const showInstallBanner = signal(false);
 
-// Whether the "use the app" banner is visible (per-session, resets on page load)
+// Whether the "use the app" banner is visible (persists dismiss via localStorage)
 const showUseAppBanner = signal(false);
 
 // Are we in standalone (PWA) mode?
+// Mac/Chrome PWAs may use window-controls-overlay instead of standalone.
+// navigator.standalone is Safari-only; matchMedia covers Chrome/Edge.
 function isStandalone() {
   return (
     window.matchMedia("(display-mode: standalone)").matches ||
+    window.matchMedia("(display-mode: window-controls-overlay)").matches ||
     window.navigator.standalone === true
   );
 }
@@ -33,20 +37,26 @@ if (!isStandalone()) {
   });
 }
 
-// Determine initial "use the app" banner visibility on load.
-// Shown when: PWA was previously installed, we're in browser mode, and not
-// dismissed this session. The install banner (if it appears) overrides this.
+// Determine initial "use the app" banner visibility.
+// Shown when: PWA was previously installed, we're in browser mode, and user
+// hasn't permanently dismissed it.
+// Called after mount (via useEffect) so bootstrapId is set and lsKey() is
+// consistent between this read and the dismiss write.
 function initUseAppBanner() {
   if (isStandalone()) return;
   if (localStorage.getItem(lsKey("pwa-installed")) !== "true") return;
-  // Per-session dismiss: use a sessionStorage flag
-  if (sessionStorage.getItem("pwa-use-app-dismissed")) return;
+  if (localStorage.getItem(lsKey("pwa-use-app-banner-dismissed")) === "true") return;
   showUseAppBanner.value = true;
 }
 
-initUseAppBanner();
-
 export function PwaBanner() {
+  // Initialize the "use the app" banner after mount so bootstrapId is set
+  // and lsKey() produces the same key in both initUseAppBanner (read) and
+  // handleUseAppDismiss (write).
+  useEffect(() => {
+    initUseAppBanner();
+  }, []);
+
   // Install banner handlers
   function handleInstall() {
     if (!deferredInstallEvent) return;
@@ -67,7 +77,7 @@ export function PwaBanner() {
 
   // "Use the app" banner handler
   function handleUseAppDismiss() {
-    sessionStorage.setItem("pwa-use-app-dismissed", "true");
+    localStorage.setItem(lsKey("pwa-use-app-banner-dismissed"), "true");
     showUseAppBanner.value = false;
   }
 
