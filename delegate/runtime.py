@@ -13,7 +13,7 @@ messages.  Each call:
    persistent Claude subprocess — streaming tool summaries to the
    in-memory ring buffer, SSE subscribers, and the worklog.
 6. Marks ALL selected messages as *processed*.
-7. Optionally runs a reflection follow-up (1-in-10 coin flip) on the
+7. Optionally runs a reflection follow-up (1-in-20 coin flip) on the
    **same** Telephone (so the model has full conversation context).
 8. Finalises the DB session: writes worklog, ends session.
 
@@ -115,8 +115,8 @@ DENIED_BASH_PATTERNS = [
     "DELETE FROM",
 ]
 
-# Reflection: 1-in-10 coin flip per turn
-REFLECTION_PROBABILITY = 0.1
+# Reflection: ~1-in-20 coin flip per turn
+REFLECTION_PROBABILITY = 0.05
 
 # In-memory turn counter per (team, agent) (module-level; single-process safe)
 _turn_counts: dict[tuple[str, str], int] = {}
@@ -781,7 +781,7 @@ async def run_turn(
     history, executes the turn (streaming tool summaries to the activity
     ring buffer / SSE), then marks every selected message as processed.
 
-    If the 1-in-10 reflection coin-flip lands, a second (reflection)
+    If the 1-in-20 reflection coin-flip lands, a second (reflection)
     turn is appended **on the same Telephone** so the model has full
     conversation context from the main turn.
 
@@ -1079,7 +1079,7 @@ async def run_turn(
         except Exception:
             pass
 
-    # --- Optional reflection turn (1-in-10 coin flip) ---
+    # --- Optional reflection turn (1-in-20 coin flip) ---
     total = TelephoneUsage(
         input_tokens=turn.input_tokens, output_tokens=turn.output_tokens,
         cache_read_tokens=turn.cache_read_tokens, cache_write_tokens=turn.cache_write_tokens,

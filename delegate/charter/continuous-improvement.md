@@ -12,18 +12,6 @@ After completing each task, write a brief journal in `agents/<your-name>/journal
 - What you did, what went well, what you'd do differently, key learnings.
 - Keep it concise — a few bullet points per section.
 
-### Periodic Reflection
-
-The system will occasionally prompt you to reflect (you'll see a `=== REFLECTION DUE ===` section in your messages). When it does, review your recent journals and update `agents/<your-name>/notes/reflections.md`. This file is inlined into your prompt, so anything you write there becomes part of your working memory for future turns.
-
-**Rules for reflections:**
-- Be concise and high-signal. Bullet points only — no prose, no preamble.
-- Only include reflections that are **actionable in future situations**. If a lesson wouldn't change how you act next time, omit it.
-- Good: "Always run tests before marking in_review — missed a broken import last time."
-- Bad: "Worked on T0005 today. It was challenging but I learned a lot."
-- Prune stale or obvious entries on each reflection pass. The file should stay short (<30 bullets).
-- Focus areas: recurring mistakes, workflow shortcuts, codebase gotchas, team preferences.
-
 ### Automation
 
 If you repeat the same manual steps across tasks, write a script in `teams/<team>/shared/scripts/` and tell the team.
