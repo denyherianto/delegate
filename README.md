@@ -94,6 +94,8 @@ def my_workflow():
 
 **Built-in shell.** Run any command from the chat with `/shell ls -la`. Output renders inline.
 
+**Installable as an app.** Delegate's web UI is a [Progressive Web App](https://developer.mozilla.org/en-US/docs/Web/Progressive_Web_Apps) — install it from your browser for a native app experience with its own window and dock/taskbar icon.
+
 ## Architecture
 
 ```
