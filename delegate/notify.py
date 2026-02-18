@@ -239,3 +239,63 @@ def notify_conflict(
             task_id, e
         )
         return None
+
+
+def notify_human_comment(
+    hc_home: Path,
+    team: str,
+    task_id: int,
+    author: str,
+    body: str,
+) -> int | None:
+    """Send a notification to the manager when a human comments on a task.
+
+    Called from the task comment API endpoint when the comment author
+    is a human member.
+
+    Args:
+        hc_home: Delegate home directory.
+        team: Team name.
+        task_id: The task ID being commented on.
+        author: The name of the human member who posted the comment.
+        body: The comment text.
+
+    Returns:
+        The delivered message id, or None if delivery failed.
+    """
+    from delegate.bootstrap import get_member_by_role as _gmr
+    if _gmr(hc_home, team, "manager") is None:
+        return None
+    manager = _get_manager_name(hc_home, team)
+    sender = _get_sender_name(hc_home)
+
+    # Don't notify if the manager IS the commenter (unlikely but defensive)
+    if author == manager:
+        return None
+
+    msg_body = (
+        f"HUMAN_COMMENT: {format_task_id(task_id)}\n"
+        f"\n"
+        f"Comment by {author} on {format_task_id(task_id)}:\n"
+        f"{body}"
+    )
+
+    msg = Message(
+        sender=sender,
+        recipient=manager,
+        time=_now_iso(),
+        body=msg_body,
+        task_id=task_id,
+    )
+
+    try:
+        msg_id = deliver(hc_home, team, msg)
+        logger.info(
+            "Human comment notification sent for %s to %s", task_id, manager
+        )
+        return msg_id
+    except (ValueError, FileNotFoundError) as e:
+        logger.warning(
+            "Failed to send human comment notification for %s: %s", task_id, e
+        )
+        return None

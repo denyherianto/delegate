@@ -175,3 +175,65 @@ class TestNotifyConflict:
         result = notify_conflict(notify_team, TEAM, task, conflict_details="Test")
         assert result is not None
         assert isinstance(result, int) and result > 0
+
+
+class TestNotifyHumanComment:
+    def test_sends_message_to_manager_for_human_author(self, notify_team):
+        task = create_task(notify_team, TEAM, title="Some task", assignee="manager")
+        assign_task(notify_team, TEAM, task["id"], "alice")
+        change_status(notify_team, TEAM, task["id"], "in_progress")
+
+        from delegate.notify import notify_human_comment
+        result = notify_human_comment(
+            notify_team, TEAM, task["id"], author="boss", body="Please address the edge case."
+        )
+        assert result is not None
+        assert isinstance(result, int) and result > 0
+
+        inbox = read_inbox(notify_team, TEAM, "edison", unread_only=True)
+        assert len(inbox) == 1
+        msg = inbox[0]
+        assert msg.recipient == "edison"
+        assert msg.sender == "system"
+
+    def test_message_contains_task_id_and_body(self, notify_team):
+        task = create_task(notify_team, TEAM, title="Some task", assignee="manager")
+        assign_task(notify_team, TEAM, task["id"], "alice")
+        change_status(notify_team, TEAM, task["id"], "in_progress")
+
+        from delegate.notify import notify_human_comment
+        notify_human_comment(
+            notify_team, TEAM, task["id"], author="boss", body="Fix the null pointer."
+        )
+
+        inbox = read_inbox(notify_team, TEAM, "edison", unread_only=True)
+        body = inbox[0].body
+        assert "HUMAN_COMMENT" in body
+        assert format_task_id(task["id"]) in body
+        assert "boss" in body
+        assert "Fix the null pointer." in body
+
+    def test_no_notification_for_agent_author(self, notify_team):
+        """notify_human_comment is never called for agent comments, but
+        if it were with a manager name, it returns None."""
+        task = create_task(notify_team, TEAM, title="Some task", assignee="manager")
+
+        from delegate.notify import notify_human_comment
+        # If manager comments on their own task, no notification is sent
+        result = notify_human_comment(
+            notify_team, TEAM, task["id"], author="edison", body="Some comment."
+        )
+        assert result is None
+
+        inbox = read_inbox(notify_team, TEAM, "edison", unread_only=True)
+        assert len(inbox) == 0
+
+    def test_returns_none_on_invalid_team(self, notify_team):
+        task = create_task(notify_team, TEAM, title="Some task", assignee="manager")
+
+        from delegate.notify import notify_human_comment
+        # Non-existent team should not raise, just return None
+        result = notify_human_comment(
+            notify_team, "nonexistent_team", task["id"], author="boss", body="Hello."
+        )
+        assert result is None

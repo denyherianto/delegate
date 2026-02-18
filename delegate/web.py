@@ -2014,6 +2014,15 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             try:
                 _get_task(hc_home, t, task_id)
                 cid = _add_comment(hc_home, t, task_id, comment.author, comment.body)
+                # Notify manager if comment is from a human member
+                try:
+                    from delegate.config import get_human_members
+                    human_names = {m["name"] for m in get_human_members(hc_home)}
+                    if comment.author in human_names:
+                        from delegate.notify import notify_human_comment
+                        notify_human_comment(hc_home, t, task_id, comment.author, comment.body)
+                except Exception:
+                    logger.debug("Failed to send human comment notification", exc_info=True)
                 return {"id": cid, "task_id": task_id, "author": comment.author, "body": comment.body}
             except FileNotFoundError:
                 continue
