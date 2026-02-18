@@ -3,7 +3,7 @@
  * No side effects, no DOM access, no state.
  * Exception: useLiveTimer is a Preact hook exported for shared use.
  */
-import { useState, useEffect } from "preact/hooks";
+import { useState, useEffect, useRef } from "preact/hooks";
 import { html as diff2HtmlRender, parse as diff2HtmlParse } from "diff2html";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
@@ -490,4 +490,44 @@ export function useLiveTimer(startIso) {
     return () => clearInterval(id);
   }, [startIso]);
   return elapsed;
+}
+
+/**
+ * useStreamingText — reveals text word-by-word for a streaming effect.
+ *
+ * When `fullText` grows (server sends more thinking), we animate the new
+ * portion in word by word (~30-80ms per word).  Returns the number of
+ * characters revealed so far.  Resets when fullText is cleared.
+ */
+export function useStreamingText(fullText) {
+  const [revealedLen, setRevealedLen] = useState(0);
+  const timerRef = useRef(null);
+
+  // Reset when text is cleared (new turn)
+  useEffect(() => {
+    if (fullText.length === 0) {
+      setRevealedLen(0);
+      if (timerRef.current) clearTimeout(timerRef.current);
+    }
+  }, [fullText.length === 0]);
+
+  // Animate towards full length
+  useEffect(() => {
+    if (revealedLen >= fullText.length) return;
+
+    function revealNext() {
+      setRevealedLen(prev => {
+        if (prev >= fullText.length) return prev;
+        let i = prev;
+        while (i < fullText.length && /\s/.test(fullText[i])) i++;
+        while (i < fullText.length && !/\s/.test(fullText[i])) i++;
+        return i;
+      });
+    }
+
+    timerRef.current = setTimeout(revealNext, 30 + Math.random() * 50);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [revealedLen, fullText.length]);
+
+  return revealedLen;
 }

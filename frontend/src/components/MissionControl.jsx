@@ -4,7 +4,7 @@ import {
   agentActivityLog, agentThinking,
   openPanel, currentTeam,
 } from "../state.js";
-import { cap, taskIdStr, renderMarkdown, fmtStatus, useLiveTimer } from "../utils.js";
+import { cap, taskIdStr, renderMarkdown, fmtStatus, useLiveTimer, useStreamingText } from "../utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -175,14 +175,16 @@ function AgentRow({ agent, thinking, activities, suppressBody }) {
   const streamRef = useRef(null);
   const thinkingText = thinking?.text || "";
   const turnAge = useLiveTimer(agent.inTurn ? agent.turnStartedAt : null);
+  const revealedLen = useStreamingText(thinkingText);
 
-  // Auto-scroll thinking stream to bottom — always, since scrollbar is hidden
+  // Auto-scroll as more words are revealed
   useEffect(() => {
     const el = streamRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [thinkingText]);
+  }, [revealedLen]);
 
-  const hasThinking = thinkingText.length > 0;
+  const revealedText = thinkingText.slice(0, revealedLen);
+  const hasThinking = revealedText.length > 0;
 
   // ── Tool display: show last 2 tools, but hide if thinking arrived after them ──
   const breaks = (thinkingText.match(/\n\n---\n\n/g) || []).length;
@@ -210,7 +212,7 @@ function AgentRow({ agent, thinking, activities, suppressBody }) {
               class="mc-thinking-stream"
               ref={streamRef}
               onClick={(e) => e.stopPropagation()}
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(thinkingText) }}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(revealedText) }}
             />
           ) : (
             <div class="mc-cycling-wrap"><CyclingVerb /></div>
