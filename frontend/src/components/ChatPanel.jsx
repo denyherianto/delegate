@@ -943,7 +943,7 @@ export function ChatPanel() {
     allAgents.forEach(a => { roleMap[a.name] = a.role || "engineer"; });
     return [...names].sort().map(n => ({
       value: n,
-      label: roleMap[n] ? `${cap(n)} (${roleMap[n]})` : cap(n),
+      label: cap(n),
       role: roleMap[n] || "engineer",
     }));
   }, [allAgents, msgs]);
