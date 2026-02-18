@@ -517,11 +517,11 @@ REFERENCE FILES (read as needed):
 Team data: {hc_home}/teams/{team}/"""
 
 
-REFLECTION_PROBABILITY = 0.1  # ~1 in 10 turns trigger a reflection prompt
+REFLECTION_PROBABILITY = 0.05  # ~1 in 20 turns trigger a reflection prompt
 
 
 def _check_reflection_due() -> bool:
-    """Return True with ~10% probability (random coin flip)."""
+    """Return True with ~5% probability (random coin flip)."""
     import random
     return random.random() < REFLECTION_PROBABILITY
 
