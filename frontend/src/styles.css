@@ -1619,7 +1619,7 @@ body {
 .delegate-footer-active {
   max-height: 44px;
   opacity: 1;
-  margin: 0 12px 6px;
+  margin: 12px 12px 6px;
   background: rgba(28, 30, 28, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -1681,10 +1681,10 @@ body {
   color: var(--accent);
 }
 
-/* Status — "responding to Nikhil" etc */
+/* Status — "responding to Nikhil" etc — monospace to match right sidebar */
 .delegate-footer-status {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  font-size: 12px;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1694,17 +1694,20 @@ body {
   margin-right: 6px;
   color: var(--text-faint);
 }
+/* Agent/human name within status — bright like agent names elsewhere */
+.delegate-footer-sender {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
 .delegate-footer-taskid {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   font-variant-numeric: tabular-nums;
-  font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 /* Cycling verb (fallback when no status yet) */
 .delegate-footer-verb {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  font-size: 12px;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
   color: var(--text-muted);
 }
 

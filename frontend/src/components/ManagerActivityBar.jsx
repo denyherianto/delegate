@@ -37,10 +37,10 @@ function buildStatus(turnCtx, allTasks) {
   const taskId = turnCtx.task_id > 0 ? turnCtx.task_id : null;
 
   if (sender && taskId) {
-    return (<>responding to {sender} · <span class="delegate-footer-taskid">{taskIdStr(taskId)}</span></>);
+    return (<>responding to <span class="delegate-footer-sender">{sender}</span> · <span class="delegate-footer-taskid">{taskIdStr(taskId)}</span></>);
   }
   if (sender) {
-    return (<>responding to {sender}</>);
+    return (<>responding to <span class="delegate-footer-sender">{sender}</span></>);
   }
   if (taskId) {
     return (<>working on <span class="delegate-footer-taskid">{taskIdStr(taskId)}</span></>);
