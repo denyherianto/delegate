@@ -88,7 +88,7 @@ def my_workflow():
 
 **Real git, real branches.** Each agent works in isolated [git worktrees](https://git-scm.com/docs/git-worktree). No magic file systems. Branches are named `delegate/<team>/T0001`. You can inspect them anytime.
 
-**Mix models by role.** By default, the manager runs on Claude Opus and engineers run on Claude Sonnet — strong reasoning where it matters, cost-efficient execution everywhere else. Configurable per agent.
+**Mix models by role.** All agents default to Claude Sonnet. Override per agent with `--model opus` for tasks requiring stronger reasoning. Configurable at any time.
 
 **Team charter in markdown.** Edit a markdown file to set review standards, communication norms, and team values. 
 

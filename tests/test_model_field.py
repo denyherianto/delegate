@@ -45,8 +45,8 @@ def runner():
 # ---------------------------------------------------------------------------
 
 class TestDefaultModel:
-    def test_manager_gets_opus(self):
-        assert _default_model("manager") == "opus"
+    def test_manager_gets_sonnet(self):
+        assert _default_model("manager") == "sonnet"
 
     def test_engineer_gets_sonnet(self):
         assert _default_model("engineer") == "sonnet"
@@ -91,11 +91,11 @@ class TestAddAgentModel:
         with pytest.raises(ValueError, match="Invalid model"):
             add_agent(hc, TEAM, agent_name="eve", role="engineer", model="gpt4")
 
-    def test_bootstrap_manager_defaults_to_opus(self, hc):
-        """Manager agent state.yaml gets model: opus by default."""
+    def test_bootstrap_manager_defaults_to_sonnet(self, hc):
+        """Manager agent state.yaml gets model: sonnet by default."""
         bootstrap(hc, TEAM, manager="mgr", agents=[])
         state = yaml.safe_load((agent_dir(hc, TEAM, "mgr") / "state.yaml").read_text())
-        assert state["model"] == "opus"
+        assert state["model"] == "sonnet"
         assert "seniority" not in state
 
 
@@ -122,11 +122,11 @@ class TestBootstrapModels:
         assert bob_state["model"] == "opus"
 
     def test_no_models_dict_uses_role_defaults(self, hc):
-        """Without models dict, defaults apply (manager=opus, engineer=sonnet)."""
+        """Without models dict, defaults apply (all roles=sonnet)."""
         bootstrap(hc, TEAM, manager="mgr", agents=["alice"])
         mgr_state = yaml.safe_load((agent_dir(hc, TEAM, "mgr") / "state.yaml").read_text())
         alice_state = yaml.safe_load((agent_dir(hc, TEAM, "alice") / "state.yaml").read_text())
-        assert mgr_state["model"] == "opus"
+        assert mgr_state["model"] == "sonnet"
         assert alice_state["model"] == "sonnet"
 
 
@@ -276,7 +276,7 @@ class TestCliTeamCreateModel:
         assert result.exit_code != 0
 
     def test_team_create_no_model_uses_defaults(self, hc, runner, tmp_path):
-        """Without --model, defaults apply: manager=opus, engineers=sonnet."""
+        """Without --model, defaults apply: all roles=sonnet."""
         repo_dir = tmp_path / "repo"
         repo_dir.mkdir()
         (repo_dir / ".git").mkdir()
@@ -289,7 +289,7 @@ class TestCliTeamCreateModel:
         assert result.exit_code == 0, result.output
         mgr_state = yaml.safe_load((agent_dir(hc, "myteam", "delegate") / "state.yaml").read_text())
         alice_state = yaml.safe_load((agent_dir(hc, "myteam", "alice") / "state.yaml").read_text())
-        assert mgr_state["model"] == "opus"
+        assert mgr_state["model"] == "sonnet"
         assert alice_state["model"] == "sonnet"
 
 

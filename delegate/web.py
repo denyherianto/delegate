@@ -1626,7 +1626,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             agent_name = add_agent(**kwargs)
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        resolved_model = req.model or ("opus" if req.role == "manager" else "sonnet")
+        resolved_model = req.model or "sonnet"
         return {"message": f"Added agent '{agent_name}' to team '{team}' (role: {req.role or 'engineer'}, model: {resolved_model})"}
 
     # --- Project (team) creation from UI ---

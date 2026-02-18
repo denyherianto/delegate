@@ -36,7 +36,7 @@ CONTEXT_MSGS_OTHERS = 3         # most recent from anyone else
 # Allowed model values and defaults
 ALLOWED_MODELS = ("opus", "sonnet")
 DEFAULT_MODEL = "sonnet"
-DEFAULT_MANAGER_MODEL = "opus"
+DEFAULT_MANAGER_MODEL = "sonnet"
 
 
 # ---------------------------------------------------------------------------

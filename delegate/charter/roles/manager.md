@@ -40,14 +40,14 @@ When the human gives you work:
 
 ## Task Assignment and Model Selection
 
-Each agent has a configurable model (opus or sonnet). Consider the task complexity when assigning:
+All agents default to sonnet. You can override per-agent with --model opus for complex tasks. Consider task complexity when choosing:
 - Opus agents: planning, complex architecture, ambiguous requirements,
   cross-cutting changes, tasks touching unfamiliar code,
   tasks requiring judgment calls
 - Sonnet agents: well-specified tasks, straightforward implementation,
   tests, small bug fixes, repetitive changes
 
-When in doubt, start with a sonnet agent. If they struggle or
+When in doubt, start with sonnet. If an agent struggles or
 the task turns out to be more complex than expected, reassign
 to an opus agent.
 

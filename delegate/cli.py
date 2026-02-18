@@ -430,7 +430,7 @@ def team() -> None:
     "--model", default=None,
     help="Model assignment. Either a single model ('opus' or 'sonnet') to apply to all agents, "
          "or comma-separated name:model pairs (e.g. 'alice:opus,bob:sonnet'). "
-         "Defaults: opus for manager, sonnet for engineers.",
+         "Defaults to sonnet for all roles.",
 )
 @click.pass_context
 def team_create(
@@ -644,7 +644,7 @@ def agent() -> None:
 )
 @click.option(
     "--model", default=None, type=click.Choice(["opus", "sonnet"]),
-    help="Model: opus or sonnet. Default: sonnet for most roles, opus for manager.",
+    help="Model: opus or sonnet. Default: sonnet for all roles.",
 )
 @click.option(
     "--bio", default=None,
@@ -665,7 +665,7 @@ def agent_add(ctx: click.Context, team: str, name: str | None, role: str, model:
     except (FileNotFoundError, ValueError) as exc:
         raise click.ClickException(str(exc))
 
-    resolved_model = model or ("opus" if role == "manager" else "sonnet")
+    resolved_model = model or "sonnet"
     success(f"Added agent '{agent_name}' to team '{team}' (role: {role}, model: {resolved_model})")
 
 

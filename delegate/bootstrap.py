@@ -103,8 +103,8 @@ AGENT_SUBDIRS = [
 
 
 def _default_model(role: str) -> str:
-    """Manager defaults to opus; all other roles default to sonnet."""
-    return "opus" if role == "manager" else "sonnet"
+    """All roles default to sonnet."""
+    return "sonnet"
 
 
 def _default_state(role: str, model: str | None = None) -> dict:
