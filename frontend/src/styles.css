@@ -4579,15 +4579,29 @@ select option:hover {
 
 /* ── ReviewerEditModal (rem-*) ── */
 
-/* Full-screen overlay covering entire viewport */
+/* Semi-transparent backdrop — centered modal sits on top */
 .rem-overlay {
   position: fixed;
   inset: 0;
   z-index: 1000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  outline: none; /* tabIndex=-1 focus target, hide ring */
+}
+
+/* 90% modal container */
+.rem-modal {
+  width: 90vw;
+  height: 90vh;
   background: #1a1a1a;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   display: flex;
   flex-direction: column;
-  outline: none; /* tabIndex=-1 focus target, hide ring */
+  overflow: hidden;
+  outline: none;
 }
 
 /* Header bar */
@@ -4670,6 +4684,22 @@ select option:hover {
 .rem-btn-discard:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* X close button in header */
+.rem-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 6px;
+  border-radius: 4px;
+}
+.rem-close-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 /* File tabs row */

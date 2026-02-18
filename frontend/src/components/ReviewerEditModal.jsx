@@ -175,10 +175,11 @@ export function ReviewerEditModal({ taskId, changedFiles, onDone, onDiscard }) {
     }
   }, [taskId, fileCache, currentHeadSha]);
 
-  // Auto-load first changed file on mount
+  // Eager-load all changed files in parallel on mount; loadFile guards against
+  // duplicate fetches via fileCache, so this is safe to call for all files.
   useEffect(() => {
     if (changedFiles && changedFiles.length > 0) {
-      loadFile(changedFiles[0]);
+      changedFiles.forEach(f => loadFile(f));
     }
     // Focus the modal for keyboard shortcuts
     if (modalRef.current) modalRef.current.focus();
@@ -359,85 +360,88 @@ export function ReviewerEditModal({ taskId, changedFiles, onDone, onDiscard }) {
 
   return (
     <div class="rem-overlay" ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Edit files">
-      {/* Header bar */}
-      <div class="rem-header">
-        <div class="rem-header-left">
-          <span class="rem-header-title">Edit &mdash; T{String(taskId).padStart(4, "0")}</span>
-        </div>
-        <div class="rem-header-right">
-          {error && <span class="rem-error-msg">{error}</span>}
-          <button
-            class="rem-btn-done"
-            onClick={handleDone}
-            disabled={doneLoading || fileLoading}
-          >
-            {doneLoading ? "Saving..." : "Done"}
-          </button>
-          <button
-            class="rem-btn-discard"
-            onClick={handleDiscard}
-            disabled={doneLoading}
-          >
-            Discard
-          </button>
-        </div>
-      </div>
-
-      {/* File tabs row */}
-      <div class="rem-tabs-row">
-        {allTabs.map((filepath) => {
-          const entry = fileCache.get(filepath);
-          const isActive = activeFile === filepath;
-          // A tab is dirty if the cache says dirty, or it's the active file and editor differs
-          const isDirty = entry
-            ? (entry.dirty || (isActive && editorContent !== entry.content))
-            : false;
-          const label = filepath.split("/").pop();
-          return (
-            <button
-              key={filepath}
-              class={"rem-tab" + (isActive ? " active" : "") + (isDirty ? " dirty" : "")}
-              onClick={() => handleTabClick(filepath)}
-              title={filepath}
-            >
-              {isDirty ? "\u25cf " : ""}{label}
-            </button>
-          );
-        })}
-
-        {/* Open file input or button */}
-        {showOpenFile ? (
-          <OpenFileInput
-            onOpen={handleOpenFile}
-            onCancel={() => setShowOpenFile(false)}
-          />
-        ) : (
-          <button
-            class="rem-tab rem-tab-open"
-            onClick={() => setShowOpenFile(true)}
-          >
-            Open file...
-          </button>
-        )}
-      </div>
-
-      {/* Editor */}
-      <div class="rem-editor-area">
-        {fileLoading ? (
-          <div class="rem-placeholder">Loading...</div>
-        ) : !activeFile ? (
-          <div class="rem-placeholder">
-            {changedFiles.length > 0 ? "Select a file above." : "Use \"Open file...\" to open a file."}
+      <div class="rem-modal">
+        {/* Header bar */}
+        <div class="rem-header">
+          <div class="rem-header-left">
+            <span class="rem-header-title">Edit &mdash; T{String(taskId).padStart(4, "0")}</span>
           </div>
-        ) : (
-          <CodeEditor
-            key={activeFile}
-            content={editorContent}
-            onChange={handleEditorChange}
-            filename={activeFile}
-            disabled={doneLoading}
-          />
-        )}
+          <div class="rem-header-right">
+            {error && <span class="rem-error-msg">{error}</span>}
+            <button
+              class="rem-btn-done"
+              onClick={handleDone}
+              disabled={doneLoading || fileLoading}
+            >
+              {doneLoading ? "Saving..." : "Done"}
+            </button>
+            <button class="rem-close-btn" onClick={handleDiscard} title="Close (Esc)">&#x2715;</button>
+            <button
+              class="rem-btn-discard"
+              onClick={handleDiscard}
+              disabled={doneLoading}
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+
+        {/* File tabs row */}
+        <div class="rem-tabs-row">
+          {allTabs.map((filepath) => {
+            const entry = fileCache.get(filepath);
+            const isActive = activeFile === filepath;
+            // A tab is dirty if the cache says dirty, or it's the active file and editor differs
+            const isDirty = entry
+              ? (entry.dirty || (isActive && editorContent !== entry.content))
+              : false;
+            const label = filepath.split("/").pop();
+            return (
+              <button
+                key={filepath}
+                class={"rem-tab" + (isActive ? " active" : "") + (isDirty ? " dirty" : "")}
+                onClick={() => handleTabClick(filepath)}
+                title={filepath}
+              >
+                {isDirty ? "\u25cf " : ""}{label}
+              </button>
+            );
+          })}
+
+          {/* Open file input or button */}
+          {showOpenFile ? (
+            <OpenFileInput
+              onOpen={handleOpenFile}
+              onCancel={() => setShowOpenFile(false)}
+            />
+          ) : (
+            <button
+              class="rem-tab rem-tab-open"
+              onClick={() => setShowOpenFile(true)}
+            >
+              Open file...
+            </button>
+          )}
+        </div>
+
+        {/* Editor */}
+        <div class="rem-editor-area">
+          {fileLoading ? (
+            <div class="rem-placeholder">Loading...</div>
+          ) : !activeFile ? (
+            <div class="rem-placeholder">
+              {changedFiles.length > 0 ? "Select a file above." : "Use \"Open file...\" to open a file."}
+            </div>
+          ) : (
+            <CodeEditor
+              key={activeFile}
+              content={editorContent}
+              onChange={handleEditorChange}
+              filename={activeFile}
+              disabled={doneLoading}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
