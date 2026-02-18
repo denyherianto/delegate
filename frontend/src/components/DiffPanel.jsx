@@ -176,7 +176,12 @@ function AgentView({ agentName }) {
             {m.task_id != null && (
               <>
                 <span class="msg-task-sep">|</span>
-                <span class="msg-task-badge">{taskIdStr(m.task_id)}</span>
+                <span
+                  class="msg-task-badge"
+                  style="cursor:pointer"
+                  onClick={(ev) => { ev.stopPropagation(); pushPanel("task", m.task_id); }}
+                  title={`Task ${taskIdStr(m.task_id)}`}
+                >{taskIdStr(m.task_id)}</span>
               </>
             )}
             <span class="agent-msg-time" dangerouslySetInnerHTML={{ __html: fmtTimestamp(m.time) + " " + msgStatusIcon(m) }} />
