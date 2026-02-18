@@ -307,17 +307,7 @@ export function linkifyFilePaths(html) {
   return html.replace(/(^[^<]+|>[^<]*)/g, match =>
     match.replace(/(?:(?<=\s|^)~\/[\w\-\.\/]+[\w\/]|(?<=\s|^)\/[\w\-\.\/]+\/[\w\-\.\/]*\w)/g, path => {
       const display = displayFilePath(path);
-      // Resolve ~/... to an absolute path for the file:// URL.
-      let absPath = path;
-      if (path.startsWith("~/")) {
-        const home = hcHome.value;
-        if (home) {
-          const userHome = home.replace(/\/\.delegate$/, "");
-          absPath = userHome + path.slice(1);
-        }
-      }
-      const href = "file://" + absPath;
-      return '<a href="' + esc(href) + '" class="file-link copyable" data-file-path="' + esc(path) + '" target="_blank" rel="noopener">' + esc(display) + copyBtnHtml(path) + "</a>";
+      return '<a class="file-link copyable" data-file-path="' + esc(path) + '">' + esc(display) + copyBtnHtml(path) + "</a>";
     })
   );
 }
