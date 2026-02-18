@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Delegate — An engineering manager for your AI agents</title>
+  <meta name="description" content="Delegate runs persistent teams of AI agents on your machine. You describe what to build — agents plan, code, review, and merge. You review the results.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-primary:   #1e1e1e;
+      --bg-sidebar:   #252526;
+      --bg-elevated:  #2d2d2d;
+      --bg-input:     #313131;
+      --bg-inset:     #1a1a1a;
+      --bg-hover:     #2a2a2a;
+
+      --border-default: #333333;
+      --border-subtle:  #2a2a2a;
+      --border-focus:   #2ea05a;
+
+      --text-primary:   #c4c4c4;
+      --text-secondary: #858585;
+      --text-muted:     #6a6a6a;
+
+      --accent-green:  #4ade80;
+      --accent-blue:   #569cd6;
+      --accent-red:    #f14c4c;
+
+      --font-sans: 'Inter', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent-green); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ─── Layout ─── */
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    section { padding: 80px 0; }
+    section + section { border-top: 1px solid var(--border-subtle); }
+
+    /* ─── Nav ─── */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(30, 30, 30, 0.92);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .nav-inner {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 24px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-primary);
+      font-weight: 500;
+      font-size: 14px;
+    }
+    .nav-logo svg { flex-shrink: 0; }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      list-style: none;
+    }
+    .nav-links a {
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+    .nav-links a:hover { color: var(--text-primary); text-decoration: none; }
+    .nav-cta {
+      background: var(--accent-green);
+      color: #111 !important;
+      padding: 6px 14px;
+      border-radius: 5px;
+      font-weight: 500;
+      font-size: 13px !important;
+    }
+    .nav-cta:hover { opacity: 0.9; text-decoration: none; }
+
+    /* ─── Hero ─── */
+    .hero {
+      padding: 96px 0 80px;
+      text-align: center;
+    }
+    .hero-logo {
+      margin-bottom: 40px;
+    }
+    .hero h1 {
+      font-size: 40px;
+      font-weight: 600;
+      color: var(--text-primary);
+      line-height: 1.2;
+      letter-spacing: -0.5px;
+      margin-bottom: 16px;
+    }
+    .hero h1 em {
+      font-style: normal;
+      color: var(--accent-green);
+    }
+    .hero .sub {
+      font-size: 17px;
+      color: var(--text-secondary);
+      max-width: 560px;
+      margin: 0 auto 40px;
+      line-height: 1.6;
+    }
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--accent-green);
+      color: #111;
+      font-weight: 600;
+      font-size: 14px;
+      padding: 10px 22px;
+      border-radius: 6px;
+      transition: opacity 0.15s;
+    }
+    .btn-primary:hover { opacity: 0.88; text-decoration: none; }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-secondary);
+      font-size: 14px;
+      padding: 10px 22px;
+      border: 1px solid var(--border-default);
+      border-radius: 6px;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-secondary:hover { border-color: var(--text-muted); color: var(--text-primary); text-decoration: none; }
+
+    /* ─── Quickstart ─── */
+    .quickstart-block {
+      margin-top: 56px;
+      background: var(--bg-inset);
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      overflow: hidden;
+      text-align: left;
+    }
+    .qs-bar {
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .qs-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      opacity: 0.4;
+    }
+    .qs-label {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-left: 4px;
+    }
+    .qs-code {
+      padding: 20px 20px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.8;
+      color: var(--text-secondary);
+    }
+    .qs-code .cmd { color: var(--accent-green); }
+    .qs-code .comment { color: var(--text-muted); }
+
+    /* ─── Pitch / comparison ─── */
+    .pitch-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .pitch-col {
+      background: var(--bg-primary);
+      padding: 28px 28px;
+    }
+    .pitch-col-header {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+    .pitch-col-header.active { color: var(--accent-green); }
+    .pitch-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 13px;
+    }
+    .pitch-row:last-child { border-bottom: none; }
+    .pitch-icon { flex-shrink: 0; margin-top: 1px; font-size: 13px; }
+    .pitch-icon.x { color: var(--text-muted); }
+    .pitch-icon.check { color: var(--accent-green); }
+    .pitch-label { color: var(--text-secondary); }
+    .pitch-label strong { color: var(--text-primary); display: block; font-size: 12px; margin-bottom: 1px; }
+
+    /* ─── Section headings ─── */
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent-green);
+      margin-bottom: 10px;
+    }
+    h2 {
+      font-size: 28px;
+      font-weight: 600;
+      color: var(--text-primary);
+      letter-spacing: -0.3px;
+      line-height: 1.25;
+      margin-bottom: 14px;
+    }
+    .section-sub {
+      font-size: 15px;
+      color: var(--text-secondary);
+      max-width: 560px;
+      margin-bottom: 48px;
+    }
+
+    /* ─── How it works ─── */
+    .flow {
+      display: flex;
+      flex-direction: column;
+    }
+    .flow-step {
+      display: grid;
+      grid-template-columns: 32px 1fr;
+      gap: 16px;
+      align-items: flex-start;
+      padding: 20px 0;
+    }
+    .flow-step + .flow-step {
+      border-top: 1px solid var(--border-subtle);
+    }
+    .flow-num {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      border: 1px solid var(--border-default);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .flow-num.green { border-color: var(--accent-green); color: var(--accent-green); }
+    .flow-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+    .flow-desc {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+    .flow-tag {
+      display: inline-block;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-default);
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+    .flow-tag.you {
+      border-color: var(--accent-green);
+      color: var(--accent-green);
+    }
+
+    /* ─── Features grid ─── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .feature-card {
+      background: var(--bg-primary);
+      padding: 24px;
+    }
+    .feature-glyph {
+      font-family: var(--font-mono);
+      font-size:16px;
+      color: var(--accent-green);
+      margin-bottom: 10px;
+      display: block;
+      opacity: 0.7;
+    }
+    .feature-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+    .feature-desc {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.55;
+    }
+
+    /* ─── Security ─── */
+    .security-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      background: var(--border-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .security-item {
+      background: var(--bg-primary);
+      padding: 16px 20px;
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    .security-num {
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      padding-top: 1px;
+    }
+    .security-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 3px;
+    }
+    .security-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.55;
+    }
+
+    /* ─── Inline code ─── */
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: var(--text-primary);
+    }
+
+    /* ─── Roadmap ─── */
+    .roadmap-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .roadmap-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    .roadmap-badge {
+      flex-shrink: 0;
+      font-size: 10px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      padding: 2px 7px;
+      border-radius: 3px;
+      margin-top: 2px;
+    }
+    .badge-done { background: rgba(74,222,128,0.12); color: var(--accent-green); }
+    .badge-soon { background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border-default); }
+
+    /* ─── Footer ─── */
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 40px 0;
+    }
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .footer-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .footer-text {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .footer-links {
+      display: flex;
+      gap: 20px;
+      list-style: none;
+    }
+    .footer-links a {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .footer-links a:hover { color: var(--text-secondary); }
+
+    /* ─── Responsive ─── */
+    @media (max-width: 640px) {
+      .hero h1 { font-size: 28px; }
+      .hero .sub { font-size: 15px; }
+      .pitch-grid { grid-template-columns: 1fr; }
+      .features-grid { grid-template-columns: 1fr; }
+      .footer-inner { flex-direction: column; align-items: flex-start; }
+      nav .nav-links { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── Nav ─── -->
+<nav>
+  <div class="nav-inner">
+    <a class="nav-logo" href="#">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 288 92.8" width="90" height="29">
+        <g transform="translate(24, 60.8) scale(0.040, -0.040)" fill="#4ADE80">
+          <path d="M85 65V152L395 304Q414 313 430.5 319.5Q447 326 455 328Q446 330 429 337Q412 344 395 352L85 505V595L515 380V280Z"/>
+          <path transform="translate(1200,0)" d="M268 -10Q186 -10 136.5 45Q87 100 87 194V355Q87 450 136 505Q185 560 268 560Q330 560 370.5 529Q411 498 419 445H420L418 570V730H508V0H418V105H417Q410 51 370 20.5Q330 -10 268 -10ZM298 68Q354 68 386 103Q418 138 418 200V350Q418 412 386 447Q354 482 298 482Q241 482 209 452.5Q177 423 177 355V195Q177 128 209 98Q241 68 298 68Z"/>
+          <path transform="translate(1800,0)" d="M300 -10Q203 -10 143.5 48.5Q84 107 84 210V340Q84 443 143.5 501.5Q203 560 300 560Q365 560 413.5 534Q462 508 489 461Q516 414 516 350V252H172V200Q172 139 207 103.5Q242 68 300 68Q350 68 382.5 87.5Q415 107 422 140H512Q503 71 445 30.5Q387 -10 300 -10ZM172 322H428V350Q428 415 394.5 450.5Q361 486 300 486Q239 486 205.5 450.5Q172 415 172 350Z"/>
+          <path transform="translate(2400,0)" d="M380 0Q307 0 263.5 42.5Q220 85 220 155V648H30V730H310V155Q310 121 329 101.5Q348 82 380 82H550V0Z"/>
+          <path transform="translate(3000,0)" d="M300 -10Q203 -10 143.5 48.5Q84 107 84 210V340Q84 443 143.5 501.5Q203 560 300 560Q365 560 413.5 534Q462 508 489 461Q516 414 516 350V252H172V200Q172 139 207 103.5Q242 68 300 68Q350 68 382.5 87.5Q415 107 422 140H512Q503 71 445 30.5Q387 -10 300 -10ZM172 322H428V350Q428 415 394.5 450.5Q361 486 300 486Q239 486 205.5 450.5Q172 415 172 350Z"/>
+          <path transform="translate(3600,0)" d="M161 -180V-98H316Q363 -98 390 -71.5Q417 -45 417 0V50L419 140H416Q408 91 369 64.5Q330 38 271 38Q186 38 137 92Q88 146 88 240V356Q88 450 137 505Q186 560 271 560Q330 560 369 532Q408 504 416 455H418V550H507V0Q507 -83 455.5 -131.5Q404 -180 315 -180ZM298 113Q354 113 386 148Q418 183 418 245V350Q418 412 386 447Q354 482 298 482Q241 482 209.5 449Q178 416 178 360V235Q178 179 209.5 146Q241 113 298 113Z"/>
+          <path transform="translate(4200,0)" d="M252 -10Q167 -10 117 37.5Q67 85 67 162Q67 213 90 251Q113 289 154 310.5Q195 332 248 332H418V375Q418 482 301 482Q249 482 217 463Q185 444 183 410H93Q98 475 153.5 517.5Q209 560 301 560Q401 560 454.5 512Q508 464 508 378V0H419V100H417Q409 49 366 19.5Q323 -10 252 -10ZM274 66Q340 66 379 98Q418 130 418 185V262H258Q214 262 186.5 235.5Q159 209 159 165Q159 119 189.5 92.5Q220 66 274 66Z"/>
+          <path transform="translate(4800,0)" d="M355 0Q287 0 246 39.5Q205 79 205 145V468H47V550H205V705H295V550H520V468H295V145Q295 117 311.5 99.5Q328 82 355 82H515V0Z"/>
+          <path transform="translate(5400,0)" d="M300 -10Q203 -10 143.5 48.5Q84 107 84 210V340Q84 443 143.5 501.5Q203 560 300 560Q365 560 413.5 534Q462 508 489 461Q516 414 516 350V252H172V200Q172 139 207 103.5Q242 68 300 68Q350 68 382.5 87.5Q415 107 422 140H512Q503 71 445 30.5Q387 -10 300 -10ZM172 322H428V350Q428 415 394.5 450.5Q361 486 300 486Q239 486 205.5 450.5Q172 415 172 350Z"/>
+        </g>
+      </svg>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#how-it-works">How it works</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#security">Security</a></li>
+      <li><a href="https://github.com/nikhilgarg28/delegate">GitHub</a></li>
+      <li><a href="https://pypi.org/project/delegate-ai/" class="nav-cta">Install</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- ─── Hero ─── -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-logo">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 288 92.8" width="180" height="58">
+        <g transform="translate(24, 60.8) scale(0.040, -0.040)" fill="#4ADE80">
+          <path d="M85 65V152L395 304Q414 313 430.5 319.5Q447 326 455 328Q446 330 429 337Q412 344 395 352L85 505V595L515 380V280Z"/>
+          <path transform="translate(1200,0)" d="M268 -10Q186 -10 136.5 45Q87 100 87 194V355Q87 450 136 505Q185 560 268 560Q330 560 370.5 529Q411 498 419 445H420L418 570V730H508V0H418V105H417Q410 51 370 20.5Q330 -10 268 -10ZM298 68Q354 68 386 103Q418 138 418 200V350Q418 412 386 447Q354 482 298 482Q241 482 209 452.5Q177 423 177 355V195Q177 128 209 98Q241 68 298 68Z"/>
+          <path transform="translate(1800,0)" d="M300 -10Q203 -10 143.5 48.5Q84 107 84 210V340Q84 443 143.5 501.5Q203 560 300 560Q365 560 413.5 534Q462 508 489 461Q516 414 516 350V252H172V200Q172 139 207 103.5Q242 68 300 68Q350 68 382.5 87.5Q415 107 422 140H512Q503 71 445 30.5Q387 -10 300 -10ZM172 322H428V350Q428 415 394.5 450.5Q361 486 300 486Q239 486 205.5 450.5Q172 415 172 350Z"/>
+          <path transform="translate(2400,0)" d="M380 0Q307 0 263.5 42.5Q220 85 220 155V648H30V730H310V155Q310 121 329 101.5Q348 82 380 82H550V0Z"/>
+          <path transform="translate(3000,0)" d="M300 -10Q203 -10 143.5 48.5Q84 107 84 210V340Q84 443 143.5 501.5Q203 560 300 560Q365 560 413.5 534Q462 508 489 461Q516 414 516 350V252H172V200Q172 139 207 103.5Q242 68 300 68Q350 68 382.5 87.5Q415 107 422 140H512Q503 71 445 30.5Q387 -10 300 -10ZM172 322H428V350Q428 415 394.5 450.5Q361 486 300 486Q239 486 205.5 450.5Q172 415 172 350Z"/>
+          <path transform="translate(3600,0)" d="M161 -180V-98H316Q363 -98 390 -71.5Q417 -45 417 0V50L419 140H416Q408 91 369 64.5Q330 38 271 38Q186 38 137 92Q88 146 88 240V356Q88 450 137 505Q186 560 271 560Q330 560 369 532Q408 504 416 455H418V550H507V0Q507 -83 455.5 -131.5Q404 -180 315 -180ZM298 113Q354 113 386 148Q418 183 418 245V350Q418 412 386 447Q354 482 298 482Q241 482 209.5 449Q178 416 178 360V235Q178 179 209.5 146Q241 113 298 113Z"/>
+          <path transform="translate(4200,0)" d="M252 -10Q167 -10 117 37.5Q67 85 67 162Q67 213 90 251Q113 289 154 310.5Q195 332 248 332H418V375Q418 482 301 482Q249 482 217 463Q185 444 183 410H93Q98 475 153.5 517.5Q209 560 301 560Q401 560 454.5 512Q508 464 508 378V0H419V100H417Q409 49 366 19.5Q323 -10 252 -10ZM274 66Q340 66 379 98Q418 130 418 185V262H258Q214 262 186.5 235.5Q159 209 159 165Q159 119 189.5 92.5Q220 66 274 66Z"/>
+          <path transform="translate(4800,0)" d="M355 0Q287 0 246 39.5Q205 79 205 145V468H47V550H205V705H295V550H520V468H295V145Q295 117 311.5 99.5Q328 82 355 82H515V0Z"/>
+          <path transform="translate(5400,0)" d="M300 -10Q203 -10 143.5 48.5Q84 107 84 210V340Q84 443 143.5 501.5Q203 560 300 560Q365 560 413.5 534Q462 508 489 461Q516 414 516 350V252H172V200Q172 139 207 103.5Q242 68 300 68Q350 68 382.5 87.5Q415 107 422 140H512Q503 71 445 30.5Q387 -10 300 -10ZM172 322H428V350Q428 415 394.5 450.5Q361 486 300 486Q239 486 205.5 450.5Q172 415 172 350Z"/>
+        </g>
+      </svg>
+    </div>
+    <h1>An <em>engineering manager</em><br>for your AI agents</h1>
+    <p class="sub">Describe what you want to build. Delegate breaks it into tasks, assigns agents, manages code reviews, and merges the result. You review the output — not write the code.</p>
+    <div class="hero-actions">
+      <a href="https://pypi.org/project/delegate-ai/" class="btn-primary">Get started</a>
+      <a href="https://github.com/nikhilgarg28/delegate" class="btn-secondary">View on GitHub</a>
+    </div>
+
+    <div class="quickstart-block">
+      <div class="qs-bar">
+        <div class="qs-dot"></div>
+        <div class="qs-dot"></div>
+        <div class="qs-dot"></div>
+        <span class="qs-label">Terminal</span>
+      </div>
+      <div class="qs-code">
+        <span class="comment"># Requires Python 3.12+</span><br>
+        <span class="cmd">pip install delegate-ai</span><br>
+        <span class="cmd">cd</span> /your/project<br>
+        <span class="cmd">delegate start</span><br>
+        <br>
+        <span class="comment"># Spins up a team of agents and opens the console in your browser.</span><br>
+        <span class="comment"># Tell Delegate what to build — it handles the rest.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Copilot vs Delegate ─── -->
+<section>
+  <div class="container">
+    <div class="section-label">Why Delegate</div>
+    <h2>A different level of abstraction</h2>
+    <p class="section-sub">Copilots help you write code faster — you're still driving. Delegate hands off entire workstreams to a team of agents while you focus on what matters.</p>
+
+    <div class="pitch-grid">
+      <div class="pitch-col">
+        <div class="pitch-col-header">Copilots (Cursor, Claude Code, Copilot)</div>
+        <div class="pitch-row">
+          <span class="pitch-icon x">—</span>
+          <span class="pitch-label"><strong>You are the developer</strong>AI assists one task at a time</span>
+        </div>
+        <div class="pitch-row">
+          <span class="pitch-icon x">—</span>
+          <span class="pitch-label"><strong>Synchronous</strong>You drive every step, wait for output</span>
+        </div>
+        <div class="pitch-row">
+          <span class="pitch-icon x">—</span>
+          <span class="pitch-label"><strong>One task, one file</strong>Context resets each session</span>
+        </div>
+        <div class="pitch-row">
+          <span class="pitch-icon x">—</span>
+          <span class="pitch-label"><strong>Disposable agent</strong>No memory of your codebase</span>
+        </div>
+        <div class="pitch-row">
+          <span class="pitch-icon x">—</span>
+          <span class="pitch-label"><strong>Code suggestions</strong>You still review and commit</span>
+        </div>
+      </div>
+      <div class="pitch-col">
+        <div class="pitch-col-header active">Delegate</div>
+        <div class="pitch-row">
+          <span class="pitch-icon check">+</span>
+          <span class="pitch-label"><strong>You set direction</strong>Agents plan, code, review, and merge</span>
+        </div>
+        <div class="pitch-row">
+          <span class="pitch-icon check">+</span>
+          <span class="pitch-label"><strong>Async by default</strong>Send a task, close your laptop, come back</span>
+        </div>
+        <div class="pitch-row">
+          <span class="pitch-icon check">+</span>
+          <span class="pitch-label"><strong>Many tasks in parallel</strong>Multiple projects running simultaneously</span>
+        </div>
+        <div class="pitch-row">
+          <span class="pitch-icon check">+</span>
+          <span class="pitch-label"><strong>Persistent teams</strong>Agents learn your codebase over time</span>
+        </div>
+        <div class="pitch-row">
+          <span class="pitch-icon check">+</span>
+          <span class="pitch-label"><strong>Reviewed branches</strong>Tested, merge-ready output</span>
+        </div>
+      </div>
+    </div>
+
+    <p style="margin-top: 24px; font-size: 13px; color: var(--text-muted);">
+      This isn't a replacement for copilots — it's a different layer. Use Cursor to pair on a tricky function. Use Delegate to hand off "build the auth system" and come back to a reviewed branch.
+    </p>
+  </div>
+</section>
+
+<!-- ─── How it works ─── -->
+<section id="how-it-works">
+  <div class="container">
+    <div class="section-label">How it works</div>
+    <h2>You send a task. Agents deliver.</h2>
+    <p class="section-sub">Each task flows through a structured pipeline — plan, code, review, merge — with agents handling every transition.</p>
+
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-num green">you</div>
+        <div>
+          <div class="flow-title">Describe what to build</div>
+          <div class="flow-desc">Send a task in plain English: <em>"Add a /health endpoint that returns uptime and version."</em> Delegate (the manager agent) breaks it into subtasks, assigns them to available engineers, and sets priorities.</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">1</div>
+        <div>
+          <div class="flow-title">Engineer writes code</div>
+          <div class="flow-desc">An engineer agent gets an isolated git worktree, writes the implementation, runs your test suite, and submits for review. Branches are named <code>delegate/&lt;team&gt;/T0001</code> — fully visible in your repo.</div>
+          <div class="flow-tag">todo → in_progress</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">2</div>
+        <div>
+          <div class="flow-title">Reviewer checks the diff</div>
+          <div class="flow-desc">A second agent reviews the branch, runs the full test suite, checks correctness and readability, and either approves or sends it back with specific feedback.</div>
+          <div class="flow-tag">in_progress → in_review</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num green">you</div>
+        <div>
+          <div class="flow-title">You approve the merge</div>
+          <div class="flow-desc">Browse the diff in the web UI. Approve to merge, or send it back with a comment. Set repos to auto-merge to skip this step entirely.</div>
+          <div class="flow-tag you">in_review → in_approval</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">3</div>
+        <div>
+          <div class="flow-title">Merge worker lands the branch</div>
+          <div class="flow-desc">The merge worker rebases onto main, runs pre-merge checks, and fast-forward merges. Clean git history, no merge commits. While this happens, you can send more tasks — they run in parallel.</div>
+          <div class="flow-tag">in_approval → done</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Features ─── -->
+<section id="features">
+  <div class="container">
+    <div class="section-label">Features</div>
+    <h2>Built for real engineering work</h2>
+    <p class="section-sub">Not a prototype — Delegate is built with Delegate. Every feature exists because it was needed to ship production code.</p>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <span class="feature-glyph">//</span>
+        <div class="feature-title">Many projects, many tasks at once</div>
+        <div class="feature-desc">Spin up a team per project — backend API, mobile app, data pipeline. Within each project, agents tackle multiple tasks in parallel, each in its own git worktree. Throughput scales with teams, not attention.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-glyph">**</span>
+        <div class="feature-title">Persistent teams with memory</div>
+        <div class="feature-desc">Create a team once, use it for hundreds of tasks. Agents maintain journals, notes, and context files — they learn your codebase, conventions, and patterns over time. Like a real team, they get better the longer they work together.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-glyph">~~</span>
+        <div class="feature-title">Async by default</div>
+        <div class="feature-desc">Send a task and close your laptop. The team keeps working — writing code, reviewing each other, running tests. Check in when you want. No babysitting required. This is the fundamental difference from copilots.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-glyph">&gt;&gt;</span>
+        <div class="feature-title">Real git, real branches</div>
+        <div class="feature-desc">Each agent works in an isolated git worktree. Branches are named <code>delegate/&lt;team&gt;/T0001</code>. No magic filesystems — you can <code>git log</code> any branch, <code>git diff</code> any commit, anytime.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-glyph">##</span>
+        <div class="feature-title">Works with your existing setup</div>
+        <div class="feature-desc">Delegate reads <code>claude.md</code>, <code>AGENTS.md</code>, <code>.cursorrules</code>, and <code>.github/copilot-instructions.md</code> automatically. No migration, no changes to your repos or workflow.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-glyph">[]</span>
+        <div class="feature-title">Real-time browser UI</div>
+        <div class="feature-desc">Watch agents pick up tasks, write code, and review each other — live. Approve merges, browse diffs, inspect files, and run shell commands, all from the browser. Installable as a PWA for a native app feel.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-glyph">+-</span>
+        <div class="feature-title">Mix models by role</div>
+        <div class="feature-desc">All agents default to Claude Sonnet. Override per agent with <code>--model opus</code> for tasks that need stronger reasoning. Right model for the right job — zero cost when a team is idle.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-glyph">{}</span>
+        <div class="feature-title">Customizable workflows</div>
+        <div class="feature-desc">Define your own task lifecycle in Python — add deploy stages, human-in-the-loop checkpoints, or webhook triggers. The default <code>todo → in_progress → in_review → done</code> works out of the box.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Security ─── -->
+<section id="security">
+  <div class="container">
+    <div class="section-label">Security</div>
+    <h2>Defense-in-depth</h2>
+    <p class="section-sub">Six independent layers of sandboxing. No single bypass compromises the system. Agents can write code — they can't escape their sandbox.</p>
+
+    <div class="security-list">
+      <div class="security-item">
+        <div class="security-num">01</div>
+        <div>
+          <div class="security-title">Write-path isolation</div>
+          <div class="security-desc">Every tool call is inspected before execution. Agents can only write to their own directories. Writes outside permitted paths are denied with an error — the model sees it and adjusts.</div>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="security-num">02</div>
+        <div>
+          <div class="security-title">Git command restrictions</div>
+          <div class="security-desc">Dangerous git operations — rebase, reset --hard, push, fetch, branch manipulation — are hidden from agents at the SDK level. Branch management runs exclusively in the daemon process.</div>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="security-num">03</div>
+        <div>
+          <div class="security-title">OS-level sandbox</div>
+          <div class="security-desc">All bash commands run inside macOS Seatbelt or Linux bubblewrap. Even if an agent crafts a bypass, the kernel blocks the write. Agents cannot touch unregistered repos or other teams' data.</div>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="security-num">04</div>
+        <div>
+          <div class="security-title">Network domain allowlist</div>
+          <div class="security-desc">Agents' network access is controlled by an allowlist stored outside the sandbox — agents can't tamper with it. Restrict to specific domains or leave open. Fully configurable via CLI.</div>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="security-num">05</div>
+        <div>
+          <div class="security-title">In-process MCP tools</div>
+          <div class="security-desc">Agents interact with the database through in-process tools running inside the daemon — outside the sandbox. Agent identity is baked into each tool closure. An agent cannot send messages as another agent.</div>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="security-num">06</div>
+        <div>
+          <div class="security-title">Daemon-managed worktrees</div>
+          <div class="security-desc">Git worktree creation, branch management, and merge operations run exclusively in the daemon — never in agent sandboxes. Agents commit code inside their worktrees; they cannot create, remove, or manipulate branches.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Roadmap ─── -->
+<section>
+  <div class="container">
+    <div class="section-label">Roadmap</div>
+    <h2>What's coming</h2>
+    <p class="section-sub">Delegate is under active development. Built with Delegate, by a solo developer. No roadmap theater — these are the actual next items.</p>
+
+    <ul class="roadmap-list">
+      <li>
+        <span class="roadmap-badge badge-done">done</span>
+        <span><strong style="color: var(--text-primary);">Sandboxing &amp; permissions</strong> — OS-level sandbox, write-path isolation, and git command restrictions. Shipped in v0.2.5.</span>
+      </li>
+      <li>
+        <span class="roadmap-badge badge-soon">soon</span>
+        <span><strong style="color: var(--text-primary);">More powerful workflows</strong> — conditional transitions, parallel stages, human-in-the-loop checkpoints, and webhook triggers.</span>
+      </li>
+      <li>
+        <span class="roadmap-badge badge-soon">soon</span>
+        <span><strong style="color: var(--text-primary);">External tool integrations</strong> — GitHub (PRs, issues), Slack notifications, Linear task sync, CI/CD pipelines.</span>
+      </li>
+      <li>
+        <span class="roadmap-badge badge-soon">soon</span>
+        <span><strong style="color: var(--text-primary);">Remote repositories</strong> — push to and pull from remote Git hosts, not just local repos.</span>
+      </li>
+      <li>
+        <span class="roadmap-badge badge-soon">soon</span>
+        <span><strong style="color: var(--text-primary);">Exportable team templates</strong> — package a team's configuration as a shareable template. Spin up identical setups in one command.</span>
+      </li>
+    </ul>
+
+    <p style="margin-top: 28px; font-size: 13px; color: var(--text-muted);">If any of these matter to you, <a href="https://github.com/nikhilgarg28/delegate/issues">open an issue</a> — it helps prioritize.</p>
+  </div>
+</section>
+
+<!-- ─── About / CTA ─── -->
+<section>
+  <div class="container">
+    <div class="section-label">About</div>
+    <h2>Built by one developer, with Delegate</h2>
+    <p style="font-size: 15px; color: var(--text-secondary); max-width: 600px; line-height: 1.7; margin-bottom: 16px;">
+      Delegate is a side project — built because I wanted it for myself and decided to open-source it. No VC funding, no growth targets. MIT licensed, free forever.
+    </p>
+    <p style="font-size: 15px; color: var(--text-secondary); max-width: 600px; line-height: 1.7; margin-bottom: 32px;">
+      The irony: Delegate is built with Delegate. The agents write the features, review each other's code, and merge the results. This isn't a demo — it's the daily workflow.
+    </p>
+    <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+      <a href="https://pypi.org/project/delegate-ai/" class="btn-primary">Install from PyPI</a>
+      <a href="https://github.com/nikhilgarg28/delegate" class="btn-secondary">Star on GitHub</a>
+    </div>
+  </div>
+</section>
+
+<!-- ─── Footer ─── -->
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-left">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 288 92.8" width="72" height="23" style="opacity: 0.45;">
+          <g transform="translate(24, 60.8) scale(0.040, -0.040)" fill="#4ADE80">
+            <path d="M85 65V152L395 304Q414 313 430.5 319.5Q447 326 455 328Q446 330 429 337Q412 344 395 352L85 505V595L515 380V280Z"/>
+            <path transform="translate(1200,0)" d="M268 -10Q186 -10 136.5 45Q87 100 87 194V355Q87 450 136 505Q185 560 268 560Q330 560 370.5 529Q411 498 419 445H420L418 570V730H508V0H418V105H417Q410 51 370 20.5Q330 -10 268 -10ZM298 68Q354 68 386 103Q418 138 418 200V350Q418 412 386 447Q354 482 298 482Q241 482 209 452.5Q177 423 177 355V195Q177 128 209 98Q241 68 298 68Z"/>
+          </g>
+        </svg>
+        <span class="footer-text">MIT License &mdash; free forever</span>
+      </div>
+      <ul class="footer-links">
+        <li><a href="https://github.com/nikhilgarg28/delegate">GitHub</a></li>
+        <li><a href="https://pypi.org/project/delegate-ai/">PyPI</a></li>
+        <li><a href="https://github.com/nikhilgarg28/delegate/issues">Issues</a></li>
+      </ul>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
