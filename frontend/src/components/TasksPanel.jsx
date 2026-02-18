@@ -374,6 +374,9 @@ export function TasksPanel() {
                               <span class="task-assignee">{t.assignee ? cap(t.assignee) : "\u2014"}</span>
                               <span class="task-priority">{cap(t.priority)}</span>
                             </div>
+                            {t.description && (
+                              <div class="task-desc">{t.description}</div>
+                            )}
                           </div>
                         );
                       })}
@@ -398,6 +401,9 @@ export function TasksPanel() {
                   <span class="task-assignee">{t.assignee ? cap(t.assignee) : "\u2014"}</span>
                   <span class="task-priority">{cap(t.priority)}</span>
                 </div>
+                {t.description && (
+                  <div class="task-desc">{t.description}</div>
+                )}
               </div>
             ))}
           </div>
