@@ -140,11 +140,11 @@ export function SelectionTooltip({ containerRef, chatInputRef }) {
       setTimeout(handleSelection, 50);
     };
 
-    // Hide tooltip when clicking outside or selection changes
+    // Hide tooltip when clicking outside both the tooltip and the container
     const onMouseDown = (e) => {
-      const isTooltipClick = tooltipRef.current && tooltipRef.current.contains(e.target);
-      const isOutsideContainer = !container.contains(e.target);
-      if (isTooltipClick || isOutsideContainer) {
+      const isInsideTooltip = tooltipRef.current && tooltipRef.current.contains(e.target);
+      const isInsideContainer = container.contains(e.target);
+      if (!isInsideTooltip && !isInsideContainer) {
         hideTooltip();
       }
     };
