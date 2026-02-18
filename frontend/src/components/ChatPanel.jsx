@@ -98,6 +98,8 @@ const LinkedDiv = forwardRef(function LinkedDiv({ html, class: cls, style }, ref
     if (agentLink) { e.stopPropagation(); openPanel("agent", agentLink.dataset.agentName); return; }
     const fileLink = e.target.closest("[data-file-path]");
     if (fileLink) {
+      // <a> elements with href (file:// links) — let the browser open them natively.
+      if (fileLink.tagName === "A" && fileLink.href) return;
       e.stopPropagation();
       const fpath = fileLink.dataset.filePath;
       openPanel("file", fpath);
