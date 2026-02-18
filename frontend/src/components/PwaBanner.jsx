@@ -12,7 +12,10 @@ const showUseAppBanner = signal(false);
 
 // Are we in standalone (PWA) mode?
 function isStandalone() {
-  return window.matchMedia("(display-mode: standalone)").matches;
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    window.navigator.standalone === true
+  );
 }
 
 // Set up the beforeinstallprompt listener once at module load time so we
@@ -80,7 +83,7 @@ export function PwaBanner() {
     );
   }
 
-  if (showUseAppBanner.value) {
+  if (showUseAppBanner.value && !isStandalone()) {
     return (
       <div class="pwa-banner">
         <span>Delegate is installed as a desktop app — for the best experience, open it from your Dock or Spotlight.</span>

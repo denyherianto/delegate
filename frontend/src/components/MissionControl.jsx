@@ -100,6 +100,45 @@ function capFirst(s) {
 }
 
 // ---------------------------------------------------------------------------
+// Rotating thinking verb — shown while waiting for model response
+// ---------------------------------------------------------------------------
+
+const THINKING_WORDS = [
+  "thinking",
+  "pondering",
+  "noodling",
+  "considering",
+  "mulling",
+  "reasoning",
+  "deliberating",
+  "reflecting",
+  "processing",
+  "contemplating",
+];
+
+function CyclingVerb() {
+  const [index, setIndex] = useState(0);
+  const [fading, setFading] = useState(false);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFading(true);
+      setTimeout(() => {
+        setIndex(prev => (prev + 1) % THINKING_WORDS.length);
+        setFading(false);
+      }, 200);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <span class={"mc-cycling-verb" + (fading ? " mc-cycling-out" : " mc-cycling-in")}>
+      {THINKING_WORDS[index]}&hellip;
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SVG Icons
 // ---------------------------------------------------------------------------
 
@@ -202,7 +241,7 @@ function AgentCard({ agent, thinking, activities }) {
             />
           </div>
         ) : agent.inTurn ? (
-          <div class="mc-stream-waiting">Waiting for model response</div>
+          <div class="mc-stream-waiting"><CyclingVerb /></div>
         ) : null}
 
         {/* Tool entries — last 3 */}

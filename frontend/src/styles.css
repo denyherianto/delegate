@@ -693,13 +693,19 @@ body {
 .mc-thinking-text p:last-child { margin-bottom: 0; }
 .mc-thinking-text code { font-size: 11px; }
 
-/* ── Waiting placeholder ── */
+/* ── Waiting placeholder with rotating verb ── */
 .mc-stream-waiting {
   font-size: 12px;
   line-height: 1.4;
   color: var(--text-muted);
   padding: 2px 0;
 }
+.mc-cycling-verb {
+  display: inline-block;
+  transition: opacity 200ms ease;
+}
+.mc-cycling-in  { opacity: 1; }
+.mc-cycling-out { opacity: 0; }
 
 /* ── Tool entries ── */
 .mc-stream-tools {
