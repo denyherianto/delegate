@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "preact/hooks"
 import { memo, forwardRef } from "preact/compat";
 import {
   currentTeam, messages, agents, activeTab,
-  chatFilterDirection, openPanel,
+  openPanel,
   knownAgentNames, isMuted, humanName, expandedMessages,
   commandMode, commandCwd, teams, navigate,
   loadTeamCwd, saveTeamCwd, loadTeamHistory, addToHistory,
@@ -19,7 +19,6 @@ import { playMsgSound } from "../audio.js";
 import { showToast } from "../toast.js";
 import { CopyBtn } from "./CopyBtn.jsx";
 import { CustomSelect } from "./CustomSelect.jsx";
-import { PillSelect } from "./PillSelect.jsx";
 import { ManagerActivityBar } from "./ManagerActivityBar.jsx";
 import { SelectionTooltip } from "./SelectionTooltip.jsx";
 import { CommandAutocomplete } from "./CommandAutocomplete.jsx";
@@ -335,11 +334,8 @@ export function ChatPanel() {
   const teamList = teams.value || [];
 
   const [msgs, setMsgs] = useState([]);
-  const [filterFrom, setFilterFrom] = useState("");
-  const [filterTo, setFilterTo] = useState("");
   const [filterSearch, setFilterSearch] = useState("");
-  const [searchExpanded, setSearchExpanded] = useState(false);
-  const [typeFilter, setTypeFilter] = useState("all");
+  const [showTaskUpdates, setShowTaskUpdates] = useState(true);
   const [recipient, setRecipient] = useState("");
   const [inputVal, setInputVal] = useState("");
   const [sendBtnActive, setSendBtnActive] = useState(false);
@@ -354,7 +350,6 @@ export function ChatPanel() {
   const historyRef = useRef([]); // Current team's command history
   const draftInputRef = useRef(''); // Store current draft when navigating history
 
-  const direction = chatFilterDirection.value;
   const logRef = useRef();
   const inputRef = useRef();
   const fileInputRef = useRef();
@@ -696,28 +691,10 @@ export function ChatPanel() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem("chatFilters");
-      if (!raw) {
-        if (defaultsAppliedRef.current) return;
-        const mgr = allAgents.find(a => a.role === "manager");
-        const hName = humanName.value;
-        if (!hName || hName === "human" || !mgr) return; // bootstrap not ready yet
-        defaultsAppliedRef.current = true;
-        setFilterFrom(hName);
-        setFilterTo(mgr.name);
-        chatFilterDirection.value = "bidi";
-        return;
-      }
+      if (!raw) return;
       const f = JSON.parse(raw);
-      if (f.search) {
-        setFilterSearch(f.search);
-        setSearchExpanded(true); // Expand if there was saved search text
-      }
-      if (f.from) setFilterFrom(f.from);
-      if (f.to) setFilterTo(f.to);
-      // Backward compat: convert old showEvents boolean to typeFilter
-      if (f.typeFilter) setTypeFilter(f.typeFilter);
-      else if (f.showEvents === false) setTypeFilter("chat");
-      if (f.direction === "one-way") chatFilterDirection.value = "one-way";
+      if (f.search) setFilterSearch(f.search);
+      if (f.showTaskUpdates === false) setShowTaskUpdates(false);
     } catch (e) { }
   }, [allAgents]);
 
@@ -725,11 +702,10 @@ export function ChatPanel() {
   useEffect(() => {
     try {
       localStorage.setItem("chatFilters", JSON.stringify({
-        search: filterSearch, from: filterFrom, to: filterTo,
-        typeFilter, direction,
+        search: filterSearch, showTaskUpdates,
       }));
     } catch (e) { }
-  }, [filterSearch, filterFrom, filterTo, typeFilter, direction]);
+  }, [filterSearch, showTaskUpdates]);
 
   // Initial load: fetch last 100 messages
   useEffect(() => {
@@ -815,23 +791,11 @@ export function ChatPanel() {
   // Filter + sort messages
   const filteredMsgs = useMemo(() => {
     let filtered = msgs;
-    // Type filter: "all", "chat", or "events"
-    if (typeFilter === "chat") filtered = filtered.filter(m => m.type !== "event");
-    if (typeFilter === "events") filtered = filtered.filter(m => m.type === "event");
-    const between = direction === "bidi" && !!(filterFrom && filterTo);
-    if (filterFrom || filterTo) {
-      filtered = filtered.filter(m => {
-        if (m.type === "event") return true;
-        if (between) return (m.sender === filterFrom && m.recipient === filterTo) || (m.sender === filterTo && m.recipient === filterFrom);
-        if (filterFrom && m.sender !== filterFrom) return false;
-        if (filterTo && m.recipient !== filterTo) return false;
-        return true;
-      });
-    }
+    if (!showTaskUpdates) filtered = filtered.filter(m => m.type !== "event");
     const sq = filterSearch.toLowerCase().trim();
     if (sq) filtered = filtered.filter(m => (m.content || "").toLowerCase().includes(sq));
     return filtered;
-  }, [msgs, typeFilter, filterFrom, filterTo, filterSearch, direction]);
+  }, [msgs, showTaskUpdates, filterSearch]);
 
   // Track scroll position and load older messages
   useEffect(() => {
@@ -935,18 +899,6 @@ export function ChatPanel() {
     }
   }, []);
 
-  // Agent options for filters and recipient
-  const agentOptions = useMemo(() => {
-    const names = new Set(allAgents.map(a => a.name));
-    msgs.forEach(m => { if (m.type === "chat") { names.add(m.sender); names.add(m.recipient); } });
-    const roleMap = {};
-    allAgents.forEach(a => { roleMap[a.name] = a.role || "engineer"; });
-    return [...names].sort().map(n => ({
-      value: n,
-      label: cap(n),
-      role: roleMap[n] || "engineer",
-    }));
-  }, [allAgents, msgs]);
 
 
   // Execute a magic command
@@ -1366,10 +1318,6 @@ export function ChatPanel() {
     sel.addRange(range);
   }, []);
 
-  const toggleDirection = useCallback(() => {
-    chatFilterDirection.value = direction === "one-way" ? "bidi" : "one-way";
-  }, [direction]);
-
   const toggleMute = useCallback(() => {
     const next = !isMuted.value;
     isMuted.value = next;
@@ -1383,25 +1331,6 @@ export function ChatPanel() {
   }, []);
 
   const searchInputRef = useRef();
-
-  const handleSearchExpand = useCallback(() => {
-    setSearchExpanded(true);
-    // Focus input after state update
-    setTimeout(() => searchInputRef.current?.focus(), 0);
-  }, []);
-
-  const handleSearchBlur = useCallback(() => {
-    if (!filterSearch.trim()) {
-      setSearchExpanded(false);
-    }
-  }, [filterSearch]);
-
-  const handleSearchKeyDown = useCallback((e) => {
-    if (e.key === "Escape" && !filterSearch.trim()) {
-      setSearchExpanded(false);
-      searchInputRef.current?.blur();
-    }
-  }, [filterSearch]);
 
   return (
     <div
@@ -1421,65 +1350,27 @@ export function ChatPanel() {
 
       {/* Consolidated filter bar */}
       <div class="chat-filters">
-        <PillSelect
-          label="From"
-          value={filterFrom}
-          options={[{ value: "", label: "All" }, ...agentOptions]}
-          onChange={setFilterFrom}
-        />
-        <span
-          class={"filter-arrow" + (direction === "bidi" ? " bidi" : "")}
-          onClick={toggleDirection}
-          title="Toggle direction"
-        >
-          {direction === "bidi" ? "\u2194" : "\u2192"}
-        </span>
-        <PillSelect
-          label="To"
-          value={filterTo}
-          options={[{ value: "", label: "All" }, ...agentOptions]}
-          onChange={setFilterTo}
-        />
-        <PillSelect
-          label="Type"
-          value={typeFilter}
-          options={[
-            { value: "all", label: "All" },
-            { value: "chat", label: "Chat" },
-            { value: "events", label: "Events" }
-          ]}
-          onChange={setTypeFilter}
-        />
-        <div style={{ flex: 1 }} />
-        <div class={searchExpanded ? "filter-search-wrap expanded" : "filter-search-wrap"}>
-          {!searchExpanded ? (
-            <button
-              class="filter-search-icon-btn"
-              onClick={handleSearchExpand}
-              title="Search messages"
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="6" cy="6" r="4.5" /><line x1="9.5" y1="9.5" x2="13" y2="13" />
-              </svg>
-            </button>
-          ) : (
-            <>
-              <svg class="filter-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="6" cy="6" r="4.5" /><line x1="9.5" y1="9.5" x2="13" y2="13" />
-              </svg>
-              <input
-                ref={searchInputRef}
-                type="text"
-                class="filter-search"
-                placeholder="Search messages..."
-                value={filterSearch}
-                onInput={onSearchInput}
-                onBlur={handleSearchBlur}
-                onKeyDown={handleSearchKeyDown}
-              />
-            </>
-          )}
+        <div class="filter-search-wrap">
+          <svg class="filter-search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="6" cy="6" r="4.5" /><line x1="9.5" y1="9.5" x2="13" y2="13" />
+          </svg>
+          <input
+            ref={searchInputRef}
+            type="text"
+            class="filter-search"
+            placeholder="Search..."
+            value={filterSearch}
+            onInput={onSearchInput}
+          />
         </div>
+        <label class="filter-checkbox-label">
+          <input
+            type="checkbox"
+            checked={showTaskUpdates}
+            onChange={(e) => setShowTaskUpdates(e.target.checked)}
+          />
+          Task Updates
+        </label>
       </div>
 
       {/* Message list */}
@@ -1502,10 +1393,9 @@ export function ChatPanel() {
           const senderLower = m.sender.toLowerCase();
           const human = (humanName.value || "human").toLowerCase();
           const isHuman = senderLower === human;
-          const isToHuman = (m.recipient || "").toLowerCase() === human;
-          const isBoss = isHuman || isToHuman;
-          const msgClass = isBoss ? "msg msg-boss" : "msg";
-          const senderClass = isBoss ? "msg-sender msg-sender-boss copyable" : "msg-sender copyable";
+          const isBoss = isHuman;
+          const msgClass = isHuman ? "msg msg-boss" : "msg";
+          const senderClass = isHuman ? "msg-sender msg-sender-boss copyable" : "msg-sender copyable";
           return (
             <div key={m.id || i} class={msgClass}>
               <div class="msg-body">
