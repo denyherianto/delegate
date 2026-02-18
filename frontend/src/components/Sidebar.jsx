@@ -1,4 +1,4 @@
-import { useCallback } from "preact/hooks";
+import { useCallback, useEffect, useState } from "preact/hooks";
 import {
   currentTeam, teams, activeTab,
   sidebarCollapsed, projectModalOpen,
@@ -7,6 +7,8 @@ import {
   allTeamsTurnState,
 } from "../state.js";
 import { cap, prettyName } from "../utils.js";
+import { fetchVersion } from "../api.js";
+import { UpdateModal } from "./UpdateModal.jsx";
 
 // ── SVG Icons ──
 
@@ -54,6 +56,57 @@ function DelegateChevron() {
     <svg width="18" height="18" viewBox="0 0 600 660" aria-label="Expand sidebar">
       <path fill="#4ade80" d="M85 65V152L395 304Q414 313 430.5 319.5Q447 326 455 328Q446 330 429 337Q412 344 395 352L85 505V595L515 380V280Z"/>
     </svg>
+  );
+}
+
+function FeedbackIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H2a1 1 0 00-1 1v8a1 1 0 001 1h3l3 3 3-3h3a1 1 0 001-1V3a1 1 0 00-1-1z" />
+    </svg>
+  );
+}
+
+// ── Sidebar Footer ──
+function SidebarFooter({ collapsed }) {
+  const [versionInfo, setVersionInfo] = useState(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+
+  useEffect(() => {
+    fetchVersion().then(data => {
+      if (data) setVersionInfo(data);
+    }).catch(() => {
+      // silently ignore — no version display on error
+    });
+  }, []);
+
+  if (collapsed) return null;
+
+  return (
+    <>
+      <div class="sb-footer">
+        <a
+          class="sb-footer-link"
+          href="https://github.com/nikhilgarg28/delegate/discussions"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <FeedbackIcon />
+          <span>Give Feedback</span>
+        </a>
+        {versionInfo && !versionInfo.update_available && (
+          <span class="sb-version">v{versionInfo.current}</span>
+        )}
+        {versionInfo && versionInfo.update_available && (
+          <button class="sb-update-chip" onClick={() => setShowUpdateModal(true)}>
+            v{versionInfo.current} → v{versionInfo.latest}
+          </button>
+        )}
+      </div>
+      {showUpdateModal && versionInfo && (
+        <UpdateModal versionInfo={versionInfo} onClose={() => setShowUpdateModal(false)} />
+      )}
+    </>
   );
 }
 
@@ -189,6 +242,9 @@ export function Sidebar() {
 
       {/* Projects: hidden when collapsed */}
       <ProjectList collapsed={collapsed} />
+
+      {/* Footer: Give Feedback link, version, update chip */}
+      <SidebarFooter collapsed={collapsed} />
     </div>
   );
 }

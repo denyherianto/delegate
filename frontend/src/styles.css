@@ -554,6 +554,130 @@ body {
 
 @media (max-width: 900px) { .sb { display: none; } }
 
+/* ── Sidebar footer ── */
+.sb-footer {
+  padding: 8px 10px 12px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sb-footer-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 3px 4px;
+  border-radius: 4px;
+}
+.sb-footer-link:hover { color: var(--text-primary); background: var(--bg-hover); }
+.sb-version {
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 0 4px;
+}
+.sb-update-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  background: rgba(217, 119, 6, 0.15);
+  color: #d97706;
+  border: 1px solid rgba(217, 119, 6, 0.3);
+  border-radius: 10px;
+  padding: 2px 8px;
+  cursor: pointer;
+  margin: 0 4px;
+}
+.sb-update-chip:hover { background: rgba(217, 119, 6, 0.25); }
+
+/* ── Generic modal box (shared across modal dialogs) ── */
+.modal-box {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-heading);
+  margin: 0;
+}
+.modal-body {
+  padding: 16px 20px;
+}
+.modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.modal-btn-secondary {
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+.modal-btn-secondary:hover {
+  color: var(--text-primary);
+  background: var(--bg-input);
+}
+
+/* ── Update modal ── */
+.update-modal {
+  width: 420px;
+  max-width: 90vw;
+}
+.update-modal-desc {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.update-modal-code {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+}
+.update-modal-code pre {
+  margin: 0;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  color: var(--text-primary);
+  white-space: pre;
+}
+.update-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.update-modal-copy-btn {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+.update-modal-copy-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-input);
+}
+
 /* ================================================================
    Mission Control — Right-side panel
    Flat list: one line per agent (dot · name · status · model).

@@ -355,6 +355,14 @@ export async function createProject({ name, repoPath, agentCount = 2, model = "s
   return r.json();
 }
 
+// --- Version ---
+
+export async function fetchVersion() {
+  const res = await fetch('/api/version');
+  if (!res.ok) return null;
+  return res.json(); // { current, latest, update_available }
+}
+
 // --- File Upload ---
 
 export async function uploadFiles(team, files, onProgress) {
