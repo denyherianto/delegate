@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>Not a copilot. A team that ships.</strong><br>
-  <sub>AI agents that plan, code, review each other's work, and merge — running locally on your machine.</sub>
+  <strong>An engineering manager for your AI agents.</strong><br>
+  <sub>Delegate plans, staffs, coordinates, and delivers — you review the results.</sub>
 </p>
 
 <p align="center">
@@ -15,9 +15,15 @@
 
 ---
 
-Delegate creates a persistent team of AI agents on your local machine. Describe what you want in plain English — Delegate breaks it into tasks, assigns them to agents, manages code reviews between them, and merges the result. You watch it all happen in a real-time web UI, or check in later. The team remembers your codebase across tasks.
+Tools like Cursor, Claude Code, and Copilot are excellent **copilots** — they help you write code faster. But you're still the one driving: one task at a time, synchronous, hands-on.
 
-> **Note:** Delegate currently works with **local git repositories** — agents commit directly to branches on your machine. Support for remote repositories (GitHub, GitLab), external tools (Slack, Linear), and CI/CD integrations is coming soon - stay tuned!
+Delegate is the layer above. It's an **engineering manager** that runs persistent teams of AI agents on your machine. Tell it what you want in plain English — Delegate breaks the work into tasks, assigns agents, manages code reviews between them, and merges the result. You review the output, not write the code.
+
+Spin up a team per project — a backend API, a mobile app, a data pipeline — each with its own agents, repos, and context. Within each project, agents work on multiple tasks in parallel: one builds a feature while another fixes a bug and a third refactors a module. Across projects, teams run independently and simultaneously. You manage a portfolio of work, not a single cursor.
+
+A copilot makes **you** a faster developer. Delegate gives you **teams** that ship while you focus on what matters.
+
+> **Note:** Delegate currently works with **local git repositories** — agents commit directly to branches on your machine. Support for remote repositories (GitHub, GitLab), external tools (Slack, Linear), and CI/CD integrations is coming soon.
 
 <!-- TODO: Replace with an actual screenshot or demo GIF
 <p align="center">
@@ -25,9 +31,18 @@ Delegate creates a persistent team of AI agents on your local machine. Describe 
 </p>
 -->
 
-### How is this different?
+### How is this different from other AI coding tools?
 
-Most AI coding tools give you **one agent, one task, then it's gone**. Delegate gives you a **team that persists** — agents accumulate context about your codebase, your patterns, and each other over weeks of work. And unlike terminal-based tools, you get a **browser UI** where you can watch agents work in real-time, review diffs, approve merges, and run shell commands — all without leaving the browser.
+| | Copilots (Cursor, Copilot, Claude Code) | Delegate |
+|---|---|---|
+| **You are** | The developer — AI assists | The executive — AI delivers |
+| **Scope** | One file, one task | Many projects, many tasks in parallel |
+| **Context** | Fresh each session | Persistent across weeks of work |
+| **Agents** | One, disposable | Teams that coordinate and review each other |
+| **Output** | Code suggestions and edits | Reviewed, tested, merge-ready branches |
+| **Workflow** | You drive every step | You set direction, check in when you want |
+
+This isn't a replacement for copilots — it's a different level of abstraction. Use Cursor to pair-program on a tricky function. Use Delegate to hand off "build the auth system" and come back to a reviewed PR.
 
 ## Quickstart
 
@@ -40,9 +55,8 @@ cd to/directory/having/git/repo # optional, just makes config easier
 delegate start # needs claude code login or ANTHROPIC_API_KEY in ENV
 ```
 
-That's it. Delegate will create a default team with a manager + 5 engineer agents
-and open the console in the browser. You tell delegate agent what to build and it
-handles the rest.
+That's it. Delegate spins up a team with a manager + 5 engineer agents
+and opens the console in your browser. Tell Delegate what to build — it plans the work, assigns agents, and manages delivery. You review the results. Add more projects anytime with `delegate team add`.
 
 ## What happens when you send a task
 
@@ -50,28 +64,31 @@ handles the rest.
 You: "Add a /health endpoint that returns uptime and version"
 ```
 
-1. **Manager** breaks it down, creates one or more tasks, assigns to available agents
-2. **Agent** gets a git worktree, writes the code, runs tests, submits for review
-3. **Reviewer** (another agent) checks the diff, runs the test suite, approves or rejects
+1. **Delegate** (the manager agent) breaks it down, creates tasks, assigns to available engineers
+2. **Engineer** gets a git worktree, writes the code, runs tests, submits for review
+3. **Reviewer** (another agent) checks the diff, runs the test suite, approves or requests changes
 4. **You** approve the merge (or set repos to auto-merge)
 5. **Merge worker** rebases onto main, runs pre-merge checks, fast-forward merges
 
-All of this is visible in real-time in the web UI — tasks moving, agents working, code being reviewed.
+Meanwhile, you can send more tasks — Delegate will prioritize, assign, and multiplex across the team. All of this is visible in real-time in the web UI.
 
 ## Key features
 
-**Persistent teams, not disposable agents.** Create a team once, use it across hundreds of tasks. Agents maintain memory — journals, notes, context files — so they learn your codebase, conventions, and patterns over time.
+**Many projects, many tasks, all at once.** Spin up a team per project — each with its own agents, repos, and accumulated context. Within each project, agents tackle multiple tasks in parallel, each in its own git worktree. Across projects, teams run independently. Your throughput scales with the number of teams, not with your attention. Zero cost when a team is idle.
 
-**Works with your existing setup.** Delegate automatically reads `claude.md`, `AGENTS.md`, `.cursorrules`, and `.github/copilot-instructions.md` from your repos — no migration needed.
+**Persistent teams, not disposable agents.** Create a team once, use it across hundreds of tasks. Agents maintain memory — journals, notes, context files — so they learn your codebase, conventions, and patterns over time. Like a real team, they get better the longer they work together.
 
-**One team per project** - Spin up a team for each project, running for as long 
-as you need with zero cost when not in use, all on your local filesystem.
+**Async by default.** You don't need to sit and watch. Send Delegate a task, close your laptop, come back later. The team keeps working — writing code, reviewing each other, running tests. Check in when you want. This is the fundamental difference from copilots, which require your continuous presence.
+
+**Agents that coordinate, not just execute.** Engineers don't work in isolation. When one agent finishes coding, another reviews the diff and runs the test suite. Tasks flow through `todo → in_progress → in_review → in_approval → merging → done` with agents handling each transition — just like a well-run engineering team.
 
 **Browser UI with real-time visibility.** Watch agents pick up tasks, write code, and review each other's work — live. Approve merges, browse diffs, inspect files, and run shell commands — all from the browser.
 
-**Full development lifecycle.** Agents don't just write code but also review each other's code. By default tasks flow through `todo → in_progress → in_review → in_approval → merging → done` with agents handling each stage.
+**Works with your existing setup.** Delegate reads `claude.md`, `AGENTS.md`, `.cursorrules`, and `.github/copilot-instructions.md` from your repos automatically — no migration needed.
 
-**Customizable workflows.** Not happy with default task workflow? Define your own task lifecycle in Python:
+**Real git, real branches.** Each agent works in isolated [git worktrees](https://git-scm.com/docs/git-worktree). Branches are named `delegate/<team>/T0001`. No magic file systems — you can `git log` any branch anytime.
+
+**Customizable workflows.** Define your own task lifecycle in Python:
 
 ```python
 from delegate.workflow import Stage, workflow
@@ -86,15 +103,13 @@ def my_workflow():
     return [Todo, InProgress, InReview, Deploy, Done]
 ```
 
-**Real git, real branches.** Each agent works in isolated [git worktrees](https://git-scm.com/docs/git-worktree). No magic file systems. Branches are named `delegate/<team>/T0001`. You can inspect them anytime.
+**Mix models by role.** All agents default to Claude Sonnet. Override per agent with `--model opus` for tasks requiring stronger reasoning.
 
-**Mix models by role.** All agents default to Claude Sonnet. Override per agent with `--model opus` for tasks requiring stronger reasoning. Configurable at any time.
-
-**Team charter in markdown.** Edit a markdown file to set review standards, communication norms, and team values. 
+**Team charter in markdown.** Set review standards, communication norms, and team values in a markdown file — like an EM setting expectations for the team.
 
 **Built-in shell.** Run any command from the chat with `/shell ls -la`. Output renders inline.
 
-**Installable as an app.** Delegate's web UI is a [Progressive Web App](https://developer.mozilla.org/en-US/docs/Web/Progressive_Web_Apps) — install it from your browser for a native app experience with its own window and dock/taskbar icon.
+**Installable as an app.** Delegate's web UI is a [Progressive Web App](https://developer.mozilla.org/en-US/docs/Web/Progressive_Web_Apps) — install it from your browser for a native app experience.
 
 ## Architecture
 
@@ -114,7 +129,7 @@ def my_workflow():
 └── db.sqlite             # Messages, tasks, events
 ```
 
-Agents are [Claude Code](https://docs.anthropic.com/en/docs/claude-code) instances. A delegate agent manages other agents on your behalf. Engineers work in git worktrees and communicate through a message bus. The daemon polls for messages and dispatches agent turns as async tasks. All storage is in local files - either plaintext or sqlite.
+Agents are [Claude Code](https://docs.anthropic.com/en/docs/claude-code) instances. The Delegate agent is the EM — it reads your messages, breaks down work, assigns tasks, and coordinates the team. Engineers work in git worktrees and communicate through a message bus. The daemon dispatches agent turns as async tasks, multiplexing across the whole team. All storage is local files — plaintext or sqlite.
 
 There's no magic. You can `ls` into any agent's directory and see exactly what they're doing. Worklogs, memory journals, context files — it's all plain text.
 
