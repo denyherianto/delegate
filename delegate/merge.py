@@ -1252,6 +1252,7 @@ def merge_once(
     """
     results = []
     manager = _get_manager_name(hc_home, team)
+    processed_ids: set[int] = set()
 
     # --- 1. Newly approved tasks ---
     for task in list_tasks(hc_home, team, status="in_approval"):
@@ -1289,6 +1290,7 @@ def merge_once(
 
         result = merge_task(hc_home, team, task_id, exchange=exchange, loop=loop)
         results.append(result)
+        processed_ids.add(task_id)
 
         if not result.success:
             _handle_merge_failure(hc_home, team, task_id, result)
@@ -1296,6 +1298,8 @@ def merge_once(
     # --- 2. Process tasks in 'merging' status (retries) ---
     for task in list_tasks(hc_home, team, status="merging"):
         task_id = task["id"]
+        if task_id in processed_ids:
+            continue
         attempts = task.get("merge_attempts", 0)
 
         # Skip tasks that are scheduled for a future retry (exponential backoff).
