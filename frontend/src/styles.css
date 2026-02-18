@@ -1091,33 +1091,6 @@ body {
 }
 .npm-btn-create:hover { background: #22c55e; }
 
-/* Directory picker row in NewProjectModal */
-.npm-dir-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.npm-dir-input {
-  flex: 1;
-}
-.npm-browse-btn {
-  padding: 6px 12px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-default);
-  border-radius: 6px;
-  color: var(--text-primary);
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.npm-browse-btn:hover {
-  background: var(--bg-hover);
-}
-.npm-browse-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 /* ================================================================
    Tasks panel
    ================================================================ */
