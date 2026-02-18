@@ -138,11 +138,21 @@ export function ManagerActivityBar() {
     return () => clearTimeout(timer);
   }, [turnCtx?.agent, turnCtx?.timestamp]);
 
-  // Auto-scroll as more words are revealed
+  // Auto-scroll thinking stream as more words are revealed
   useEffect(() => {
     const el = streamRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [revealedLen]);
+
+  // Keep chat log scrolled to bottom as footer grows/appears
+  useEffect(() => {
+    if (!isActive) return;
+    const chatLog = document.querySelector(".chat-log");
+    if (chatLog) {
+      // Small delay lets the CSS transition start so the chat-log has resized
+      requestAnimationFrame(() => { chatLog.scrollTop = chatLog.scrollHeight; });
+    }
+  }, [isActive, hasThinking]);
 
   // ── Render ──
 

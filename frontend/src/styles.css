@@ -1450,7 +1450,7 @@ body {
   min-height: 0;
   overflow-y: auto;
   background: var(--bg-primary);
-  padding: 8px 0;
+  padding: 8px 0 16px;
 }
 
 /* Messages */
@@ -1619,7 +1619,7 @@ body {
 .delegate-footer-active {
   max-height: 44px;
   opacity: 1;
-  margin: 12px 12px 6px;
+  margin: 8px 12px 6px;
   background: rgba(28, 30, 28, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
