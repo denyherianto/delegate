@@ -467,7 +467,8 @@ body {
 @media (max-width: 900px) { .sb { display: none; } }
 
 /* ================================================================
-   Mission Control — Right-side panel (Cursor-inspired)
+   Mission Control — Right-side panel
+   Always 360px wide, always visible. Two sections: active cards + idle rows.
    ================================================================ */
 
 /* ── Panel container ── */
@@ -480,46 +481,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: width 200ms ease, min-width 200ms ease;
   flex-shrink: 0;
-}
-
-/* Collapsed → thin rail with agent status dots */
-.mc.mc-rail {
-  width: 44px;
-  min-width: 44px;
-  align-items: center;
-}
-.mc.mc-rail .mc-title,
-.mc.mc-rail .mc-cards { display: none; }
-.mc.mc-rail .mc-header {
-  justify-content: center;
-  padding: 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-/* Rail dots: vertical list of status indicators */
-.mc-rail-dots {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 0;
-}
-.mc-rail-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: transform 150ms ease;
-  position: relative;
-}
-.mc-rail-dot:hover { transform: scale(1.5); }
-.mc-rail-dot.dot-active  { background: var(--dot-active); box-shadow: 0 0 6px rgba(176,176,176,0.4); }
-.mc-rail-dot.dot-waiting { background: var(--dot-stale); }
-.mc-rail-dot[title]::after {
-  content: attr(title);
-  display: none;
 }
 
 /* ── Header ── */
@@ -528,7 +490,6 @@ body {
   min-height: 48px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 0 14px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
@@ -540,49 +501,50 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-.mc-toggle {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--text-muted);
-  padding: 4px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-}
-.mc-toggle:hover { color: var(--text-primary); background: var(--bg-hover); }
 
-/* ── Cards container ── */
-.mc-cards {
+/* ── Scrollable body ── */
+.mc-body {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
+.mc-body::-webkit-scrollbar { width: 4px; }
+.mc-body::-webkit-scrollbar-track { background: transparent; }
+.mc-body::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
 
-/* ── Agent card ── */
+/* ── Section containers ── */
+.mc-section {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Section label */
+.mc-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 10px 14px 4px;
+}
+
+/* ── Agent card (active) — content-height only ── */
 .mc-card {
   display: flex;
   flex-direction: column;
   border-bottom: 1px solid var(--border-subtle);
 }
-.mc-card-expanded {
-  flex: 1;
-  min-height: 0;
-}
+/* No flex:1 — cards are content-height only */
 
 .mc-card-header {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   padding: 10px 14px;
-  cursor: pointer;
-  user-select: none;
-  transition: background 100ms ease;
   flex-shrink: 0;
 }
-.mc-card-header:hover { background: var(--bg-hover); }
-.mc-card-header .mc-dot { margin-top: 5px; }
+.mc-card-header .mc-dot { margin-top: 4px; }
 
 .mc-header-content {
   flex: 1;
@@ -595,30 +557,25 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 .mc-header-status {
-  font-size: 11px;
-  color: var(--text-secondary);
+  font-size: 12px;
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.4;
 }
 
 .mc-card-body {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  padding: 0 14px 10px;
+  padding: 0 14px 12px;
   gap: 6px;
-  animation: mc-body-in 150ms ease;
-}
-@keyframes mc-body-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Dot ── */
+/* ── Dot indicators ── */
 .mc-dot {
   width: 7px;
   height: 7px;
@@ -629,18 +586,19 @@ body {
   background: var(--dot-active);
   box-shadow: 0 0 6px rgba(176,176,176,0.3);
 }
-.mc-dot.dot-waiting { background: var(--dot-stale); }
+.mc-dot.dot-idle { background: var(--dot-stale); }
 
-/* ── Agent name + badges ── */
+/* ── Agent name ── */
 .mc-agent-name {
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  color: var(--text-primary);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 .mc-agent-name:hover { text-decoration: underline; }
 
+/* ── Badges ── */
 .mc-badge {
   font-size: 9px;
   padding: 1px 5px;
@@ -658,23 +616,13 @@ body {
   color: var(--text-muted);
 }
 
+/* Team label in card header */
 .mc-agent-team {
   font-size: 10px;
   color: var(--text-muted);
   flex-shrink: 0;
-  margin-top: 5px;
+  margin-left: auto;
 }
-
-/* ── Chevron ── */
-.mc-chevron {
-  color: var(--text-faint);
-  transition: transform 200ms ease;
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  margin-top: 5px;
-}
-.mc-chevron-open { transform: rotate(90deg); }
 
 /* ── Task line ── */
 .mc-card-task {
@@ -695,35 +643,19 @@ body {
 }
 .mc-task-title { color: var(--text-secondary); }
 
-/* ── Unified activity stream (thinking + tools interleaved) ── */
-.mc-stream {
-  display: flex;
-  flex-direction: column;
+/* ── Thinking block ── */
+.mc-thinking-block {
   background: var(--bg-inset);
   border-radius: 6px;
   border: 1px solid var(--border-subtle);
-  overflow-y: auto;
-  flex: 1;
-  min-height: 60px;
-  max-height: 260px;
-}
-.mc-card-expanded .mc-stream {
-  max-height: none;
-}
-.mc-stream::-webkit-scrollbar { width: 4px; }
-.mc-stream::-webkit-scrollbar-track { background: transparent; }
-.mc-stream::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
-
-/* Thinking block inside stream */
-.mc-stream-thinking {
   display: flex;
   flex-direction: column;
 }
-.mc-stream-thinking-header {
+.mc-thinking-label {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 5px 10px;
   font-size: 10px;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -743,43 +675,46 @@ body {
   0%, 100% { opacity: 0.3; }
   50%      { opacity: 1; }
 }
-.mc-stream-thinking-text {
+/* Thinking text: markdown rendered, soft height cap */
+.mc-thinking-text {
   padding: 8px 10px;
   font-size: 12px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
+  line-height: 1.4;
+  color: var(--text-muted);
   word-break: break-word;
+  max-height: calc(8 * 1.4 * 12px);
+  overflow-y: auto;
 }
+.mc-thinking-text::-webkit-scrollbar { width: 4px; }
+.mc-thinking-text::-webkit-scrollbar-track { background: transparent; }
+.mc-thinking-text::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
+/* Strip paragraph margin inside thinking text */
+.mc-thinking-text p { margin: 0 0 4px; }
+.mc-thinking-text p:last-child { margin-bottom: 0; }
+.mc-thinking-text code { font-size: 11px; }
 
-/* Waiting placeholder inside stream */
+/* ── Waiting placeholder ── */
 .mc-stream-waiting {
-  padding: 8px 10px;
-  font-size: 11px;
-  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  padding: 2px 0;
 }
 
-/* Tool entries inside stream */
+/* ── Tool entries ── */
 .mc-stream-tools {
   display: flex;
   flex-direction: column;
-  padding: 4px 0;
-  border-top: 1px solid var(--border-subtle);
+  gap: 1px;
 }
 .mc-tool-entry {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 10px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
-  animation: mc-tool-in 200ms ease;
+  line-height: 1.4;
 }
-@keyframes mc-tool-in {
-  from { opacity: 0; transform: translateX(-4px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-
 .mc-tool-icon {
   color: var(--text-muted);
   flex-shrink: 0;
@@ -788,18 +723,65 @@ body {
 }
 .mc-tool-name {
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-  font-size: 11px;
-  color: var(--text-secondary);
+  font-size: 12px;
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 .mc-tool-detail {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
   min-width: 0;
+  opacity: 0.7;
+}
+
+/* ── Idle rows (below active section) ── */
+.mc-section-idle {
+  border-top: 1px solid var(--border-subtle);
+}
+.mc-idle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+.mc-idle-row:hover { background: var(--bg-hover); }
+.mc-idle-name {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.mc-idle-team {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ── Transitions: card enter / exit ── */
+.mc-card-enter {
+  animation: mc-card-in 200ms ease forwards;
+}
+@keyframes mc-card-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.mc-card-exit {
+  animation: mc-fade-out 150ms ease forwards;
+}
+.mc-idle-row-exit {
+  animation: mc-fade-out 150ms ease forwards;
+}
+@keyframes mc-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }
 
 /* ── Empty state ── */
@@ -814,7 +796,6 @@ body {
   text-align: center;
   flex: 1;
 }
-.mc-empty-icon { opacity: 0.4; }
 .mc-empty-text { font-size: 12px; }
 
 /* ── Responsive ── */

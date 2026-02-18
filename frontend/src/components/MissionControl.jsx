@@ -1,28 +1,30 @@
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
   allTeamsAgents, allTeamsTurnState, tasks,
   agentActivityLog, agentThinking,
-  missionControlCollapsed, missionControlManuallyCollapsed,
   openPanel,
 } from "../state.js";
-import { cap, taskIdStr } from "../utils.js";
+import { cap, taskIdStr, renderMarkdown } from "../utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Build a flat list of active agents across all teams with enriched data. */
-function buildActiveAgentList(agentsList, turnState, allTasks) {
-  const result = [];
+/**
+ * Build enriched agent data for ALL agents. Returns two lists:
+ *   active — agents with inTurn === true (in source/append order)
+ *   idle   — all others, sorted alphabetically by name
+ */
+function buildAgentLists(agentsList, turnState, allTasks) {
+  const active = [];
+  const idle = [];
+
   for (const a of agentsList) {
     const team = a.team || "unknown";
     const turn = (turnState[team] || {})[a.name];
     const inTurn = turn?.inTurn ?? false;
     const lastTaskId = turn?.taskId ?? null;
     const sender = turn?.sender ?? "";
-
-    // Only include agents that are doing something
-    if (!inTurn && !lastTaskId) continue;
 
     let taskTitle = "";
     let taskStatus = "";
@@ -34,7 +36,7 @@ function buildActiveAgentList(agentsList, turnState, allTasks) {
       }
     }
 
-    result.push({
+    const entry = {
       name: a.name,
       team,
       role: a.role || "engineer",
@@ -44,22 +46,23 @@ function buildActiveAgentList(agentsList, turnState, allTasks) {
       taskTitle,
       taskStatus,
       sender,
-    });
+    };
+
+    if (inTurn) {
+      active.push(entry);
+    } else {
+      idle.push(entry);
+    }
   }
 
-  // Sort: actively working first, then waiting, then alpha
-  result.sort((a, b) => {
-    const order = (x) => x.inTurn ? 0 : 1;
-    const diff = order(a) - order(b);
-    if (diff !== 0) return diff;
-    return a.name.localeCompare(b.name);
-  });
+  // Idle section: alphabetical by name
+  idle.sort((a, b) => a.name.localeCompare(b.name));
 
-  return result;
+  return { active, idle };
 }
 
 /** Get last N activity entries for a given agent from the log. */
-function getRecentActivities(log, agentName, n = 5) {
+function getRecentActivities(log, agentName, n = 3) {
   return log
     .filter(e => e.agent === agentName && e.type === "agent_activity")
     .slice(-n);
@@ -72,12 +75,12 @@ function getRecentActivities(log, agentName, n = 5) {
 function getStatusSummary(agent) {
   if (agent.taskId && agent.taskTitle) {
     const verb = getStatusVerb(agent.taskStatus);
-    if (verb) return `${verb} ${taskIdStr(agent.taskId)}`;
-    return taskIdStr(agent.taskId);
+    if (verb) return capFirst(`${verb} ${taskIdStr(agent.taskId)}`);
+    return capFirst(taskIdStr(agent.taskId));
   }
-  if (agent.sender) return `responding to ${cap(agent.sender)}`;
-  if (agent.inTurn) return "working";
-  return "idle";
+  if (agent.sender) return `Responding to ${cap(agent.sender)}`;
+  if (agent.inTurn) return "Working";
+  return "Idle";
 }
 
 function getStatusVerb(taskStatus) {
@@ -90,41 +93,15 @@ function getStatusVerb(taskStatus) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Role badge map
-// ---------------------------------------------------------------------------
-
-const roleBadgeMap = {
-  manager: "mgr",
-  engineer: "eng",
-  reviewer: "rev",
-};
+/** Capitalize first letter of a string. */
+function capFirst(s) {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 // ---------------------------------------------------------------------------
 // SVG Icons
 // ---------------------------------------------------------------------------
-
-function ChevronIcon() {
-  return (
-    <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
-         stroke="currentColor" strokeWidth="1.5"
-         strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="3,1 7,5 3,9" />
-    </svg>
-  );
-}
-
-function MCToggleIcon({ collapsed }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
-         stroke="currentColor" strokeWidth="1.5"
-         strokeLinecap="round" strokeLinejoin="round">
-      {collapsed
-        ? <polyline points="9,3 4,7 9,11" />
-        : <polyline points="5,3 10,7 5,11" />}
-    </svg>
-  );
-}
 
 function ToolIcon({ tool }) {
   const t = tool.toLowerCase();
@@ -167,140 +144,103 @@ function ToolIcon({ tool }) {
   );
 }
 
-function EmptyIcon() {
-  return (
-    <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
-         stroke="currentColor" strokeWidth="1.2"
-         strokeLinecap="round" strokeLinejoin="round" class="mc-empty-icon">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 12l4-4" />
-      <circle cx="12" cy="12" r="2" />
-      <path d="M12 2v2" />
-      <path d="M12 20v2" />
-      <path d="M2 12h2" />
-      <path d="M20 12h2" />
-    </svg>
-  );
-}
-
 // ---------------------------------------------------------------------------
-// AgentCard
+// AgentCard — active agent, content-height card
 // ---------------------------------------------------------------------------
 
-function AgentCard({ agent, thinking, activities, expanded, onToggle }) {
-  const streamRef = useRef(null);
-  const prevThinkingRef = useRef(null);
-  // Track which tool entries were shown BEFORE the last thinking change
-  // so we can clear stale tools when thinking text changes
-  const [toolCutoff, setToolCutoff] = useState(0);
-
-  // When thinking text changes significantly, reset tool cutoff
-  useEffect(() => {
-    const prevText = prevThinkingRef.current;
-    const curText = thinking?.text || "";
-    if (curText && prevText !== curText) {
-      // Thinking changed — mark current activities length as cutoff
-      // so only tools AFTER this point are shown
-      setToolCutoff(activities.length);
-    }
-    prevThinkingRef.current = curText;
-  }, [thinking?.text, activities.length]);
-
-  // Auto-scroll the stream area
-  useEffect(() => {
-    const el = streamRef.current;
-    if (el) {
-      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-      if (isNearBottom) {
-        el.scrollTop = el.scrollHeight;
-      }
-    }
-  }, [thinking?.text, activities.length]);
-
-  const dotClass = agent.inTurn ? "dot-active" : "dot-waiting";
+function AgentCard({ agent, thinking, activities }) {
+  const thinkingHtml = thinking?.text ? renderMarkdown(thinking.text) : null;
   const status = getStatusSummary(agent);
-  const roleBadge = roleBadgeMap[agent.role] || cap(agent.role);
-
-  // Only show tools added AFTER the last thinking text change
-  const visibleTools = activities.slice(toolCutoff);
 
   return (
-    <div class={"mc-card" + (expanded ? " mc-card-expanded" : "")}>
-      {/* Header: two lines — name row + status row */}
-      <div class="mc-card-header" onClick={onToggle}>
-        <span class={"mc-dot " + dotClass} />
+    <div class="mc-card">
+      {/* Header */}
+      <div class="mc-card-header">
+        <span class="mc-dot dot-active" />
         <div class="mc-header-content">
           <div class="mc-header-top">
             <span
               class="mc-agent-name"
-              onClick={(e) => { e.stopPropagation(); openPanel("agent", agent.name); }}
+              onClick={() => openPanel("agent", agent.name)}
             >
               {cap(agent.name)}
             </span>
-            <span class={"mc-badge mc-badge-role badge-role-" + agent.role}>{roleBadge}</span>
+            <span class={"mc-badge mc-badge-role badge-role-" + agent.role}>{cap(agent.role)}</span>
             <span class="mc-badge mc-badge-model">{agent.model}</span>
+            <span class="mc-agent-team">{agent.team}</span>
           </div>
+          {/* Status line */}
           <div class="mc-header-status">{status}</div>
         </div>
-        <span class="mc-agent-team">{agent.team}</span>
-        <span class={"mc-chevron" + (expanded ? " mc-chevron-open" : "")}>
-          <ChevronIcon />
-        </span>
       </div>
 
-      {/* Expanded body — unified activity stream */}
-      {expanded && (
-        <div class="mc-card-body">
-          {/* Task link */}
-          {agent.taskId && (
-            <div
-              class="mc-card-task"
-              onClick={() => openPanel("task", agent.taskId)}
-            >
-              <span class="mc-task-id">{taskIdStr(agent.taskId)}</span>
-              {agent.taskTitle && (
-                <span class="mc-task-title">{agent.taskTitle}</span>
-              )}
-            </div>
-          )}
-
-          {/* Unified stream: thinking text + interleaved tool calls */}
-          <div class="mc-stream" ref={streamRef}>
-            {/* Current thinking text */}
-            {thinking && thinking.text ? (
-              <div class="mc-stream-thinking">
-                <div class="mc-stream-thinking-header">
-                  <span class="mc-thinking-indicator" />
-                  <span>Thinking</span>
-                </div>
-                <div class="mc-stream-thinking-text">{thinking.text}</div>
-              </div>
-            ) : agent.inTurn ? (
-              <div class="mc-stream-waiting">Waiting for model response</div>
-            ) : null}
-
-            {/* Tool calls that happened since last thinking change */}
-            {visibleTools.length > 0 && (
-              <div class="mc-stream-tools">
-                {visibleTools.map((act, i) => {
-                  const detail = act.detail
-                    ? act.detail.split("/").pop().substring(0, 40)
-                    : "";
-                  return (
-                    <div key={i} class="mc-tool-entry">
-                      <span class="mc-tool-icon">
-                        <ToolIcon tool={act.tool} />
-                      </span>
-                      <span class="mc-tool-name">{act.tool.toLowerCase()}</span>
-                      {detail && <span class="mc-tool-detail">{detail}</span>}
-                    </div>
-                  );
-                })}
-              </div>
+      {/* Card body */}
+      <div class="mc-card-body">
+        {/* Task link */}
+        {agent.taskId && (
+          <div
+            class="mc-card-task"
+            onClick={() => openPanel("task", agent.taskId)}
+          >
+            <span class="mc-task-id">{taskIdStr(agent.taskId)}</span>
+            {agent.taskTitle && (
+              <span class="mc-task-title">{agent.taskTitle}</span>
             )}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Thinking text — markdown rendered, soft height cap */}
+        {thinkingHtml ? (
+          <div class="mc-thinking-block">
+            <div class="mc-thinking-label">
+              <span class="mc-thinking-indicator" />
+              <span>Thinking</span>
+            </div>
+            <div
+              class="mc-thinking-text agent-markdown-content"
+              dangerouslySetInnerHTML={{ __html: thinkingHtml }}
+            />
+          </div>
+        ) : agent.inTurn ? (
+          <div class="mc-stream-waiting">Waiting for model response</div>
+        ) : null}
+
+        {/* Tool entries — last 3 */}
+        {activities.length > 0 && (
+          <div class="mc-stream-tools">
+            {activities.map((act, i) => {
+              const detail = act.detail
+                ? act.detail.split("/").pop().substring(0, 40)
+                : "";
+              return (
+                <div key={i} class="mc-tool-entry">
+                  <span class="mc-tool-icon">
+                    <ToolIcon tool={act.tool} />
+                  </span>
+                  <span class="mc-tool-name">{act.tool.toLowerCase()}</span>
+                  {detail && <span class="mc-tool-detail">{detail}</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// IdleRow — single-line idle agent
+// ---------------------------------------------------------------------------
+
+function IdleRow({ agent }) {
+  return (
+    <div class="mc-idle-row" onClick={() => openPanel("agent", agent.name)}>
+      <span class="mc-dot dot-idle" />
+      <span class="mc-idle-name">{cap(agent.name)}</span>
+      <span class={"mc-badge mc-badge-role badge-role-" + agent.role}>{cap(agent.role)}</span>
+      <span class="mc-badge mc-badge-model">{agent.model}</span>
+      <span class="mc-idle-team">{agent.team}</span>
     </div>
   );
 }
@@ -310,111 +250,130 @@ function AgentCard({ agent, thinking, activities, expanded, onToggle }) {
 // ---------------------------------------------------------------------------
 
 export function MissionControl() {
-  const collapsed = missionControlCollapsed.value;
   const turnState = allTeamsTurnState.value;
   const thinking = agentThinking.value;
   const allAgentsList = allTeamsAgents.value;
   const allTasks = tasks.value;
   const activityLog = agentActivityLog.value;
 
-  const activeAgents = buildActiveAgentList(allAgentsList, turnState, allTasks);
-  const hasActive = activeAgents.length > 0;
+  const { active, idle } = buildAgentLists(allAgentsList, turnState, allTasks);
 
-  // --- Per-card expand/collapse ---
-  const [collapsedCards, setCollapsedCards] = useState(new Set());
+  // ── Transition tracking ──
+  // We track which agents are "exiting" from each section so we can play
+  // fade-out animations before removing from DOM.
 
-  const toggleCard = useCallback((agentName) => {
-    setCollapsedCards(prev => {
-      const next = new Set(prev);
-      if (next.has(agentName)) {
-        next.delete(agentName);
-      } else {
-        next.add(agentName);
-      }
-      return next;
-    });
-  }, []);
+  // exitingCards: agents that just left the active section (fading out as cards)
+  const [exitingCards, setExitingCards] = useState([]);
+  // exitingIdleNames: agent names that just left the idle section (fading out as rows)
+  const [exitingIdleNames, setExitingIdleNames] = useState([]);
+  // enteringCardNames: agents that just entered the active section (fading in)
+  const [enteringCardNames, setEnteringCardNames] = useState(new Set());
 
-  const isExpanded = (agentName) => !collapsedCards.has(agentName);
+  const prevActiveNamesRef = useRef(new Set());
 
-  // --- Auto-collapse / expand logic ---
-  const graceTimer = useRef(null);
+  const currentActiveNames = new Set(active.map(a => a.name));
 
   useEffect(() => {
-    if (missionControlManuallyCollapsed.value) return;
+    const prev = prevActiveNamesRef.current;
+    const cur = currentActiveNames;
 
-    if (hasActive && collapsed) {
-      missionControlCollapsed.value = false;
-    } else if (!hasActive && !collapsed) {
-      graceTimer.current = setTimeout(() => {
-        if (!missionControlManuallyCollapsed.value) {
-          missionControlCollapsed.value = true;
-        }
-      }, 5000);
+    // Agents newly becoming active
+    const newlyActive = [...cur].filter(n => !prev.has(n));
+    if (newlyActive.length) {
+      setEnteringCardNames(new Set(newlyActive));
+      // These agents' idle rows should fade out
+      setExitingIdleNames(prev2 => [...new Set([...prev2, ...newlyActive])]);
+      const t = setTimeout(() => {
+        setEnteringCardNames(new Set());
+        setExitingIdleNames(prev2 => prev2.filter(n => !newlyActive.includes(n)));
+      }, 250);
+      return ()=> clearTimeout(t);
     }
 
-    return () => {
-      if (graceTimer.current) clearTimeout(graceTimer.current);
-    };
-  }, [hasActive, collapsed]);
+    // Agents newly becoming idle
+    const newlyIdle = [...prev].filter(n => !cur.has(n));
+    if (newlyIdle.length) {
+      const exitAgents = allAgentsList
+        .filter(a => newlyIdle.includes(a.name))
+        .map(a => ({
+          name: a.name,
+          team: a.team || "unknown",
+          role: a.role || "engineer",
+          model: a.model || "sonnet",
+          inTurn: false,
+          taskId: null, taskTitle: "", taskStatus: "", sender: "",
+        }));
+      setExitingCards(prev2 => [...prev2, ...exitAgents.filter(a => !prev2.some(p => p.name === a.name))]);
+      const t = setTimeout(() => {
+        setExitingCards(prev2 => prev2.filter(a => !newlyIdle.includes(a.name)));
+      }, 200);
+      return () => clearTimeout(t);
+    }
 
-  const toggle = useCallback(() => {
-    const next = !missionControlCollapsed.value;
-    missionControlCollapsed.value = next;
-    missionControlManuallyCollapsed.value = next;
-  }, []);
+    prevActiveNamesRef.current = cur;
+  }, [JSON.stringify([...currentActiveNames].sort())]);
 
-  // Fully hidden when collapsed and no agents
-  if (collapsed && !hasActive) return null;
+  // Update prev ref after render
+  useEffect(() => {
+    prevActiveNamesRef.current = new Set(active.map(a => a.name));
+  });
 
-  // --- Rail mode ---
-  if (collapsed) {
-    return (
-      <div class="mc mc-rail">
-        <div class="mc-header">
-          <button class="mc-toggle" onClick={toggle} title="Expand Mission Control">
-            <MCToggleIcon collapsed={true} />
-          </button>
-        </div>
-        <div class="mc-rail-dots">
-          {activeAgents.map(a => (
-            <div
-              key={`${a.team}-${a.name}`}
-              class={"mc-rail-dot " + (a.inTurn ? "dot-active" : "dot-waiting")}
-              title={`${cap(a.name)} (${a.team})`}
-              onClick={toggle}
-            />
-          ))}
-        </div>
-      </div>
-    );
-  }
+  const showActiveSection = active.length > 0 || exitingCards.length > 0;
 
-  // --- Full panel ---
   return (
     <div class="mc">
       <div class="mc-header">
         <span class="mc-title">Mission Control</span>
-        <button class="mc-toggle" onClick={toggle} title="Collapse">
-          <MCToggleIcon collapsed={false} />
-        </button>
       </div>
 
-      <div class="mc-cards">
-        {activeAgents.map(a => (
-          <AgentCard
-            key={`${a.team}-${a.name}`}
-            agent={a}
-            thinking={thinking[a.name]}
-            activities={getRecentActivities(activityLog, a.name)}
-            expanded={isExpanded(a.name)}
-            onToggle={() => toggleCard(a.name)}
-          />
-        ))}
-        {!hasActive && (
+      <div class="mc-body">
+        {/* ── Active section ── */}
+        {showActiveSection && (
+          <div class="mc-section">
+            <div class="mc-section-label">Active</div>
+
+            {/* Cards fading out (became idle) */}
+            {exitingCards.map(a => (
+              <div key={`exit-${a.name}`} class="mc-card-exit">
+                <AgentCard agent={a} thinking={null} activities={[]} />
+              </div>
+            ))}
+
+            {/* Active cards */}
+            {active.map(a => (
+              <div
+                key={`${a.team}-${a.name}`}
+                class={enteringCardNames.has(a.name) ? "mc-card-enter" : ""}
+              >
+                <AgentCard
+                  agent={a}
+                  thinking={thinking[a.name]}
+                  activities={getRecentActivities(activityLog, a.name)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Idle section ── */}
+        {idle.length > 0 && (
+          <div class="mc-section mc-section-idle">
+            <div class="mc-section-label">Idle</div>
+            {idle.map(a => (
+              <div
+                key={`${a.team}-${a.name}`}
+                class={exitingIdleNames.includes(a.name) ? "mc-idle-row-exit" : ""}
+              >
+                <IdleRow agent={a} />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* No agents at all */}
+        {active.length === 0 && idle.length === 0 && exitingCards.length === 0 && (
           <div class="mc-empty">
-            <EmptyIcon />
-            <div class="mc-empty-text">No active agents</div>
+            <div class="mc-empty-text">No agents</div>
           </div>
         )}
       </div>
