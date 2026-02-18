@@ -64,15 +64,19 @@ function getRecentActivities(log, agentName, n = 4) {
 // Status summary — fits on one line next to the name
 // ---------------------------------------------------------------------------
 
-function getStatusSummary(agent) {
+function StatusSummary({ agent }) {
   if (agent.taskId && agent.taskTitle) {
     const verb = getStatusVerb(agent.taskStatus);
-    if (verb) return `${verb} ${taskIdStr(agent.taskId)}`;
-    return taskIdStr(agent.taskId);
+    return (
+      <span class="mc-status">
+        {verb && <span>{verb} </span>}
+        <span class="mc-task-id">{taskIdStr(agent.taskId)}</span>
+      </span>
+    );
   }
-  if (agent.sender) return `responding to ${cap(agent.sender)}`;
-  if (agent.inTurn) return "working";
-  return "idle";
+  if (agent.sender) return <span class="mc-status">responding to {cap(agent.sender)}</span>;
+  if (agent.inTurn) return <span class="mc-status">working</span>;
+  return <span class="mc-status">idle</span>;
 }
 
 function getStatusVerb(taskStatus) {
@@ -177,7 +181,6 @@ function AgentRow({ agent, thinking, activities }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [thinkingText]);
 
-  const status = getStatusSummary(agent);
   const hasThinking = thinkingText.length > 0;
 
   // ── Tool epoch logic ──
@@ -214,7 +217,7 @@ function AgentRow({ agent, thinking, activities }) {
       <div class="mc-row-header">
         <span class={"mc-dot " + (agent.inTurn ? "dot-active" : "dot-idle")} />
         <span class="mc-name">{cap(agent.name)}</span>
-        <span class="mc-status">{status}</span>
+        <StatusSummary agent={agent} />
       </div>
 
       {/* ── Active body: thinking stream + tools ── */}
@@ -222,19 +225,14 @@ function AgentRow({ agent, thinking, activities }) {
         <div class="mc-row-body">
           {/* Thinking stream (or cycling verb placeholder) */}
           {hasThinking ? (
-            <div class="mc-entry" onClick={(e) => e.stopPropagation()}>
-              <span class="mc-entry-icon"><ThinkingIcon /></span>
-              <div
-                class="mc-thinking-stream"
-                ref={streamRef}
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(thinkingText) }}
-              />
-            </div>
+            <div
+              class="mc-thinking-stream"
+              ref={streamRef}
+              onClick={(e) => e.stopPropagation()}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(thinkingText) }}
+            />
           ) : (
-            <div class="mc-entry">
-              <span class="mc-entry-icon"><ThinkingIcon /></span>
-              <span class="mc-entry-text"><CyclingVerb /></span>
-            </div>
+            <div class="mc-cycling-wrap"><CyclingVerb /></div>
           )}
 
           {/* Tool entries — last 2 from current epoch */}
@@ -243,12 +241,9 @@ function AgentRow({ agent, thinking, activities }) {
               ? act.detail.split("/").pop().substring(0, 40)
               : "";
             return (
-              <div key={`${act.tool}-${act.timestamp}-${i}`} class="mc-entry" onClick={(e) => e.stopPropagation()}>
-                <span class="mc-entry-icon"><ToolIcon tool={act.tool} /></span>
-                <span class="mc-entry-text">
-                  <span class="mc-tool-name">{act.tool.toLowerCase()}</span>
-                  {detail && <span class="mc-tool-detail">{detail}</span>}
-                </span>
+              <div key={`${act.tool}-${act.timestamp}-${i}`} class="mc-tool-line" onClick={(e) => e.stopPropagation()}>
+                <span class="mc-tool-name">{act.tool.toLowerCase()}</span>
+                {detail && <span class="mc-tool-detail">{detail}</span>}
               </div>
             );
           })}
@@ -279,7 +274,8 @@ export function MissionControl() {
   const activityLog = agentActivityLog.value;
   const team = currentTeam.value;
 
-  const agents = buildAgentList(allAgentsList, turnState, allTasks);
+  const teamAgents = allAgentsList.filter(a => a.team === team);
+  const agents = buildAgentList(teamAgents, turnState, allTasks);
 
   const EXCLUDED_STATUSES = new Set(["done", "cancelled", "rejected"]);
   const activeTasks = allTasks

@@ -612,8 +612,9 @@ body {
   white-space: nowrap;
 }
 
-/* Status text — fills remaining space */
+/* Status text — monospace, fills remaining space */
 .mc-status {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   font-size: 11px;
   color: var(--text-muted);
   flex: 1;
@@ -623,36 +624,19 @@ body {
   text-overflow: ellipsis;
 }
 
-/* ── Active body: indented entries below header ── */
+/* Task ID within status — standard product style */
+.mc-task-id {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+/* ── Active body: below header, no icons ── */
 .mc-row-body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 0 12px 4px 26px; /* 26 = 12 padding + 6 dot + 8 gap */
-}
-
-/* Individual entry row: icon + text */
-.mc-entry {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  min-height: 20px;
-}
-.mc-entry-icon {
-  color: var(--text-faint);
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  margin-top: 2px;
-  opacity: 0.5;
-}
-.mc-entry-text {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  padding: 0 12px 6px 26px; /* 26 = 12 padding + 6 dot + 8 gap */
 }
 
 /* Thinking stream — continuous, fades at top, system font for readability */
@@ -661,7 +645,7 @@ body {
   line-height: 1.6;
   color: var(--text-secondary);
   word-break: break-word;
-  max-height: calc(10 * 1.6 * 12px);  /* ~10 lines */
+  max-height: calc(8 * 1.6 * 12px);  /* ~8 lines */
   overflow-y: auto;
   -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 20%);
   mask-image: linear-gradient(to bottom, transparent 0%, black 20%);
@@ -680,13 +664,23 @@ body {
   opacity: 0.5;
 }
 
-/* Tool name + detail in entry */
-.mc-tool-name {
+/* Tool line — monospace, tool name bold */
+.mc-tool-line {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  line-height: 1.4;
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.mc-tool-name {
+  font-weight: 600;
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 .mc-tool-detail {
-  color: var(--text-muted);
   opacity: 0.6;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -696,6 +690,12 @@ body {
 }
 
 /* ── Cycling verb (pre-thinking placeholder) ── */
+.mc-cycling-wrap {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
 .mc-cycling {
   display: inline-block;
   transition: opacity 200ms ease;
