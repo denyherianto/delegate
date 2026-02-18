@@ -1163,7 +1163,7 @@ export function TaskSidePanel() {
   useEffect(() => {
     if (id === null) return;
 
-    const PANEL_TABS = ["overview", "changes", "activity"];
+    const PANEL_TABS = ["overview", "activity", "changes", "merge"];
 
     const handler = (e) => {
       const target = e.target;
