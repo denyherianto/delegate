@@ -791,11 +791,19 @@ export function ChatPanel() {
   // Filter + sort messages
   const filteredMsgs = useMemo(() => {
     let filtered = msgs;
+    // Only show human<->delegate messages; always include events and commands
+    const human = (humanName.value || "human").toLowerCase();
+    filtered = filtered.filter(m =>
+      m.type === "event" ||
+      m.type === "command" ||
+      (m.sender || "").toLowerCase() === human ||
+      (m.recipient || "").toLowerCase() === human
+    );
     if (!showTaskUpdates) filtered = filtered.filter(m => m.type !== "event");
     const sq = filterSearch.toLowerCase().trim();
     if (sq) filtered = filtered.filter(m => (m.content || "").toLowerCase().includes(sq));
     return filtered;
-  }, [msgs, showTaskUpdates, filterSearch]);
+  }, [msgs, showTaskUpdates, filterSearch, humanName.value]);
 
   // Track scroll position and load older messages
   useEffect(() => {
