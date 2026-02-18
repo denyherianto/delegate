@@ -169,8 +169,7 @@ function App() {
         if (idx < teamArr.length) {
           e.preventDefault();
           const teamName = typeof teamArr[idx] === "object" ? teamArr[idx].name : teamArr[idx];
-          const currentTab = activeTab.value;
-          navigate(teamName, currentTab);
+          navigate(teamName, "chat");
         }
         return;
       }

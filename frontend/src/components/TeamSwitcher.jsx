@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "preact/hooks";
-import { currentTeam, activeTab, teams, tasks, agents, navigate } from "../state.js";
+import { currentTeam, teams, tasks, agents, navigate } from "../state.js";
 import { cap } from "../utils.js";
 
 /**
@@ -57,12 +57,7 @@ export function TeamSwitcher({ open, onClose }) {
   }, [open]);
 
   const selectTeam = useCallback((teamName) => {
-    const current = currentTeam.value;
-    if (teamName !== current) {
-      // Preserve the current tab when switching projects
-      const currentTab = activeTab.value;
-      navigate(teamName, currentTab);
-    }
+    navigate(teamName, "chat");  // always go to chat, even same team
     onClose();
   }, [onClose]);
 
