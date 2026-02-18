@@ -789,6 +789,81 @@ function ActivityTab({ taskId, task, activityRaw, onLoadActivity }) {
   );
 }
 
+// ── Approve dialog (keyboard shortcut flow) ──
+// Opened via Enter when task is in_approval. Cmd+Enter submits, Esc closes.
+function ApproveDialog({ task, onClose, onAction }) {
+  const [summary, setSummary] = useState("");
+  const [loading, setLoading] = useState(false);
+  const textareaRef = useRef(null);
+
+  // Focus textarea on mount
+  useEffect(() => {
+    if (textareaRef.current) textareaRef.current.focus();
+  }, []);
+
+  const handleApprove = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await api.approveTask(task.id, summary);
+      if (onAction) onAction();
+      onClose();
+    } catch (e) {
+      showToast("Failed to approve: " + e.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await api.rejectTask(task.id, summary || "(no reason)", summary);
+      if (onAction) onAction();
+      onClose();
+    } catch (e) {
+      showToast("Failed to reject: " + e.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    e.stopPropagation();
+    if (e.key === "Escape") { onClose(); return; }
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleApprove(); return; }
+  };
+
+  return (
+    <div class="approve-dialog-backdrop" onClick={onClose}>
+      <div class="approve-dialog" onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
+        <div class="approve-dialog-header">
+          <span class="approve-dialog-title">Approve task</span>
+          <button class="approve-dialog-close" onClick={onClose}>&times;</button>
+        </div>
+        <textarea
+          ref={textareaRef}
+          class="approve-dialog-textarea"
+          placeholder="Review comment (optional)..."
+          value={summary}
+          onInput={(e) => setSummary(e.target.value)}
+          rows="4"
+        />
+        <div class="approve-dialog-hint">Cmd+Enter to approve · Esc to cancel</div>
+        <div class="approve-dialog-actions">
+          <button class="btn-approve" disabled={loading} onClick={handleApprove}>
+            {loading ? "Approving..." : "\u2714 Approve"}
+          </button>
+          <button class="btn-reject" disabled={loading} onClick={handleReject}>
+            {loading ? "Rejecting..." : "\u2716 Request Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main TaskSidePanel ──
 export function TaskSidePanel() {
   const [id, setId] = useState(() => taskPanelId.peek());
@@ -837,6 +912,7 @@ export function TaskSidePanel() {
   const [oldComments, setOldComments] = useState([]);
   const [activityRaw, setActivityRaw] = useState(null);
   const [activityLoaded, setActivityLoaded] = useState(false);
+  const [approveDialogOpen, setApproveDialogOpen] = useState(false);
 
   // Mark tab as visited when selected.
   // IMPORTANT: persist to _tabState synchronously FIRST, before queuing
@@ -1055,6 +1131,64 @@ export function TaskSidePanel() {
 
   const close = useCallback(() => { closeAllPanels(); }, []);
 
+  // ── Keyboard shortcuts (scoped to task panel when open) ──
+  // Runs in capture phase to intercept before app.jsx bubble-phase handler.
+  useEffect(() => {
+    if (id === null) return;
+
+    const PANEL_TABS = ["overview", "changes", "activity"];
+
+    const handler = (e) => {
+      const target = e.target;
+      const inInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
+
+      // Esc: if approve dialog is open, close dialog and stop propagation so
+      // app.jsx doesn't also close the panel.
+      if (e.key === "Escape") {
+        // Check current dialog state via ref to avoid stale closure
+        const dialogEl = document.querySelector(".approve-dialog-backdrop");
+        if (dialogEl) {
+          e.stopPropagation();
+          setApproveDialogOpen(false);
+        }
+        // Otherwise let app.jsx handle Esc (closes the panel)
+        return;
+      }
+
+      // Tab: cycle through tabs (not when inside an input)
+      if (e.key === "Tab" && !e.metaKey && !e.ctrlKey && !e.altKey && !inInput) {
+        e.preventDefault();
+        setActiveTab(prev => {
+          const idx = PANEL_TABS.indexOf(prev);
+          const next = PANEL_TABS[(idx + 1) % PANEL_TABS.length];
+          // Update module-level tabState too (synchronously, before possible remount)
+          const saved = _tabState.get(id) || { visitedTabs: { overview: true } };
+          _tabState.set(id, {
+            activeTab: next,
+            visitedTabs: { ...saved.visitedTabs, [next]: true },
+          });
+          setVisitedTabs(v => v[next] ? v : { ...v, [next]: true });
+          return next;
+        });
+        return;
+      }
+
+      // Enter: open approve dialog (only when task is in_approval, not in input)
+      if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.altKey && !inInput) {
+        // Read task status from module-level cache (avoids stale closure)
+        const currentTask = _getCache(id)?.task;
+        if (currentTask && currentTask.status === "in_approval") {
+          e.preventDefault();
+          setApproveDialogOpen(true);
+        }
+        return;
+      }
+    };
+
+    document.addEventListener("keydown", handler, true); // capture phase: runs before app.jsx bubble handler
+    return () => document.removeEventListener("keydown", handler, true);
+  }, [id]);
+
   const handleAction = useCallback(() => {
     const filter = taskTeamFilter.value;
     if (filter === "all") {
@@ -1091,6 +1225,13 @@ export function TaskSidePanel() {
 
   return (
     <>
+      {approveDialogOpen && t && t.status === "in_approval" && (
+        <ApproveDialog
+          task={t}
+          onClose={() => setApproveDialogOpen(false)}
+          onAction={handleAction}
+        />
+      )}
       <div class={"task-panel" + (isOpen ? " open" : "")}>
         {/* Back bar */}
         {hasPrev && (
