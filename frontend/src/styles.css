@@ -1161,23 +1161,23 @@ body {
 .approve-dialog-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.45);
+  background: rgba(0,0,0,0.6);
   z-index: 1100;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .approve-dialog {
-  background: var(--bg-panel);
+  background: var(--bg-card, #242424);
   border: 1px solid var(--border-default);
   border-radius: 10px;
   padding: 20px;
   width: 420px;
-  max-width: 92vw;
+  max-width: 90vw;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
 }
 .approve-dialog-header {
   display: flex;
