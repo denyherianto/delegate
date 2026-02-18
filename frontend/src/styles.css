@@ -1200,14 +1200,7 @@ body {
   border-left-color: var(--accent);
 }
 
-/* Boss vs non-boss content hierarchy (opacity-based) */
-.msg-content.content-boss {
-  opacity: 1;
-}
 
-.msg-content.content-regular {
-  opacity: 0.5;
-}
 
 .msg-body { min-width: 0; }
 .msg-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
