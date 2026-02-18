@@ -103,9 +103,18 @@ export function ManagerActivityBar() {
   const hasThinking = revealedText.length > 0;
 
   // Tool epoch logic (same as MissionControl AgentRow)
-  const agentActivities = isActive
-    ? activityLog.filter(e => e.agent === managerName && e.type === "agent_activity")
-    : [];
+  // Only consider activities from the current turn (after the last turn_separator)
+  const agentActivities = (() => {
+    if (!isActive) return [];
+    let startIdx = 0;
+    for (let i = activityLog.length - 1; i >= 0; i--) {
+      if (activityLog[i].agent === managerName && activityLog[i].type === "turn_separator") {
+        startIdx = i + 1;
+        break;
+      }
+    }
+    return activityLog.slice(startIdx).filter(e => e.agent === managerName && e.type === "agent_activity");
+  })();
   const breaks = (thinkingText.match(/\n\n---\n\n/g) || []).length;
   const unconsumedTools = Math.max(0, agentActivities.length - breaks);
   const recentTools = unconsumedTools > 0

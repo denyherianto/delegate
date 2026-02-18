@@ -55,9 +55,17 @@ function buildAgentList(agentsList, turnState, allTasks) {
   return result;
 }
 
-/** Get all activity entries for a given agent from the log. */
+/** Get activity entries for a given agent's *current turn* from the log. */
 function getAgentActivities(log, agentName) {
-  return log.filter(e => e.agent === agentName && e.type === "agent_activity");
+  // Find the last turn_separator for this agent — only show tools from after it
+  let startIdx = 0;
+  for (let i = log.length - 1; i >= 0; i--) {
+    if (log[i].agent === agentName && log[i].type === "turn_separator") {
+      startIdx = i + 1;
+      break;
+    }
+  }
+  return log.slice(startIdx).filter(e => e.agent === agentName && e.type === "agent_activity");
 }
 
 // ---------------------------------------------------------------------------
