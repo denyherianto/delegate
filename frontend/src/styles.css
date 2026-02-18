@@ -2342,6 +2342,18 @@ select option:hover {
 .task-attachment-name { color: var(--text-secondary); cursor: pointer; word-break: break-all; font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
 .task-attachment-name:hover { text-decoration: underline; }
 .task-panel-dates { display: flex; gap: 24px; font-size: 11px; color: var(--text-muted); align-items: center; margin-bottom: 20px; }
+
+/* Overview tab 2-column property grid */
+.task-overview-grid { display: grid; grid-template-columns: 90px 1fr; row-gap: 0; margin-bottom: 20px; }
+.task-overview-key { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); line-height: 28px; padding-right: 12px; white-space: nowrap; align-self: center; }
+.task-overview-val { font-size: 13px; color: var(--text-primary); line-height: 28px; align-self: center; }
+.task-overview-dep-pills { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.task-overview-dep-pill { cursor: pointer; font-size: 11px; }
+.task-overview-dep-pill:hover { opacity: 0.8; }
+
+/* base_sha copy button layout */
+.task-base-sha-entry { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; }
+
 .task-panel-vcs-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
 
 /* File summary bar in Changes tab */

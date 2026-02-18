@@ -344,59 +344,50 @@ function OverviewTab({ task, stats }) {
     [t.description]
   );
 
+  // Build depends-on pills
+  const depPills = t.depends_on && t.depends_on.length > 0 ? (
+    <span class="task-overview-dep-pills">
+      {t.depends_on.map(d => {
+        const depStatus = (t._dep_statuses && t._dep_statuses[d]) || "todo";
+        return (
+          <span
+            key={d}
+            class={"badge badge-" + depStatus + " task-overview-dep-pill"}
+            onClick={(e) => { e.stopPropagation(); pushPanel("task", d); }}
+          >
+            {taskIdStr(d)}
+          </span>
+        );
+      })}
+    </span>
+  ) : null;
+
   return (
     <div>
-      {/* Inline metadata */}
-      <div class="task-panel-meta-inline">
-        <span class="task-panel-meta-pair">
-          <span class="task-panel-meta-label">DRI:</span> {t.dri ? cap(t.dri) : "\u2014"}
-        </span>
-        <span class="task-panel-meta-separator"> · </span>
-        <span class="task-panel-meta-pair">
-          <span class="task-panel-meta-label">Assignee:</span> {t.assignee ? cap(t.assignee) : "\u2014"}
-        </span>
-        <span class="task-panel-meta-separator"> · </span>
-        <span class="task-panel-meta-pair">
-          <span class="task-panel-meta-label">Est:</span> {stats ? fmtElapsed(stats.elapsed_seconds) : "\u2014"}
-        </span>
+      {/* 2-column property grid */}
+      <div class="task-overview-grid">
+        <span class="task-overview-key">Assignee</span>
+        <span class="task-overview-val">{t.assignee ? cap(t.assignee) : "\u2014"}</span>
+
+        <span class="task-overview-key">DRI</span>
+        <span class="task-overview-val">{t.dri ? cap(t.dri) : "\u2014"}</span>
+
+        <span class="task-overview-key">Priority</span>
+        <span class="task-overview-val">{t.priority ? cap(t.priority) : "\u2014"}</span>
+
+        <span class="task-overview-key">Created</span>
+        <span class="task-overview-val">{fmtTimestamp(t.created_at)}</span>
+
+        <span class="task-overview-key">Updated</span>
+        <span class="task-overview-val">{fmtTimestamp(t.updated_at)}</span>
+
+        {depPills && (
+          <>
+            <span class="task-overview-key">Depends on</span>
+            <span class="task-overview-val">{depPills}</span>
+          </>
+        )}
       </div>
-      {stats && (
-        <div class="task-panel-meta-inline" style={{ marginTop: "8px" }}>
-          <span class="task-panel-meta-pair">
-            <span class="task-panel-meta-label">Tokens:</span> {fmtTokens(stats.total_tokens_in, stats.total_tokens_out)}
-          </span>
-          <span class="task-panel-meta-separator"> · </span>
-          <span class="task-panel-meta-pair">
-            <span class="task-panel-meta-label">Cost:</span> {fmtCost(stats.total_cost_usd)}
-          </span>
-        </div>
-      )}
-      {/* Dates */}
-      <div class="task-panel-dates">
-        <span>Created: <span>{fmtTimestamp(t.created_at)}</span></span>
-        <span>Updated: <span>{fmtTimestamp(t.updated_at)}</span></span>
-        {t.completed_at && <span>Completed: <span>{fmtTimestamp(t.completed_at)}</span></span>}
-      </div>
-      {/* Dependencies */}
-      {t.depends_on && t.depends_on.length > 0 && (
-        <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "12px" }}>
-          Depends on:{" "}
-          {t.depends_on.map(d => {
-            const depStatus = (t._dep_statuses && t._dep_statuses[d]) || "todo";
-            return (
-              <span
-                key={d}
-                class="task-link"
-                onClick={(e) => { e.stopPropagation(); pushPanel("task", d); }}
-              >
-                <span class={"badge badge-" + depStatus} style={{ fontSize: "11px", marginRight: "4px", cursor: "pointer" }}>
-                  {taskIdStr(d)}
-                </span>
-              </span>
-            );
-          })}
-        </div>
-      )}
       {/* Description */}
       {t.description && (
         <div class="task-panel-section">
@@ -498,10 +489,29 @@ function ChangesTab({ task, diffRaw, currentReview, oldComments, stats }) {
         <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "12px" }}>
           Base:{" "}
           {Object.entries(t.base_sha).map(([repo, sha], i) => (
-            <code key={i} style={{ fontFamily: "SF Mono,Fira Code,monospace", background: "var(--bg-active)", padding: "2px 6px", borderRadius: "3px", marginRight: "6px" }}>
-              {Object.keys(t.base_sha).length > 1 ? repo + ": " : ""}{String(sha).substring(0, 10)}
-            </code>
+            <span key={i} class="task-base-sha-entry">
+              <code style={{ fontFamily: "SF Mono,Fira Code,monospace", background: "var(--bg-active)", padding: "2px 6px", borderRadius: "3px" }}>
+                {Object.keys(t.base_sha).length > 1 ? repo + ": " : ""}{String(sha).substring(0, 10)}
+              </code>
+              <CopyBtn text={String(sha)} />
+            </span>
           ))}
+        </div>
+      )}
+      {/* Engineering stats (Est / Tokens / Cost) */}
+      {stats && (
+        <div class="task-panel-meta-inline" style={{ marginBottom: "12px" }}>
+          <span class="task-panel-meta-pair">
+            <span class="task-panel-meta-label">Est:</span> {fmtElapsed(stats.elapsed_seconds)}
+          </span>
+          <span class="task-panel-meta-separator"> · </span>
+          <span class="task-panel-meta-pair">
+            <span class="task-panel-meta-label">Tokens:</span> {fmtTokens(stats.total_tokens_in, stats.total_tokens_out)}
+          </span>
+          <span class="task-panel-meta-separator"> · </span>
+          <span class="task-panel-meta-pair">
+            <span class="task-panel-meta-label">Cost:</span> {fmtCost(stats.total_cost_usd)}
+          </span>
         </div>
       )}
       {/* File summary bar */}
