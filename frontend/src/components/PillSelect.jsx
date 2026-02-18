@@ -5,6 +5,7 @@
  * Used for chat/task filter controls (Team, From, To, Type).
  */
 import { useState, useEffect, useRef } from "preact/hooks";
+import { cap } from "../utils.js";
 
 // Reuse FilterBar's Dropdown styling approach
 function Dropdown({ items, onSelect, onClose, anchorRef }) {
@@ -124,7 +125,7 @@ export function PillSelect({ label, value, options, onChange, className }) {
       const optVal = typeof opt === "string" ? opt : opt.value;
       return optVal === value;
     });
-    if (!option) return value;
+    if (!option) return cap(value);
     return typeof option === "string" ? option : option.label;
   })();
 
