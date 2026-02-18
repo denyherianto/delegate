@@ -92,9 +92,11 @@ function ProjectList({ collapsed }) {
 
   return (
     <div class="sb-projects">
-      <div class="sb-projects-header">
-        {!collapsed && <span class="sb-projects-label">Projects</span>}
-      </div>
+      {!collapsed && (
+        <div class="sb-projects-header">
+          <span class="sb-projects-label">Projects</span>
+        </div>
+      )}
       {!collapsed && teamList.length > 0 && (
         <div class="sb-projects-list">
           {teamList.map(t => {

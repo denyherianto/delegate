@@ -199,7 +199,7 @@ body {
 .panel.active { display: flex; flex-direction: column; flex: 1; min-height: 0; position: relative; }
 
 /* ================================================================
-   Sidebar — collapsible, minimal
+   Sidebar — collapsible, minimal, polished
    ================================================================ */
 .sb {
   width: 240px;
@@ -213,8 +213,10 @@ body {
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
-  transition: width 150ms ease, min-width 150ms ease;
+  transition: width 180ms ease, min-width 180ms ease;
+  scrollbar-width: none;            /* Firefox */
 }
+.sb::-webkit-scrollbar { display: none; } /* Chrome/Safari */
 .sb-collapsed {
   width: 48px;
   min-width: 48px;
@@ -227,11 +229,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  padding: 0 14px;
   box-sizing: border-box;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: 4px;
 }
 .sb-collapsed .sb-top {
   height: 48px;
@@ -247,48 +247,57 @@ body {
   color: var(--text-muted);
   cursor: pointer;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 100ms;
+  transition: color 120ms, background 120ms;
   flex-shrink: 0;
 }
-.sb-toggle:hover { color: var(--text-primary); }
+.sb-toggle:hover { color: var(--text-primary); background: rgba(255,255,255,0.04); }
 
 /* Nav buttons */
 .sb-nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 8px 8px 12px;
+  gap: 1px;
+  padding: 6px 8px 8px;
   flex-shrink: 0;
 }
-.sb-collapsed .sb-nav { padding: 8px 6px 12px; }
+.sb-collapsed .sb-nav { padding: 6px 6px 8px; }
 
 .sb-nav-btn {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 10px;
+  padding: 8px 10px;
   border: none;
   background: none;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  border-radius: 6px;
-  transition: color 100ms, background 100ms;
+  border-radius: 7px;
+  transition: color 120ms, background 120ms;
   justify-content: flex-start;
 }
-.sb-nav-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
-.sb-nav-btn.active { color: var(--text-heading); background: var(--bg-active); }
+.sb-nav-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.04);
+}
+.sb-nav-btn.active {
+  color: var(--text-heading);
+  background: rgba(255,255,255,0.06);
+}
 .sb-collapsed .sb-nav-btn {
   justify-content: center;
   padding: 8px;
 }
-.sb-nav-label { white-space: nowrap; }
+.sb-nav-label {
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
 
 /* Notification button in sidebar */
 .sb-notif-icon-wrap {
@@ -450,24 +459,24 @@ body {
 
 /* ── Project list in sidebar ── */
 .sb-projects {
-  padding: 4px 8px 8px;
-  border-top: 1px solid var(--border-subtle);
+  padding: 8px 8px 12px;
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: none;
   min-height: 0;
 }
+.sb-projects::-webkit-scrollbar { display: none; }
 .sb-projects-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 10px 6px;
+  padding: 6px 10px 8px;
 }
 .sb-projects-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.02em;
 }
 .sb-projects-list {
   display: flex;
@@ -475,24 +484,41 @@ body {
   gap: 1px;
 }
 .sb-project-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 5px 10px;
+  padding: 7px 10px;
   border: none;
   background: none;
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 7px;
   text-align: left;
+  transition: color 120ms, background 120ms;
 }
-.sb-project-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.sb-project-item:hover {
+  background: rgba(255,255,255,0.04);
+  color: var(--text-primary);
+}
 .sb-project-item.active {
-  background: var(--bg-active);
+  background: rgba(74,222,128,0.06);
   color: var(--text-heading);
+}
+/* Green left accent bar on active project */
+.sb-project-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  opacity: 0.7;
 }
 .sb-project-dot {
   width: 6px;
@@ -501,17 +527,18 @@ body {
   flex-shrink: 0;
   /* Sit inside an 18px box so project names align with nav icon labels */
   margin: 0 6px;
-  /* background controlled by dot-active/dot-idle modifier classes */
+  transition: background 200ms, opacity 200ms;
 }
 .sb-project-dot.dot-active {
-  background: var(--dot-active);
-  animation: sb-dot-pulse 1.8s ease-in-out infinite;
+  background: var(--accent);
+  animation: sb-dot-pulse 2s ease-in-out infinite;
 }
 .sb-project-dot.dot-idle {
-  background: var(--text-muted);
+  background: var(--text-faint);
+  opacity: 0.7;
 }
 @keyframes sb-dot-pulse {
-  0%, 100% { opacity: 0.4; }
+  0%, 100% { opacity: 0.5; }
   50%       { opacity: 1; }
 }
 .sb-project-name {
@@ -520,10 +547,9 @@ body {
   white-space: nowrap;
 }
 .sb-projects-empty {
-  font-size: 11px;
-  color: var(--text-faint);
-  padding: 8px 4px;
-  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 12px 10px;
 }
 
 @media (max-width: 900px) { .sb { display: none; } }
