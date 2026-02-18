@@ -2,6 +2,43 @@
 
 All notable changes to Delegate are documented here.
 
+## 0.2.6 — 2026-02-18
+
+### Added
+- **UI overhaul** — three-panel layout (sidebar, main chat, right activity panel) with shared workspace header showing the active project name.
+- **Delegate thinking footer** — glass card in the main chat panel streams Delegate's live thinking word-by-word with tool entries, context labels ("responding to Nikhil", "working on T123"), and auto-scroll. Clicking the header opens Delegate's side panel.
+- **Mission Control sidebar** — per-project agents + active tasks with live elapsed timers, streaming thinking text, and tool epoch tracking. Agents and tasks in independently scrollable sections.
+- **Sidebar polish** — collapsible sidebar with notification bell + badge, project list with activity dots, green accent bar on active project, hidden scrollbars, softer hover states.
+- **Reviewer edit modal** — CodeMirror 6 editor replaces the plain textarea for reviewing agent edits.
+- **Task panel improvements** — keyboard shortcuts, search icon with expand/collapse, styled empty states, live timers on agent and task detail panels.
+- **File diffs in agent cards** — show diffs on task completion.
+- **PWA support** — manifest, service worker, install/use-app banners, macOS standalone launch helper.
+- **Syntax highlighting** — full highlight.js library with `highlightAuto()` fallback for unlisted extensions.
+- **Repo instruction injection** — repo-level instruction files included in agent preamble.
+- **Project name validation** — CLI and API reject invalid project names.
+
+### Changed
+- **Thinking accumulation** — backend sends full accumulated thinking text with `---` tool-break markers instead of truncated snippets; frontend uses epochs to cycle tool display.
+- **Human message priority** — `_select_batch` ensures human messages form exclusive batches for clear turn attribution.
+- **Manager sandbox** — `.git/` write access granted to manager agent.
+- **Merge rework** — pre-merge tests run in agent worktree with async read-write locking and exponential backoff on worktree errors.
+- **Default model** — changed to `sonnet` for all roles including manager.
+- **Reflection tuning** — probability reduced from 10% to 5%.
+- **Green message border** — moved from human messages to Delegate messages.
+- **Chat filters** — bidi default, pill-based redesign, agent-to-agent messages filtered out.
+- **`prettyName` utility** — consistent project name display across all locations.
+
+### Fixed
+- Duplicate `merge_task()` calls for same-cycle tasks.
+- `isBoss` reference error in ChatPanel (now `isDelegate`).
+- PillSelect showing raw name when option not found.
+- Agent filtering to current team in Mission Control.
+- Live timer invisible on dark background.
+- Selection tooltip not appearing on quick mouse selection.
+- Spurious dot after agent name in comment events.
+- ApproveDialog modal opacity and styling.
+- Task row timer/badge alignment in Mission Control.
+
 ## 0.2.5 — 2026-02-15
 
 ### Added
