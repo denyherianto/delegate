@@ -22,7 +22,7 @@ from pathlib import Path
 
 from delegate.task import format_task_id
 
-from delegate.paths import repos_dir as _repos_dir, repo_path as _repo_path, agent_worktrees_dir, task_worktree_dir
+from delegate.paths import repos_dir as _repos_dir, repo_path as _repo_path, task_worktree_dir
 from delegate.config import (
     add_repo as _config_add_repo,
     get_repos as _config_get_repos,

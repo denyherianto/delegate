@@ -79,6 +79,7 @@ from delegate.task import (
     format_task_id, transition_task, assign_task,
 )
 from delegate.chat import log_event
+from delegate.paths import team_dir as _team_dir
 from delegate.repo import get_repo_path, remove_task_worktree
 
 logger = logging.getLogger(__name__)
@@ -283,12 +284,9 @@ def _reset_agent_worktree(
 def _merge_worktree_dir(hc_home: Path, team: str, uid: str, task_id: int) -> Path:
     """Worktree path for a merge attempt.
 
-    Layout: ``teams/<team>/worktrees/_merge/<uid>/T<id>/``
+    Layout: ``teams/<team_uuid>/worktrees/_merge/<uid>/T<id>/``
     """
-    return (
-        hc_home / "teams" / team / "worktrees" / "_merge"
-        / uid / format_task_id(task_id)
-    )
+    return _team_dir(hc_home, team) / "worktrees" / "_merge" / uid / format_task_id(task_id)
 
 
 def _create_temp_worktree(

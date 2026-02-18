@@ -98,7 +98,6 @@ AGENT_SUBDIRS = [
     "feedback",
     "logs",
     "workspace",
-    "worktrees",
 ]
 
 
