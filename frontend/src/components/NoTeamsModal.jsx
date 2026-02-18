@@ -9,7 +9,7 @@ export function NoTeamsModal() {
     <div class="no-teams-backdrop">
       <div class="no-teams-modal">
         <div class="no-teams-header">
-          <h2>No projects configured</h2>
+          <h2>Create your first project</h2>
         </div>
         <div class="no-teams-body">
           <p>Create a project to get started:</p>
@@ -20,10 +20,6 @@ export function NoTeamsModal() {
             >
               + New Project
             </button>
-          </div>
-          <p class="no-teams-hint">Or from the CLI:</p>
-          <div class="no-teams-commands">
-            <code>delegate team add &lt;name&gt;</code>
           </div>
           <p class="no-teams-hint">The page will update automatically once a project is created.</p>
         </div>

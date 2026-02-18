@@ -14,7 +14,9 @@ export function NewProjectModal() {
   const [model, setModel] = useState("sonnet");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [pickedDirName, setPickedDirName] = useState(null);
   const nameRef = useRef(null);
+  const repoInputRef = useRef(null);
 
   // Auto-focus name field when modal opens
   useEffect(() => {
@@ -29,6 +31,7 @@ export function NewProjectModal() {
       setModel("sonnet");
       setError("");
       setSubmitting(false);
+      setPickedDirName(null);
     }
   }, [isOpen]);
 
@@ -71,6 +74,22 @@ export function NewProjectModal() {
     }
   }, [name, repoPath, agentCount, model, close]);
 
+  // Native directory picker — populates input with folder name as a starting
+  // point. showDirectoryPicker() doesn't return the full path (browser security),
+  // so we show a hint prompting the user to complete it.
+  const handleBrowse = useCallback(async () => {
+    try {
+      const dir = await window.showDirectoryPicker({ mode: "read" });
+      setRepoPath(dir.name);
+      setPickedDirName(dir.name);
+      // Focus input so user can prepend the full path
+      if (repoInputRef.current) repoInputRef.current.focus();
+    } catch (e) {
+      // User cancelled — ignore. Log unexpected errors.
+      if (e.name !== "AbortError") console.warn("Directory picker error:", e);
+    }
+  }, []);
+
   // Handle Escape key
   const handleKeyDown = useCallback((e) => {
     if (e.key === "Escape") close();
@@ -107,17 +126,29 @@ export function NewProjectModal() {
           {/* Repository path */}
           <div class="npm-field">
             <label class="npm-label" for="npm-repo">Repository path</label>
-            <input
-              id="npm-repo"
-              class="npm-input"
-              type="text"
-              placeholder="/Users/you/dev/my-project"
-              value={repoPath}
-              onInput={(e) => setRepoPath(e.target.value)}
-              disabled={submitting}
-              autocomplete="off"
-            />
-            <span class="npm-hint">Absolute path to a local git repository</span>
+            <div class="npm-dir-row">
+              <input
+                ref={repoInputRef}
+                id="npm-repo"
+                class="npm-input npm-dir-input"
+                type="text"
+                placeholder="/Users/you/dev/my-project"
+                value={repoPath}
+                onInput={(e) => { setRepoPath(e.target.value); setPickedDirName(null); }}
+                disabled={submitting}
+                autocomplete="off"
+              />
+              {typeof window !== "undefined" && window.showDirectoryPicker && (
+                <button type="button" class="npm-browse-btn" onClick={handleBrowse} disabled={submitting}>
+                  Browse...
+                </button>
+              )}
+            </div>
+            {pickedDirName ? (
+              <span class="npm-hint">Tip: enter the full path above, e.g. /Users/you/dev/{pickedDirName}</span>
+            ) : (
+              <span class="npm-hint">Absolute path to a local git repository</span>
+            )}
           </div>
 
           {/* Agent count + Model (side by side) */}
