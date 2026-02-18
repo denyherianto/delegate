@@ -187,45 +187,7 @@ test.describe("Team Switcher", () => {
     ).toContainText("Otherteam");
   });
 
-  test("chat page PillSelect team dropdown works", async ({ page }) => {
-    await gotoReady(page, "/chat");
-
-    // Wait for page to load — the Team PillSelect should be visible in chat filters
-    const teamPill = page.locator(".pill-select").first();
-    await expect(teamPill).toBeVisible({ timeout: 5_000 });
-
-    // Click the PillSelect value to open dropdown
-    await teamPill.locator(".pill-select-value").click();
-
-    // Dropdown should appear
-    const dropdown = page.locator(".fb-dropdown");
-    await expect(dropdown).toBeVisible({ timeout: 2_000 });
-  });
-
-  test("switching teams via PillSelect dropdown works", async ({ page }) => {
-    await gotoReady(page, "/chat");
-
-    // Wait for page to load
-    const teamPill = page.locator(".pill-select").first();
-    await expect(teamPill).toBeVisible({ timeout: 5_000 });
-
-    // Click team selector
-    await teamPill.locator(".pill-select-value").click();
-    const dropdown = page.locator(".fb-dropdown");
-    await expect(dropdown).toBeVisible({ timeout: 2_000 });
-
-    // Click other team
-    await dropdown.locator(".fb-dropdown-item", { hasText: "Otherteam" }).click();
-
-    // Wait for team switch
-    await page.waitForTimeout(500);
-
-    // Verify by opening Cmd+K switcher
-    const modifier = process.platform === "darwin" ? "Meta" : "Control";
-    await page.keyboard.press(`${modifier}+KeyK`);
-    const currentTeamItem = page.locator(".team-switcher-item.current");
-    await expect(
-      currentTeamItem.locator(".team-switcher-item-name")
-    ).toContainText("Otherteam");
-  });
+  // NOTE: "chat page PillSelect" and "switching teams via PillSelect" tests
+  // were removed because the Project PillSelect was removed from the chat
+  // filter bar (chat is now implicitly scoped to the current project).
 });

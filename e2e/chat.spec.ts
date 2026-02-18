@@ -20,12 +20,10 @@ test.describe("Chat interactions", () => {
     // Wait for the sidebar nav to be visible — confirms the app shell rendered.
     await expect(page.locator(".sb-nav-btn").first()).toBeVisible({ timeout: 10_000 });
 
-    // Wait for seeded messages to load — we need at least 5 chat messages
-    // (the seed creates 5 chat messages + 2 events for testteam).
-    // Waiting for a specific count avoids the pitfall where only an
-    // auto-generated greeting message satisfies a single-element wait.
+    // Wait for seeded messages to load — chat now filters to human↔delegate
+    // only, so we see 3 chat messages + 2 events out of the 5 seeded messages.
     await page.waitForFunction(
-      () => document.querySelectorAll(".msg").length >= 5,
+      () => document.querySelectorAll(".msg").length >= 3,
       { timeout: 15_000 },
     );
 

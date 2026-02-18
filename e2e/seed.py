@@ -68,7 +68,7 @@ def seed(hc_home: Path) -> None:
         assignee="bob",
         description=(
             "Build the design system based on the spec.\n\n"
-            "See the brief: teams/testteam/shared/specs/design-brief.md\n\n"
+            f"See the brief: {hc_home}/teams/testteam/shared/specs/design-brief.md\n\n"
             "This task depends on T0001."
         ),
         priority="medium",

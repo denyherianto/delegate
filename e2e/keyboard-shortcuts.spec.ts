@@ -264,8 +264,8 @@ test.describe("Keyboard shortcuts", () => {
     });
     await waitForEffects(page);
 
-    // There should be 2 tasks (T0001, T0002) with default filters
-    await expect(page.locator(".task-row")).toHaveCount(2);
+    // There should be 3 tasks (T0001, T0002, T0003) with default filters (done/cancelled hidden)
+    await expect(page.locator(".task-row")).toHaveCount(3);
 
     // Press 'j' to select next task
     await page.keyboard.press("j");
@@ -346,7 +346,7 @@ test.describe("Keyboard shortcuts", () => {
     });
     await waitForEffects(page);
 
-    // Press 'j' to select first task (tasks sorted by ID descending, so T0002 is first)
+    // Press 'j' to select first task (tasks sorted by ID descending, so T0003 is first)
     await page.keyboard.press("j");
     await expect(page.locator(".task-row").first()).toHaveClass(/selected/);
 
@@ -355,7 +355,7 @@ test.describe("Keyboard shortcuts", () => {
     const panel = page.locator(".task-panel");
     await expect(panel).toBeVisible({ timeout: 3_000 });
 
-    // Should show T0002 (first task in descending order)
-    await expect(panel.locator(".task-panel-id")).toContainText("T0002");
+    // Should show T0003 (first task in descending order — T0004 is done/hidden)
+    await expect(panel.locator(".task-panel-id")).toContainText("T0003");
   });
 });

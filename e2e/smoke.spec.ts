@@ -5,10 +5,10 @@ import { test, expect } from "@playwright/test";
  *
  * These tests run against a pre-seeded Delegate instance with:
  *   - Team: "testteam" (boss: "testboss", manager: "edison", agents: alice, bob)
- *   - 3 tasks: T0001 (todo), T0002 (in_progress, has attachment), T0003 (done)
+ *   - 4 tasks: T0001 (todo), T0002 (in_progress, has attachment), T0003 (in_approval), T0004 (done)
  *   - 5 chat messages + 2 system events
  *
- * Default task filters hide "done" and "cancelled", so only T0001 and T0002
+ * Default task filters hide "done" and "cancelled", so T0001, T0002, T0003
  * are visible in the task list by default.
  */
 
@@ -40,11 +40,11 @@ test.describe("Smoke tests", () => {
     await page.locator(".sb-nav-btn", { hasText: "Tasks" }).click();
     await expect(page).toHaveURL(/\/tasks/);
 
-    // Should see task rows (default filters hide "done" — only T0001, T0002)
+    // Should see task rows (default filters hide "done" — T0001, T0002, T0003 visible)
     await expect(page.locator(".task-row").first()).toBeVisible({
       timeout: 5_000,
     });
-    await expect(page.locator(".task-row")).toHaveCount(2);
+    await expect(page.locator(".task-row")).toHaveCount(3);
 
     // Switch to Agents tab
     await page.locator(".sb-nav-btn", { hasText: "Agents" }).click();

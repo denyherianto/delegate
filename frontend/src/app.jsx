@@ -131,14 +131,15 @@ function App() {
         if (chatInput) chatInput.focus();
         return;
       }
-      // / focuses search (when on Chat tab)
+      // / focuses search — scope to the visible panel (ChatPanel always has .active but uses inline display:none)
       if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && !isHelpOpen() && panelStack.value.length === 0) {
         e.preventDefault();
-        const searchExpandBtn = document.querySelector(".filter-search-icon-btn");
-        const searchInput = document.querySelector(".filter-search");
+        const scope = [...document.querySelectorAll(".panel.active")].find(p => p.offsetParent !== null) || document;
+        const searchExpandBtn = scope.querySelector(".filter-search-icon-btn");
+        const searchInput = scope.querySelector(".filter-search");
         if (searchExpandBtn) {
           searchExpandBtn.click();
-          setTimeout(() => searchInput?.focus(), 50);
+          setTimeout(() => scope.querySelector(".filter-search")?.focus(), 50);
         } else if (searchInput) {
           searchInput.focus();
         }

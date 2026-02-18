@@ -36,7 +36,7 @@ export function applyBootstrapId(id) {
 }
 
 // ── Task team filter ──
-export const taskTeamFilter = signal("all"); // "current" | "all" | specific team name
+export const taskTeamFilter = signal("current"); // "current" | "all" | specific team name
 
 // ── API data (refreshed by polling) ──
 export const tasks = signal([]);
