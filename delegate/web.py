@@ -2468,6 +2468,152 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+    # ---------------------------------------------------------------------------
+    # File completion endpoints
+    # ---------------------------------------------------------------------------
+
+    def _list_completions(prefix: str, limit: int) -> list[dict]:
+        """Return filesystem entries whose absolute paths begin with ``prefix``.
+
+        If ``prefix`` ends with ``/``, all entries in that directory are listed
+        (no name filter applied).  Otherwise, the parent directory of ``prefix``
+        is listed and only entries whose names start with the final component of
+        ``prefix`` are included.
+
+        Sort order: directories first (alphabetical within group), then files
+        (alphabetical within group).
+
+        Security: symlinks are never followed outside the effective parent
+        directory, and ``..`` components in the prefix are rejected upstream.
+        """
+        from pathlib import Path as _Path
+
+        if prefix.endswith("/"):
+            parent = _Path(prefix[:-1])  # directory to list
+            partial_name = ""            # no filter
+        else:
+            prefix_path = _Path(prefix)
+            parent = prefix_path.parent
+            partial_name = prefix_path.name
+
+        if not parent.exists():
+            return []
+
+        entries = []
+        try:
+            for entry in parent.iterdir():
+                if partial_name and not entry.name.startswith(partial_name):
+                    continue
+                # Security: skip symlinks to prevent traversal outside prefix dir
+                if entry.is_symlink():
+                    continue
+                entries.append({
+                    "path": str(entry),
+                    "is_dir": entry.is_dir(),
+                })
+        except PermissionError:
+            return []
+
+        # Sort: directories first, then alphabetical within each group
+        entries.sort(key=lambda e: (0 if e["is_dir"] else 1, e["path"]))
+        return entries[:limit]
+
+    _COMPLETION_MAX_LIMIT = 50
+
+    @app.get("/api/files/complete")
+    def get_files_complete(path: str, limit: int = 20):
+        """List filesystem entries whose absolute paths begin with ``path``.
+
+        Query params:
+            path:  Required. Must be an absolute path (starts with ``/``).
+            limit: Optional. Default 20, max 50.
+
+        Returns:
+            { "entries": [{ "path": "/abs/path", "is_dir": true }, ...] }
+
+        Errors:
+            400 if path is relative or contains ``..`` components.
+        """
+        if not path.startswith("/"):
+            raise HTTPException(status_code=400, detail="path must be an absolute path starting with /")
+        if ".." in path.split("/"):
+            raise HTTPException(status_code=400, detail="path traversal via .. is not allowed")
+        limit = min(max(1, limit), _COMPLETION_MAX_LIMIT)
+        entries = _list_completions(path, limit)
+        return {"entries": entries}
+
+    @app.get("/api/tasks/{task_id}/files/complete")
+    def get_task_files_complete(task_id: int, q: str = "", limit: int = 20):
+        """List worktree entries matching the partial relative path ``q``.
+
+        Query params:
+            q:     Partial path relative to worktree root (may be empty to list
+                   top-level entries). Must not contain ``..`` components.
+            limit: Optional. Default 20, max 50.
+
+        Returns:
+            { "entries": [{ "path": "src/main.py", "is_dir": false }, ...] }
+            Paths are relative to the worktree root.
+
+        Errors:
+            400 if ``q`` contains ``..`` components.
+            404 if task has no worktree (not in_progress / in_review / in_approval).
+        """
+        from delegate.repo import get_task_worktree_path
+
+        if ".." in q.split("/"):
+            raise HTTPException(status_code=400, detail="path traversal via .. is not allowed")
+        limit = min(max(1, limit), _COMPLETION_MAX_LIMIT)
+
+        _active_statuses = {"in_progress", "in_review", "in_approval"}
+
+        for t in _list_teams(hc_home):
+            try:
+                task = _get_task(hc_home, t, task_id)
+            except FileNotFoundError:
+                continue
+
+            status = task.get("status", "")
+            if status not in _active_statuses:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Task {task_id} has no worktree (status: {status!r})",
+                )
+
+            repos = task.get("repo", [])
+            if not repos:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Task {task_id} has no associated repo",
+                )
+
+            repo_name = repos[0]
+            wt_root = get_task_worktree_path(hc_home, t, repo_name, task_id)
+            if not wt_root.exists():
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Worktree for task {task_id} does not exist on disk",
+                )
+
+            # Build the absolute prefix and list
+            abs_prefix = str(wt_root / q) if q else str(wt_root) + "/"
+            abs_entries = _list_completions(abs_prefix, limit)
+
+            # Convert absolute paths to paths relative to worktree root
+            wt_root_str = str(wt_root)
+            rel_entries = []
+            for e in abs_entries:
+                abs_p = e["path"]
+                if abs_p.startswith(wt_root_str + "/"):
+                    rel_p = abs_p[len(wt_root_str) + 1:]
+                else:
+                    rel_p = abs_p
+                rel_entries.append({"path": rel_p, "is_dir": e["is_dir"]})
+
+            return {"entries": rel_entries}
+
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
     @app.get("/api/messages")
     def get_messages(since: str | None = None, between: str | None = None, type: str | None = None, limit: int | None = None, before_id: int | None = None, team: str | None = None):
         """Messages across all teams or specific team.
