@@ -8,6 +8,7 @@ Usage:
 """
 
 import argparse
+import re
 import subprocess
 import uuid
 from pathlib import Path
@@ -32,6 +33,25 @@ from delegate.paths import (
     resolve_team_name,
 )
 from delegate.config import get_boss, get_default_human, add_member, get_human_members
+
+# Project name must start with a lowercase letter or digit, followed by any mix
+# of lowercase letters, digits, hyphens, and underscores.
+_PROJECT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+_PROJECT_NAME_ERROR = (
+    "Project name must be lowercase letters, digits, hyphens, and underscores only"
+    " (e.g. my-project-2026)"
+)
+
+
+def validate_project_name(name: str) -> None:
+    """Raise ValueError if *name* is not a valid project/team slug.
+
+    Valid names match ``^[a-z0-9][a-z0-9_-]*$``: start with a lowercase letter
+    or digit, then any mix of lowercase letters, digits, hyphens, underscores.
+    Raises ValueError with a human-readable message on failure.
+    """
+    if not _PROJECT_NAME_RE.match(name):
+        raise ValueError(_PROJECT_NAME_ERROR)
 
 
 def get_all_agent_names(hc_home: Path) -> dict[str, list[str]]:

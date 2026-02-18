@@ -442,11 +442,17 @@ def team_create(
     model: str | None,
 ) -> None:
     """Create a new team."""
-    from delegate.bootstrap import bootstrap
+    from delegate.bootstrap import bootstrap, validate_project_name
     from delegate.repo import register_repo
     from delegate.fmt import success, warn
 
     hc_home = _get_home(ctx)
+
+    # Validate team name before doing any work
+    try:
+        validate_project_name(name)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
 
     # Parse agents: either a count or "name:role" pairs
     parsed_agents: list[tuple[str, str]] = []

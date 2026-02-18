@@ -1646,16 +1646,18 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         workflow.  Broadcasts a ``teams_refresh`` SSE event so all open
         tabs update their sidebar immediately.
         """
-        from delegate.bootstrap import bootstrap
+        from delegate.bootstrap import bootstrap, validate_project_name
         from delegate.repo import register_repo
         from delegate.activity import broadcast_teams_refresh
 
-        name = req.name.strip().lower().replace(" ", "-")
+        name = req.name.strip()
         repo_path = str(Path(req.repo_path).expanduser())
 
         # Validate name
-        if not name or not name.replace("-", "").replace("_", "").isalnum():
-            raise HTTPException(status_code=400, detail="Invalid project name. Use lowercase letters, numbers, hyphens.")
+        try:
+            validate_project_name(name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         if not Path(repo_path).is_dir():
             raise HTTPException(status_code=400, detail=f"Repository path does not exist: {req.repo_path}")
 
