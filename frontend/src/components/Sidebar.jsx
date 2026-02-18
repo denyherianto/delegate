@@ -134,18 +134,16 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* New Project: first item, always visible even collapsed */}
-      <button
-        class="sb-new-project-btn"
-        onClick={() => { projectModalOpen.value = true; }}
-        title="New Project"
-      >
-        <PlusIcon />
-        {!collapsed && <span class="sb-nav-label">New Project</span>}
-      </button>
-
-      {/* Nav: Tasks + Agents (always visible, even collapsed) */}
+      {/* Nav: New Project + Tasks + Agents (always visible, even collapsed) */}
       <nav class="sb-nav">
+        <button
+          class="sb-nav-btn"
+          onClick={() => { projectModalOpen.value = true; }}
+          title="New Project"
+        >
+          <PlusIcon />
+          {!collapsed && <span class="sb-nav-label">New Project</span>}
+        </button>
         {NAV_ITEMS.map(({ key, label, Icon }) => (
           <button
             key={key}
