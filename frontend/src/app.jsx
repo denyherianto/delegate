@@ -162,6 +162,18 @@ function App() {
         return;
       }
       if (e.key === "?") { helpOverlayOpen.value = !helpOverlayOpen.value; return; }
+      // Cmd+1 through Cmd+9: switch to Nth project
+      if ((e.metaKey || e.ctrlKey) && e.key >= "1" && e.key <= "9") {
+        const idx = parseInt(e.key) - 1;
+        const teamArr = teams.value || [];
+        if (idx < teamArr.length) {
+          e.preventDefault();
+          const teamName = typeof teamArr[idx] === "object" ? teamArr[idx].name : teamArr[idx];
+          const currentTab = activeTab.value;
+          navigate(teamName, currentTab);
+        }
+        return;
+      }
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         teamSwitcherOpen.value = !teamSwitcherOpen.value;
