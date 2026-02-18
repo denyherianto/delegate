@@ -63,7 +63,9 @@ The merge worker is called from the daemon loop (via ``merge_once``).
 import asyncio
 import enum
 import logging
+import random
 import subprocess
+import time
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -86,6 +88,26 @@ logger = logging.getLogger(__name__)
 
 MAX_MERGE_ATTEMPTS = 3
 
+# Exponential backoff for WORKTREE_ERROR retries.
+# Delays per attempt (before jitter): ~5s, ~15s, ~45s
+# Formula: BASE * (3 ** attempt_index) where attempt_index is 0-based.
+_WORKTREE_RETRY_BASE = 5.0   # seconds
+_WORKTREE_RETRY_JITTER = 0.3  # +-30% random jitter
+
+
+def _worktree_retry_delay(attempt: int) -> float:
+    """Compute the retry delay for a WORKTREE_ERROR.
+
+    ``attempt`` is the 1-based attempt count (i.e. the count *after*
+    incrementing, so attempt=1 is the first retry).  The delay grows
+    exponentially: ~5s, ~15s, ~45s with +-30% jitter.
+
+    Returns the delay in seconds (minimum 5s).
+    """
+    base = _WORKTREE_RETRY_BASE * (3 ** (attempt - 1))  # 5, 15, 45
+    jitter = base * _WORKTREE_RETRY_JITTER * (2 * random.random() - 1)
+    return max(5.0, base + jitter)
+
 
 # ---------------------------------------------------------------------------
 # Failure reason enum
@@ -102,7 +124,7 @@ class MergeFailureReason(enum.Enum):
     REBASE_CONFLICT   = ("Rebase conflict", False)
     SQUASH_CONFLICT   = ("True content conflict", False)
     PRE_MERGE_FAILED  = ("Pre-merge checks failed", False)
-    WORKTREE_ERROR    = ("Could not create merge worktree", False)
+    WORKTREE_ERROR    = ("Could not create merge worktree", True)
     DIRTY_MAIN        = ("main has uncommitted changes", True)
     FF_NOT_POSSIBLE   = ("Fast-forward not possible", True)
     UPDATE_REF_FAILED = ("Atomic ref update failed", True)
@@ -1155,18 +1177,33 @@ def _handle_merge_failure(
 
     if reason.retryable:
         current_attempts = task.get("merge_attempts", 0) + 1
-        update_task(hc_home, team, task_id,
-                    merge_attempts=current_attempts,
-                    status_detail=detail)
+        task_updates: dict = dict(
+            merge_attempts=current_attempts,
+            status_detail=detail,
+        )
 
         if current_attempts < MAX_MERGE_ATTEMPTS:
-            # Silent retry: stay in 'merging' — merge_once will re-process
-            logger.info(
-                "%s: retryable failure (%s), attempt %d/%d — will retry",
-                format_task_id(task_id), reason.name,
-                current_attempts, MAX_MERGE_ATTEMPTS,
-            )
+            # For WORKTREE_ERROR, schedule with exponential backoff so the
+            # daemon doesn't busy-loop while an agent turn holds the lock.
+            if reason is MergeFailureReason.WORKTREE_ERROR:
+                delay = _worktree_retry_delay(current_attempts)
+                task_updates["retry_after"] = time.time() + delay
+                logger.info(
+                    "%s: WORKTREE_ERROR, retry in %.0fs (attempt %d/%d)",
+                    format_task_id(task_id), delay,
+                    current_attempts, MAX_MERGE_ATTEMPTS,
+                )
+            else:
+                # Silent retry: stay in 'merging' — merge_once will re-process
+                logger.info(
+                    "%s: retryable failure (%s), attempt %d/%d — will retry",
+                    format_task_id(task_id), reason.name,
+                    current_attempts, MAX_MERGE_ATTEMPTS,
+                )
+            update_task(hc_home, team, task_id, **task_updates)
             return
+
+        update_task(hc_home, team, task_id, **task_updates)
 
         # Max retries exhausted → escalate
         logger.warning(
@@ -1256,10 +1293,24 @@ def merge_once(
         if not result.success:
             _handle_merge_failure(hc_home, team, task_id, result)
 
-    # --- 2. Process tasks in 'merging' status (including newly approved) ---
+    # --- 2. Process tasks in 'merging' status (retries) ---
     for task in list_tasks(hc_home, team, status="merging"):
         task_id = task["id"]
         attempts = task.get("merge_attempts", 0)
+
+        # Skip tasks that are scheduled for a future retry (exponential backoff).
+        retry_after = task.get("retry_after")
+        if retry_after and time.time() < retry_after:
+            logger.debug(
+                "%s: retry_after in %.0fs — skipping",
+                format_task_id(task_id), retry_after - time.time(),
+            )
+            continue
+
+        # Clear any stale retry_after before attempting so a success doesn't
+        # leave the field set (it also gets cleared on success below).
+        if retry_after is not None:
+            update_task(hc_home, team, task_id, retry_after=None)
 
         logger.info(
             "%s: %s merge (attempt %d/%d)",
@@ -1270,7 +1321,11 @@ def merge_once(
         result = merge_task(hc_home, team, task_id, exchange=exchange, loop=loop)
         results.append(result)
 
-        if not result.success:
+        if result.success:
+            # Successful merge — clear retry_after (task is done, but belt+suspenders)
+            # merge_task sets status to 'done', so this is just defensive cleanup.
+            pass
+        else:
             _handle_merge_failure(hc_home, team, task_id, result)
 
     return results
