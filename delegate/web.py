@@ -1650,11 +1650,12 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         from delegate.activity import broadcast_teams_refresh
 
         name = req.name.strip().lower().replace(" ", "-")
+        repo_path = str(Path(req.repo_path).expanduser())
 
         # Validate name
         if not name or not name.replace("-", "").replace("_", "").isalnum():
             raise HTTPException(status_code=400, detail="Invalid project name. Use lowercase letters, numbers, hyphens.")
-        if not Path(req.repo_path).is_dir():
+        if not Path(repo_path).is_dir():
             raise HTTPException(status_code=400, detail=f"Repository path does not exist: {req.repo_path}")
 
         # Check for duplicate
@@ -1676,7 +1677,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
         # Register repo
         try:
-            register_repo(hc_home, name, req.repo_path)
+            register_repo(hc_home, name, repo_path)
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=f"Failed to register repo: {exc}")
 
