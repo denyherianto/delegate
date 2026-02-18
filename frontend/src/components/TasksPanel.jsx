@@ -329,9 +329,23 @@ export function TasksPanel() {
       </div>
       <div>
         {!allTasks.length ? (
-          <p style={{ color: "var(--text-secondary)" }}>No tasks yet.</p>
+          <div class="panel-empty-state">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <path d="M9 12l2 2 4-4" />
+            </svg>
+            <span class="panel-empty-title">No tasks yet</span>
+            <span class="panel-empty-sub">Tasks will appear here once agents start working</span>
+          </div>
         ) : !filtered.length ? (
-          <p style={{ color: "var(--text-secondary)" }}>No tasks match filters.</p>
+          <div class="panel-empty-state">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <span class="panel-empty-title">No matching tasks</span>
+            <span class="panel-empty-sub">Try adjusting your filters or search query</span>
+          </div>
         ) : isGroupedView ? (
           <div class="task-list-grouped">
             {Object.entries(groupedTasks).map(([teamName, teamTasks]) => {

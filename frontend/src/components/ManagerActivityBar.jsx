@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
   managerTurnContext, agentLastActivity, agentActivityLog,
-  agentThinking, agents, tasks,
+  agentThinking, agents, tasks, openPanel,
 } from "../state.js";
 import { cap, taskIdStr, renderMarkdown, useStreamingText } from "../utils.js";
 
@@ -153,8 +153,8 @@ export function ManagerActivityBar() {
 
   return (
     <div class={"delegate-footer delegate-footer-active" + (hasThinking ? " delegate-footer-expanded" : "")}>
-      {/* Header: dots · Delegate · status */}
-      <div class="delegate-footer-bar">
+      {/* Header: dots · Delegate · status — click to open side panel */}
+      <div class="delegate-footer-bar" onClick={() => openPanel("agent", managerName)} style="cursor:pointer">
         <span class="delegate-footer-dots">
           <span class="delegate-dot" />
           <span class="delegate-dot" />
