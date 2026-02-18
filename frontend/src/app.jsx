@@ -759,9 +759,9 @@ function App() {
               <AgentsPanel />
             </div>
           </div>
+          <MissionControl />
         </div>
       </div>
-      <MissionControl />
       <TaskSidePanel />
       <DiffPanel />
       <HelpOverlay />
