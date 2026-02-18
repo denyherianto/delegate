@@ -1401,8 +1401,8 @@ export function ChatPanel() {
           const senderLower = m.sender.toLowerCase();
           const human = (humanName.value || "human").toLowerCase();
           const isHuman = senderLower === human;
-          const isBoss = isHuman;
-          const msgClass = isHuman ? "msg msg-boss" : "msg";
+          const isDelegate = senderLower === "delegate";
+          const msgClass = isDelegate ? "msg msg-boss" : "msg";
           const senderClass = isHuman ? "msg-sender msg-sender-boss copyable" : "msg-sender copyable";
           return (
             <div key={m.id || i} class={msgClass}>
