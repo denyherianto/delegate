@@ -147,8 +147,8 @@ def _reconcile_team_map(hc_home: Path) -> None:
 
     # Read both sources
     map_data: dict[str, str] = {}
-    for name in list_team_names(hc_home):
-        uid = resolve_team_uuid(hc_home, name)
+    for name in _list_team_names(hc_home):
+        uid = _resolve_team(hc_home, name)
         if uid != name:  # only include real mappings
             map_data[name] = uid
 
@@ -899,12 +899,6 @@ async def _lifespan(app: FastAPI):
         token_budget = int(budget_str) if budget_str else None
 
         exchange = TelephoneExchange()
-
-        # Run the teams→projects filesystem migration (idempotent).
-        # Must happen BEFORE ensure_schema() applies V018 and before
-        # _reconcile_team_map() reads the projects table/map.
-        from delegate.migrations.migrate_teams_to_projects import migrate_teams_to_projects
-        migrate_teams_to_projects(hc_home)
 
         # Reconcile project_map.json with the DB projects table.
         # If either source is incomplete (e.g. after a partial nuke),

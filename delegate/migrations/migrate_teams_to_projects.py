@@ -1,30 +1,21 @@
 """One-time filesystem migration: rename "teams" → "projects" storage layout.
 
-This module contains the idempotent migration function that renames the
-directory and config-file storage from the old "teams" naming to the new
-"projects" naming.  It must be called at daemon startup, BEFORE
-``ensure_schema()`` applies the V018 DB migration.
+Called from ``daemon.start()`` BEFORE ``ensure_protected()`` so the new
+directories don't exist yet and ``rename()`` works atomically.
 
 Migration steps (in order):
 1. Sentinel check — if ``protected/.migrated_projects`` exists, skip.
-2. Rename ``protected/teams/`` → ``protected/projects/``  (if old dir exists)
-3. Rename ``teams/``           → ``projects/``            (if old dir exists)
+2. Rename ``protected/teams/`` → ``protected/projects/``
+3. Rename ``teams/`` → ``projects/``
 4. Rename ``protected/team_map.json`` → ``protected/project_map.json``
-   (if old file exists)
 5. Write sentinel ``protected/.migrated_projects``
 
-The DB schema rename (``teams`` → ``projects`` table, column renames) is
-handled separately by the V018.sql migration file applied through the
-normal ``ensure_schema()`` machinery.
-
-The migration is re-runnable: if the sentinel is absent, each step checks
-whether the source exists before acting, so a partial prior run is safely
-continued.  Failures abort with a clear error message — the daemon should
-not start in an inconsistent state.
+If neither old directory exists (fresh install), no sentinel is written
+and the migration becomes a no-op.  The sentinel + migration code can
+be removed entirely once all users have upgraded past 0.2.x.
 """
 
 import logging
-import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -34,6 +25,25 @@ _SENTINEL_NAME = ".migrated_projects"
 
 def _sentinel_path(hc_home: Path) -> Path:
     return hc_home / "protected" / _SENTINEL_NAME
+
+
+def _rename_dir(src: Path, dst: Path, label: str) -> None:
+    """Rename *src* → *dst*.  No-op if *src* doesn't exist."""
+    if not src.is_dir():
+        logger.debug("%s not found — nothing to migrate", label)
+        return
+    if dst.exists():
+        # Target already exists (shouldn't happen when called before
+        # ensure_protected, but be defensive).
+        logger.debug("%s target already exists — skipping", label)
+        return
+    try:
+        src.rename(dst)
+        logger.info("Renamed %s → %s", src, dst)
+    except OSError as exc:
+        raise RuntimeError(
+            f"Migration failed: could not rename {src} → {dst}: {exc}"
+        ) from exc
 
 
 def migrate_teams_to_projects(hc_home: Path) -> None:
@@ -49,77 +59,37 @@ def migrate_teams_to_projects(hc_home: Path) -> None:
     protected = hc_home / "protected"
     sentinel = _sentinel_path(hc_home)
 
-    # Step 1: Sentinel check — already migrated, nothing to do.
+    # Already migrated — nothing to do.
     if sentinel.exists():
         logger.debug("teams→projects migration already applied (sentinel exists)")
         return
 
+    old_protected_teams = protected / "teams"
+    old_teams = hc_home / "teams"
+    old_map = protected / "team_map.json"
+
+    # Fresh install — no old dirs/files to migrate.  Skip sentinel too.
+    if not old_protected_teams.exists() and not old_teams.exists() and not old_map.exists():
+        logger.debug("No teams/ directories found — fresh install, skipping migration")
+        return
+
     logger.info("Running teams→projects filesystem migration …")
 
-    # Step 2: Rename protected/teams/ → protected/projects/
-    old_protected_teams = protected / "teams"
-    new_protected_teams = protected / "projects"
-    if old_protected_teams.is_dir():
-        if new_protected_teams.exists():
-            logger.warning(
-                "Both protected/teams/ and protected/projects/ exist — "
-                "skipping protected/teams/ rename (protected/projects/ wins)"
-            )
-        else:
-            try:
-                old_protected_teams.rename(new_protected_teams)
-                logger.info("Renamed protected/teams/ → protected/projects/")
-            except OSError as exc:
-                raise RuntimeError(
-                    f"Migration failed: could not rename {old_protected_teams} "
-                    f"→ {new_protected_teams}: {exc}"
-                ) from exc
-    else:
-        logger.debug("protected/teams/ not found — skipping rename (already done or fresh install)")
+    _rename_dir(old_protected_teams, protected / "projects", "protected/teams")
+    _rename_dir(old_teams, hc_home / "projects", "teams")
 
-    # Step 3: Rename teams/ → projects/  (working data, may be large)
-    old_teams = hc_home / "teams"
-    new_teams = hc_home / "projects"
-    if old_teams.is_dir():
-        if new_teams.exists():
-            logger.warning(
-                "Both teams/ and projects/ exist — "
-                "skipping teams/ rename (projects/ wins)"
-            )
-        else:
-            try:
-                old_teams.rename(new_teams)
-                logger.info("Renamed teams/ → projects/")
-            except OSError as exc:
-                raise RuntimeError(
-                    f"Migration failed: could not rename {old_teams} "
-                    f"→ {new_teams}: {exc}"
-                ) from exc
-    else:
-        logger.debug("teams/ not found — skipping rename (already done or fresh install)")
-
-    # Step 4: Rename protected/team_map.json → protected/project_map.json
-    old_map = protected / "team_map.json"
+    # Rename team_map.json → project_map.json
     new_map = protected / "project_map.json"
-    if old_map.exists():
-        if new_map.exists():
-            logger.warning(
-                "Both team_map.json and project_map.json exist — "
-                "skipping team_map.json rename (project_map.json wins)"
-            )
-        else:
-            try:
-                old_map.rename(new_map)
-                logger.info("Renamed protected/team_map.json → protected/project_map.json")
-            except OSError as exc:
-                raise RuntimeError(
-                    f"Migration failed: could not rename {old_map} "
-                    f"→ {new_map}: {exc}"
-                ) from exc
-    else:
-        logger.debug("team_map.json not found — skipping rename (already done or fresh install)")
+    if old_map.exists() and not new_map.exists():
+        try:
+            old_map.rename(new_map)
+            logger.info("Renamed %s → %s", old_map, new_map)
+        except OSError as exc:
+            raise RuntimeError(
+                f"Migration failed: could not rename {old_map} → {new_map}: {exc}"
+            ) from exc
 
-    # Step 5: Write sentinel to mark migration complete
+    # Write sentinel so we don't re-run.
     try:
         protected.mkdir(parents=True, exist_ok=True)
         sentinel.write_text("migrated\n")

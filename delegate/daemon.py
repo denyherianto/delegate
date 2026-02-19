@@ -116,6 +116,14 @@ def start_daemon(
     Returns the PID of the spawned process (or None if foreground).
     """
     hc_home.mkdir(parents=True, exist_ok=True)
+
+    # Run the teams→projects filesystem migration BEFORE ensure_protected()
+    # creates the new directory structure.  This way rename() just works —
+    # no merge-contents logic needed.  Safe to remove once all users have
+    # upgraded past 0.2.x.
+    from delegate.migrations.migrate_teams_to_projects import migrate_teams_to_projects
+    migrate_teams_to_projects(hc_home)
+
     ensure_protected(hc_home)
 
     # Attempt to acquire the exclusive flock first — this is the
