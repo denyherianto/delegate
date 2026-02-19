@@ -4,7 +4,7 @@ import {
   agentActivityLog, agentThinking,
   openPanel, currentTeam,
 } from "../state.js";
-import { cap, displayName, taskIdStr, renderMarkdown, fmtStatus, useLiveTimer, useStreamingText, formatToolDetail } from "../utils.js";
+import { cap, taskIdStr, renderMarkdown, fmtStatus, useLiveTimer, useStreamingText, formatToolDetail } from "../utils.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -82,7 +82,7 @@ function StatusSummary({ agent }) {
       </span>
     );
   }
-  if (agent.sender) return <span class="mc-status">responding to {displayName(agent.sender)}</span>;
+  if (agent.sender) return <span class="mc-status">responding to {cap(agent.sender)}</span>;
   if (agent.inTurn) return <span class="mc-status">working</span>;
   return <span class="mc-status">idle</span>;
 }
@@ -249,20 +249,17 @@ function AgentRow({ agent, thinking, activities, suppressBody }) {
 function TaskRow({ task, active }) {
   const age = useLiveTimer(task.updated_at ?? null);
   return (
-    <div
-      class="mc-task-row"
-      onClick={() => openPanel("task", task.id)}
-    >
-      <div class="mc-task-row-main">
+    <div class="mc-task-row" onClick={() => openPanel("task", task.id)}>
+      <div class="mc-task-row-line1">
         <span class={"mc-dot " + (active ? "dot-active" : "dot-idle")} />
         <span class="mc-task-id">{taskIdStr(task.id)}</span>
-        <span class="mc-task-assignee">{task.assignee ? displayName(task.assignee) : "—"}</span>
+        <span class="mc-task-title-inline">{task.title}</span>
+      </div>
+      <div class="mc-task-row-line2">
+        <span class="mc-task-assignee">{task.assignee ? cap(task.assignee) : "—"}</span>
         <span class={"badge badge-" + task.status}>{fmtStatus(task.status)}</span>
         {age && <span class="live-timer mc-timer">{age}</span>}
       </div>
-      {task.title && (
-        <div class="mc-task-title">{task.title}</div>
-      )}
     </div>
   );
 }
