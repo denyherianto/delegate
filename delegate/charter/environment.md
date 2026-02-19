@@ -74,25 +74,29 @@ WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)"
 REPO_ROOT="$(cd "$GIT_COMMON/.." && pwd)"
 
+# Re-entrance guard
+[[ -n "$_DELEGATE_SETUP_DONE" ]] && return 0 2>/dev/null || true
+_DELEGATE_SETUP_DONE=1
+
 if [ -f "$REPO_ROOT/shell.nix" ] && command -v nix-shell >/dev/null 2>&1; then
   # Run install inside the nix shell so the shellHook environment is active.
   # Adapt the install command to the project's language/tooling.
   nix-shell "$REPO_ROOT/shell.nix" --run \
-    "bash -c 'cd $WORKTREE_ROOT && <install command>'"
+    "bash -c 'cd $WORKTREE_ROOT && <install command --quiet>'"
 elif [ -f "$REPO_ROOT/flake.nix" ] && command -v nix >/dev/null 2>&1; then
   nix develop "$REPO_ROOT" --command bash -c \
-    "cd $WORKTREE_ROOT && <install command>"
+    "cd $WORKTREE_ROOT && <install command --quiet>"
 else
   echo "ERROR: shell.nix/flake.nix found but nix-shell/nix not on PATH" >&2
   exit 1
 fi
 ```
 
-Replace `<install command>` with whatever the project needs (e.g. `uv sync --group dev`, `npm ci`, `cargo build`). The nix shell provides all declared tools via its `packages` and `shellHook`.
+Replace `<install command --quiet>` with whatever the project needs (e.g. `uv sync --group dev --quiet`, `npm ci --silent`, `cargo build --quiet`). The nix shell provides all declared tools via its `packages` and `shellHook`.
 
 ### Nix premerge.sh template
 
-For nix repos, run tests inside the nix shell too:
+For nix repos, premerge.sh must be **self-contained** — it runs install + test inside its own `nix-shell` invocation. Do NOT source setup.sh from a nix premerge.sh (the nix environment from setup.sh doesn't persist into the parent shell).
 
 ```bash
 #!/usr/bin/env bash
@@ -145,11 +149,17 @@ set -e
 WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$WORKTREE_ROOT"
 
-# Install deps (creates/updates Poetry's managed venv)
-poetry install --with dev 2>/dev/null || poetry install
+# Re-entrance guard
+[[ -n "$_DELEGATE_SETUP_DONE" ]] && { source "$WORKTREE_ROOT/.venv/bin/activate"; return 0 2>/dev/null || exit 0; }
+_DELEGATE_SETUP_DONE=1
 
-VENV_PATH="$(poetry env info --path)"
-source "$VENV_PATH/bin/activate"
+# Force venv inside the worktree (not in ~/.cache/pypoetry/virtualenvs/)
+export POETRY_VIRTUALENVS_IN_PROJECT=true
+
+# Install deps (creates/updates .venv/ in the worktree)
+poetry install --with dev --quiet 2>/dev/null || poetry install --quiet
+
+source "$WORKTREE_ROOT/.venv/bin/activate"
 ```
 
 Premerge: `poetry run pytest tests/ -x -q` (or `source` the venv first and run `pytest` directly).
@@ -166,20 +176,22 @@ set -e
 WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="$WORKTREE_ROOT/.venv"
 
-if [ ! -f "$VENV_DIR/bin/pytest" ]; then
+# Re-entrance guard — skip if already sourced (premerge.sh sources us too)
+[[ -n "$_DELEGATE_SETUP_DONE" ]] && { source "$VENV_DIR/bin/activate"; return 0 2>/dev/null || exit 0; }
+_DELEGATE_SETUP_DONE=1
+
+if ! "$VENV_DIR/bin/python" -c "import pytest" 2>/dev/null; then
   rm -rf "$VENV_DIR"
+  cd "$WORKTREE_ROOT"
   if command -v uv >/dev/null 2>&1; then
-    cd "$WORKTREE_ROOT"
-    cd "$WORKTREE_ROOT"
     # CHOOSE one based on the decision table:
     #   uv.lock + [dependency-groups]:             uv sync --group dev
     #   uv.lock + [project.optional-dependencies]: uv sync --extra dev
     #   no lockfile:                               uv pip install -e ".[dev]"
-    uv sync --group dev
+    uv sync --group dev --quiet
   else
     python3 -m venv "$VENV_DIR"
-    cd "$WORKTREE_ROOT"
-    pip install ".[dev]"
+    "$VENV_DIR/bin/pip" install ".[dev]" --quiet
   fi
 fi
 
@@ -215,14 +227,18 @@ set -e
 WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$WORKTREE_ROOT"
 
+# Re-entrance guard
+[[ -n "$_DELEGATE_SETUP_DONE" ]] && { export PATH="$WORKTREE_ROOT/node_modules/.bin:$PATH"; return 0 2>/dev/null || exit 0; }
+_DELEGATE_SETUP_DONE=1
+
 if [ ! -d node_modules ]; then
   # Use the lockfile-aware install for the detected package manager
   if [ -f pnpm-lock.yaml ]; then
-    pnpm install --frozen-lockfile
+    pnpm install --frozen-lockfile --silent
   elif [ -f yarn.lock ]; then
-    yarn install --frozen-lockfile
+    yarn install --frozen-lockfile --silent
   else
-    npm ci
+    npm ci --silent
   fi
 fi
 
@@ -257,7 +273,11 @@ set -e
 WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$WORKTREE_ROOT"
 
-cargo build
+# Re-entrance guard
+[[ -n "$_DELEGATE_SETUP_DONE" ]] && return 0 2>/dev/null || true
+_DELEGATE_SETUP_DONE=1
+
+cargo build --quiet
 ```
 
 Premerge: `cargo test`.
@@ -287,6 +307,10 @@ set -e
 
 WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$WORKTREE_ROOT"
+
+# Re-entrance guard
+[[ -n "$_DELEGATE_SETUP_DONE" ]] && return 0 2>/dev/null || true
+_DELEGATE_SETUP_DONE=1
 
 go mod tidy
 ```
@@ -321,8 +345,12 @@ cd "$WORKTREE_ROOT"
 
 export BUNDLE_PATH="$WORKTREE_ROOT/vendor/bundle"
 
+# Re-entrance guard
+[[ -n "$_DELEGATE_SETUP_DONE" ]] && return 0 2>/dev/null || true
+_DELEGATE_SETUP_DONE=1
+
 if [ ! -d vendor/bundle ]; then
-  bundle install --path vendor/bundle
+  bundle install --path vendor/bundle --quiet
 fi
 ```
 
@@ -330,9 +358,11 @@ Premerge: `bundle exec rspec` or `bundle exec rake test` (check the project).
 
 ---
 
-## premerge.sh template (all stacks)
+## premerge.sh template (non-Nix stacks)
 
-The premerge.sh pattern is the same regardless of stack — source setup.sh, then run tests:
+The premerge.sh pattern is the same regardless of stack — source setup.sh (the re-entrance guard makes this cheap if the merge worker already sourced it), `cd` to the worktree root, then run tests:
+
+> **Nix repos**: use the self-contained Nix premerge.sh template above instead — do NOT source setup.sh, since the nix environment doesn't persist into the parent shell.
 
 ```bash
 #!/usr/bin/env bash
@@ -340,7 +370,9 @@ set -e
 # Created by delegate. Edit as needed.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKTREE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/setup.sh"
+cd "$WORKTREE_ROOT"
 
 # Run the test suite — adapt for the stack:
 pytest tests/ -x -q      # Python

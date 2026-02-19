@@ -387,6 +387,7 @@ Team data: {hc_home}/teams/{team}/"""
                 "At the start of this task: check for `.delegate/setup.sh` in your worktree root. "
                 "If present, source it (`. .delegate/setup.sh`) before running any commands. "
                 "If absent, create it following the Environment Setup charter section."
+                "Either way, update it during the task if the environment requires changes."
             )
 
         # Task activity
