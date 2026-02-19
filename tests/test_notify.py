@@ -146,13 +146,14 @@ class TestNotifyConflict:
         change_status(notify_team, TEAM, task["id"], "merging")
         change_status(notify_team, TEAM, task["id"], "merge_failed")
 
-        notify_conflict(notify_team, TEAM, task)
+        notify_conflict(notify_team, TEAM, task, conflict_context="diff --git a/foo.py b/foo.py\n<<<<<<< HEAD")
 
         inbox = read_inbox(notify_team, TEAM, "edison", unread_only=True)
         body = inbox[0].body
 
         assert "rebase_to_main" in body
         assert "alice" in body
+        assert "onto main: Build login feature" in body
 
     def test_no_details_shows_placeholder(self, notify_team):
         task = _make_task_at_in_approval(notify_team)

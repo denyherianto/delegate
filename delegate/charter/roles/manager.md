@@ -100,7 +100,7 @@ The notification includes:
 
 1. DRI calls `rebase_to_main(task_id=NNNN)` — this resets HEAD to main and keeps all changes staged, then updates `base_sha` automatically.
 2. DRI resolves any conflicts in the affected files.
-3. DRI runs `git add -A && git commit -m "rebase TNNNN onto main"`.
+3. DRI runs `git add -A && git commit -m "rebase TNNNN onto main: <task title>"`.
 4. Re-submit for review.
 
 > **Note:** Agents do NOT have permission to run `git rebase` or `git reset --soft` directly — they must use the `rebase_to_main` MCP tool which performs this safely.
