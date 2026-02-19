@@ -253,11 +253,16 @@ function TaskRow({ task, active }) {
       class="mc-task-row"
       onClick={() => openPanel("task", task.id)}
     >
-      <span class={"mc-dot " + (active ? "dot-active" : "dot-idle")} />
-      <span class="mc-task-id">{taskIdStr(task.id)}</span>
-      <span class="mc-task-assignee">{task.assignee ? cap(task.assignee) : "—"}</span>
-      <span class={"badge badge-" + task.status}>{fmtStatus(task.status)}</span>
-      {age && <span class="live-timer mc-timer">{age}</span>}
+      <div class="mc-task-row-main">
+        <span class={"mc-dot " + (active ? "dot-active" : "dot-idle")} />
+        <span class="mc-task-id">{taskIdStr(task.id)}</span>
+        <span class="mc-task-assignee">{task.assignee ? cap(task.assignee) : "—"}</span>
+        <span class={"badge badge-" + task.status}>{fmtStatus(task.status)}</span>
+        {age && <span class="live-timer mc-timer">{age}</span>}
+      </div>
+      {task.title && (
+        <div class="mc-task-title">{task.title}</div>
+      )}
     </div>
   );
 }
