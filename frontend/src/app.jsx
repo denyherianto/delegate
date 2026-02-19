@@ -88,6 +88,33 @@ function _syncSignalsNow(team) {
   });
 }
 
+/**
+ * Called after _pt.managerName[team] is resolved (from fetchAgents).
+ * If the manager is already in an active turn (turn_started arrived before
+ * the fetchAgents response), retroactively set _pt.managerCtx[team] so the
+ * thinking box appears.  This fixes the race where a new team manager
+ * starts a turn before we know who the manager is.
+ */
+function _onManagerNameResolved(team, mgrName) {
+  if (!mgrName) return;
+  const ts = _pt.turnState[team];
+  if (!ts) return;
+  const agentState = ts[mgrName];
+  if (agentState && agentState.inTurn && !_pt.managerCtx[team]) {
+    _pt.managerCtx[team] = {
+      agent: mgrName,
+      team,
+      task_id: agentState.taskId ?? null,
+      sender: agentState.sender ?? "",
+      timestamp: agentState.startedAt ?? new Date().toISOString(),
+    };
+    if (team === currentTeam.value) {
+      managerTurnContext.value = _pt.managerCtx[team];
+      _syncSignals(team);
+    }
+  }
+}
+
 // ── Main App ──
 function App() {
   // ── Prefetch tracking ──
@@ -421,6 +448,7 @@ function App() {
         });
         const mgr = agentData.find(a => a.role === "manager");
         _pt.managerName[t] = mgr?.name ?? null;
+        _onManagerNameResolved(t, _pt.managerName[t]);
 
         // Send welcome greeting if this is first visit or after meaningful absence
         const now = Date.now();
@@ -550,31 +578,17 @@ function App() {
     }
   });
 
-  // ── SSE: SharedWorker multiplexes a single /stream connection across all tabs ──
-  // Falls back to a direct EventSource if SharedWorker is unavailable (e.g. file:// origin).
-  // This means unlimited tabs share just 1 HTTP connection for real-time events.
-  useSignalEffect(() => {
-    const list = teams.value;              // ← auto-tracked
-    if (!list || list.length === 0) return;
-
-    // Ensure backing stores and manager names for all teams
-    for (const teamObj of list) {
-      const team = typeof teamObj === "object" ? teamObj.name : teamObj;
-      if (!_pt.activity[team])    _pt.activity[team]    = {};
-      if (!_pt.activityLog[team]) _pt.activityLog[team] = [];
-      if (!_pt.turnState[team])   _pt.turnState[team]   = {};
-      if (!_pt.thinking[team])    _pt.thinking[team]    = {};
-
-      // Fetch manager name for this team (one-time, best-effort)
-      if (_pt.managerName[team] === undefined) {
-        api.fetchAgents(team).then(agentData => {
-          const mgr = agentData.find(a => a.role === "manager");
-          _pt.managerName[team] = mgr?.name ?? null;
-        }).catch(() => { _pt.managerName[team] = null; });
-      }
-    }
-
-    // Handle an SSE event (shared between worker and direct paths)
+  // ── SSE: start connection once on mount, unconditionally ──
+  // SharedWorker multiplexes a single /stream connection across all tabs.
+  // Falls back to a direct EventSource if SharedWorker is unavailable.
+  //
+  // NOTE: The connection is established regardless of whether `teams` is
+  // populated.  This ensures `teams_refresh` events are received on a
+  // fresh install (zero teams) so the first project creation is handled
+  // live without a page reload.
+  useEffect(() => {
+    // Handle an SSE event.  All signal reads happen at call time so this
+    // closure does NOT need to be recreated when teams change.
     const handleSSE = (entry) => {
       if (entry.type === "connected") return;
 
@@ -594,16 +608,14 @@ function App() {
         };
 
         // Push a visual separator at the START of each turn
-        const log = _pt.activityLog[team];
-        if (log) {
-          log.push({
-            type: "turn_separator",
-            agent: entry.agent,
-            timestamp: new Date().toISOString(),
-            task_id: entry.task_id ?? null,
-            sender: entry.sender ?? ""
-          });
-        }
+        if (!_pt.activityLog[team]) _pt.activityLog[team] = [];
+        _pt.activityLog[team].push({
+          type: "turn_separator",
+          agent: entry.agent,
+          timestamp: new Date().toISOString(),
+          task_id: entry.task_id ?? null,
+          sender: entry.sender ?? ""
+        });
 
         const mgrName = _pt.managerName[team];
         if (mgrName && mgrName === entry.agent) {
@@ -678,62 +690,62 @@ function App() {
 
             const human = humanName.value;
 
-              if (entry.assignee && entry.assignee.toLowerCase() === human.toLowerCase() &&
-                  (entry.status === "in_approval" || entry.status === "merge_failed")) {
-                const title = `T${String(tid).padStart(4, "0")} "${task.title}"`;
-                const body = entry.status === "in_approval"
-                  ? "Needs your approval"
-                  : "Merge failed -- needs resolution";
-                showActionToast({ title, body, taskId: tid, type: "info" });
-              }
+            if (entry.assignee && entry.assignee.toLowerCase() === human.toLowerCase() &&
+                (entry.status === "in_approval" || entry.status === "merge_failed")) {
+              const title = `T${String(tid).padStart(4, "0")} "${task.title}"`;
+              const body = entry.status === "in_approval"
+                ? "Needs your approval"
+                : "Merge failed -- needs resolution";
+              showActionToast({ title, body, taskId: tid, type: "info" });
+            }
 
-              if (entry.status === "done") {
-                const title = `T${String(tid).padStart(4, "0")} "${task.title}"`;
-                const body = "Merged successfully";
-                showActionToast({ title, body, taskId: tid, type: "success" });
-              }
+            if (entry.status === "done") {
+              const title = `T${String(tid).padStart(4, "0")} "${task.title}"`;
+              const body = "Merged successfully";
+              showActionToast({ title, body, taskId: tid, type: "success" });
             }
           }
-          return;
         }
+        return;
+      }
 
-        // ── agent_activity ──
-        if (!_pt.activity[team]) _pt.activity[team] = {};
-        _pt.activity[team][entry.agent] = entry;
+      // ── agent_activity ──
+      if (!_pt.activity[team]) _pt.activity[team] = {};
+      _pt.activity[team][entry.agent] = entry;
 
-        if (!_pt.activityLog[team]) _pt.activityLog[team] = [];
-        const log = _pt.activityLog[team];
-        if (log.length >= MAX_LOG_ENTRIES) log.splice(0, log.length - MAX_LOG_ENTRIES + 1);
-        log.push(entry);
+      if (!_pt.activityLog[team]) _pt.activityLog[team] = [];
+      const log = _pt.activityLog[team];
+      if (log.length >= MAX_LOG_ENTRIES) log.splice(0, log.length - MAX_LOG_ENTRIES + 1);
+      log.push(entry);
 
-        const mgrName = _pt.managerName[team];
-        if (mgrName && entry.agent === mgrName) {
-          const ctx = _pt.managerCtx[team];
-          if (ctx) {
-            _pt.managerCtx[team] = { ...ctx, timestamp: entry.timestamp };
-          } else {
-            _pt.managerCtx[team] = {
-              type: "turn_started",
-              agent: entry.agent,
-              team: team,
-              task_id: entry.task_id ?? null,
-              sender: "",
-              timestamp: entry.timestamp,
-            };
-          }
-        }
-
-        if (!_pt.turnState[team]) _pt.turnState[team] = {};
-        if (!_pt.turnState[team][entry.agent] || !_pt.turnState[team][entry.agent].inTurn) {
-          _pt.turnState[team][entry.agent] = {
-            inTurn: true,
-            taskId: entry.task_id ?? null,
+      const mgrName = _pt.managerName[team];
+      if (mgrName && entry.agent === mgrName) {
+        const ctx = _pt.managerCtx[team];
+        if (ctx) {
+          _pt.managerCtx[team] = { ...ctx, timestamp: entry.timestamp };
+        } else {
+          _pt.managerCtx[team] = {
+            type: "turn_started",
+            agent: entry.agent,
+            team: team,
+            task_id: entry.task_id ?? null,
             sender: "",
-            startedAt: new Date().toISOString()
+            timestamp: entry.timestamp,
           };
         }
+      }
 
-        if (isCurrent) _syncSignals(team);
+      if (!_pt.turnState[team]) _pt.turnState[team] = {};
+      if (!_pt.turnState[team][entry.agent] || !_pt.turnState[team][entry.agent].inTurn) {
+        _pt.turnState[team][entry.agent] = {
+          inTurn: true,
+          taskId: entry.task_id ?? null,
+          sender: "",
+          startedAt: new Date().toISOString()
+        };
+      }
+
+      if (isCurrent) _syncSignals(team);
     };
 
     // Try SharedWorker first (shares 1 SSE connection across all tabs)
@@ -763,6 +775,31 @@ function App() {
     }
 
     return cleanup;
+  }, []);
+
+  // ── Per-team backing stores: init when teams list changes ──
+  // Separate from SSE setup so teams changes don't tear down the connection.
+  useSignalEffect(() => {
+    const list = teams.value;              // ← auto-tracked
+    if (!list || list.length === 0) return;
+
+    for (const teamObj of list) {
+      const team = typeof teamObj === "object" ? teamObj.name : teamObj;
+      if (!_pt.activity[team])    _pt.activity[team]    = {};
+      if (!_pt.activityLog[team]) _pt.activityLog[team] = [];
+      if (!_pt.turnState[team])   _pt.turnState[team]   = {};
+      if (!_pt.thinking[team])    _pt.thinking[team]    = {};
+
+      // Fetch manager name for this team (one-time, best-effort).
+      // Also retroactively sets managerCtx if manager is already in a turn.
+      if (_pt.managerName[team] === undefined) {
+        api.fetchAgents(team).then(agentData => {
+          const mgr = agentData.find(a => a.role === "manager");
+          _pt.managerName[team] = mgr?.name ?? null;
+          _onManagerNameResolved(team, _pt.managerName[team]);
+        }).catch(() => { _pt.managerName[team] = null; });
+      }
+    }
   });
 
   const projectName = currentTeam.value || "";
