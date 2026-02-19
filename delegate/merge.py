@@ -63,6 +63,7 @@ The merge worker is called from the daemon loop (via ``merge_once``).
 import asyncio
 import enum
 import logging
+import os
 import random
 import subprocess
 import time
@@ -571,12 +572,13 @@ def _run_pre_merge(
 
     try:
         result = subprocess.run(
-            ["/bin/sh", "-c", shell_cmd],
+            ["/bin/bash", "-c", shell_cmd],
             cwd=wt_dir,
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=600,
+            env=os.environ.copy(),
         )
         output = result.stdout + result.stderr
         if result.returncode != 0:
