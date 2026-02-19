@@ -1,5 +1,6 @@
 """Tests for delegate/repo.py — repo registration via symlinks and worktrees."""
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from delegate.repo import (
     create_agent_worktree,
     remove_agent_worktree,
     get_worktree_path,
+    generate_env_scripts,
 )
 from delegate.task import create_task, update_task, get_task
 
@@ -252,3 +254,156 @@ class TestWorktree:
         t2 = get_task(hc_home, TEAM, task["id"])
         assert isinstance(t2["base_sha"], dict)
         assert len(t2["base_sha"][repo_name]) == 40
+
+
+class TestGenerateEnvScripts:
+    """Unit tests for generate_env_scripts() stack detection and script generation."""
+
+    SETUP = ".delegate.setup.sh"
+    TEST = ".delegate.test.sh"
+    SHEBANG = "#!/usr/bin/env bash"
+    SET_E = "set -e"
+
+    def _read(self, d: Path, name: str) -> str:
+        return (d / name).read_text()
+
+    def test_python_pyproject_generates_correct_scripts(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'foo'\n")
+        generate_env_scripts(tmp_path)
+        setup = self._read(tmp_path, self.SETUP)
+        test = self._read(tmp_path, self.TEST)
+        # Must have Python section
+        assert "# Python" in setup
+        assert "pytest" in test
+        # uv or python -m venv
+        assert (".venv" in setup)
+
+    def test_python_requirements_txt_no_pyproject(self, tmp_path):
+        (tmp_path / "requirements.txt").write_text("requests\n")
+        generate_env_scripts(tmp_path)
+        setup = self._read(tmp_path, self.SETUP)
+        test = self._read(tmp_path, self.TEST)
+        assert "requirements.txt" in setup
+        assert "pytest" in test
+
+    def test_node_package_json_generates_correct_scripts(self, tmp_path):
+        pkg = {"name": "myapp", "scripts": {"test": "jest"}}
+        (tmp_path / "package.json").write_text(json.dumps(pkg))
+        generate_env_scripts(tmp_path)
+        setup = self._read(tmp_path, self.SETUP)
+        test = self._read(tmp_path, self.TEST)
+        assert "node_modules" in setup
+        assert "npm test" in test
+
+    def test_node_no_test_script_uses_echo(self, tmp_path):
+        pkg = {"name": "myapp", "scripts": {}}
+        (tmp_path / "package.json").write_text(json.dumps(pkg))
+        generate_env_scripts(tmp_path)
+        test = self._read(tmp_path, self.TEST)
+        assert "No tests configured" in test
+
+    def test_does_not_overwrite_existing_setup_script(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'foo'\n")
+        original = "#!/usr/bin/env bash\n# custom user script\n"
+        (tmp_path / self.SETUP).write_text(original)
+        written_setup, written_test = generate_env_scripts(tmp_path)
+        assert written_setup is False
+        assert written_test is False
+        # Content unchanged
+        assert self._read(tmp_path, self.SETUP) == original
+        # Test script not created either
+        assert not (tmp_path / self.TEST).exists()
+
+    def test_shebang_and_set_e_in_both_scripts(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'foo'\n")
+        generate_env_scripts(tmp_path)
+        for name in (self.SETUP, self.TEST):
+            content = self._read(tmp_path, name)
+            assert content.startswith(self.SHEBANG), f"{name} missing shebang"
+            assert self.SET_E in content, f"{name} missing set -e"
+
+    def test_scripts_are_executable(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'foo'\n")
+        generate_env_scripts(tmp_path)
+        import stat
+        for name in (self.SETUP, self.TEST):
+            mode = (tmp_path / name).stat().st_mode
+            assert mode & stat.S_IXUSR, f"{name} not executable"
+
+    def test_no_indicators_generates_empty_scripts_with_comment(self, tmp_path):
+        generate_env_scripts(tmp_path)
+        for name in (self.SETUP, self.TEST):
+            content = self._read(tmp_path, name)
+            assert "No stack detected" in content
+
+    def test_multilanguage_root_pyproject_and_frontend_package_json(self, tmp_path):
+        """Root pyproject.toml + frontend/package.json → both sections in scripts."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'backend'\n")
+        frontend = tmp_path / "frontend"
+        frontend.mkdir()
+        pkg = {"name": "frontend", "scripts": {"test": "jest"}}
+        (frontend / "package.json").write_text(json.dumps(pkg))
+        generate_env_scripts(tmp_path)
+        setup = self._read(tmp_path, self.SETUP)
+        test = self._read(tmp_path, self.TEST)
+        # Both stacks present
+        assert "# Python" in setup
+        assert "# JavaScript" in setup or "# TypeScript" in setup
+        # Frontend uses subshell
+        assert "(cd frontend" in setup
+        assert "(cd frontend" in test
+        assert "pytest" in test
+
+    def test_subdir_detection_backend_pyproject(self, tmp_path):
+        """backend/pyproject.toml detected and generates (cd backend && ...) section."""
+        backend = tmp_path / "backend"
+        backend.mkdir()
+        (backend / "pyproject.toml").write_text("[project]\nname = 'backend'\n")
+        generate_env_scripts(tmp_path)
+        setup = self._read(tmp_path, self.SETUP)
+        test = self._read(tmp_path, self.TEST)
+        assert "(cd backend" in setup
+        assert "(cd backend" in test
+
+    def test_typescript_label_when_tsconfig_present(self, tmp_path):
+        """package.json + tsconfig.json → TypeScript label in comment."""
+        pkg = {"name": "myapp", "scripts": {"test": "jest"}}
+        (tmp_path / "package.json").write_text(json.dumps(pkg))
+        (tmp_path / "tsconfig.json").write_text('{"compilerOptions": {}}')
+        generate_env_scripts(tmp_path)
+        setup = self._read(tmp_path, self.SETUP)
+        assert "# TypeScript" in setup
+
+    def test_java_maven_pom_xml(self, tmp_path):
+        """pom.xml → correct mvn commands."""
+        (tmp_path / "pom.xml").write_text("<project/>")
+        generate_env_scripts(tmp_path)
+        setup = self._read(tmp_path, self.SETUP)
+        test = self._read(tmp_path, self.TEST)
+        assert "mvn" in setup
+        assert "mvn" in test
+
+    def test_csharp_csproj_dotnet_commands(self, tmp_path):
+        """*.csproj glob → dotnet commands."""
+        (tmp_path / "MyApp.csproj").write_text("<Project/>")
+        generate_env_scripts(tmp_path)
+        setup = self._read(tmp_path, self.SETUP)
+        test = self._read(tmp_path, self.TEST)
+        assert "dotnet restore" in setup
+        assert "dotnet test" in test
+
+    def test_rust_cargo_toml(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname = 'myapp'\n")
+        generate_env_scripts(tmp_path)
+        setup = self._read(tmp_path, self.SETUP)
+        test = self._read(tmp_path, self.TEST)
+        assert "cargo build" in setup
+        assert "cargo test" in test
+
+    def test_go_mod(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com/myapp\n\ngo 1.21\n")
+        generate_env_scripts(tmp_path)
+        setup = self._read(tmp_path, self.SETUP)
+        test = self._read(tmp_path, self.TEST)
+        assert "go mod tidy" in setup
+        assert "go test ./..." in test
