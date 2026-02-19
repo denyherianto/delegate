@@ -546,6 +546,23 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.sb-project-delete {
+  display: none;
+  align-items: center;
+  margin-left: auto;
+  padding: 2px 4px;
+  color: var(--text-muted);
+  border-radius: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.sb-project-item:hover .sb-project-delete {
+  display: flex;
+}
+.sb-project-delete:hover {
+  color: var(--text-normal);
+  background: rgba(255,255,255,0.08);
+}
 .sb-projects-empty {
   font-size: 12px;
   color: var(--text-muted);
@@ -1119,6 +1136,77 @@ body {
   color: #000;
 }
 .npm-btn-create:hover { background: #22c55e; }
+
+/* ================================================================
+   Delete Project Modal
+   ================================================================ */
+.dpm-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  width: 380px;
+  max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.dpm-header {
+  display: flex;
+  align-items: center;
+}
+.dpm-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+.dpm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dpm-message {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+.dpm-error {
+  font-size: 12px;
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+.dpm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.dpm-btn {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s;
+}
+.dpm-btn:disabled { opacity: 0.5; cursor: default; }
+.dpm-btn-cancel {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.dpm-btn-cancel:hover:not(:disabled) { background: var(--bg-active); }
+.dpm-btn-delete {
+  background: #ef4444;
+  color: #fff;
+}
+.dpm-btn-delete:hover:not(:disabled) { background: #dc2626; }
 
 /* ================================================================
    Tasks panel

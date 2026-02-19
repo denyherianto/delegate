@@ -1704,6 +1704,67 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
         return {"name": name, "status": "created"}
 
+    @app.delete("/projects/{name}")
+    def delete_project(name: str):
+        """Delete a project (team) and all its data.
+
+        Removes the team directory (agents, worktrees, DB, repos config) and
+        cleans up the global projects table.  Broadcasts a ``teams_refresh``
+        SSE event so all open tabs update their sidebar immediately.
+        """
+        import shutil
+        from delegate.db import get_connection
+        from delegate.activity import broadcast_teams_refresh
+
+        td = _team_dir(hc_home, name)
+        if not td.is_dir():
+            raise HTTPException(status_code=404, detail=f"Project '{name}' not found")
+
+        # Resolve team UUID before we delete the directory
+        team_uuid: str | None = None
+        try:
+            conn = get_connection(hc_home)
+            row = conn.execute(
+                "SELECT project_id FROM projects WHERE name = ?", (name,)
+            ).fetchone()
+            if row:
+                team_uuid = row["project_id"]
+            conn.close()
+        except Exception:
+            pass
+
+        # Remove the team directory (agents, worktrees, db, repos config)
+        shutil.rmtree(td)
+
+        # Remove from global projects table
+        try:
+            conn = get_connection(hc_home)
+            try:
+                conn.execute("DELETE FROM projects WHERE name = ?", (name,))
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            pass  # Best-effort — directory is already gone
+
+        # Soft-delete team UUID + member IDs in db_ids
+        if team_uuid:
+            try:
+                from delegate.db_ids import soft_delete_team
+                ids_conn = get_connection(hc_home)
+                try:
+                    soft_delete_team(ids_conn, team_uuid)
+                    ids_conn.commit()
+                finally:
+                    ids_conn.close()
+            except Exception:
+                pass  # Best-effort
+
+        # Notify all SSE clients to refresh their team list
+        broadcast_teams_refresh()
+
+        return {"ok": True}
+
     @app.get("/teams/{team}/default-cwd")
     def get_default_cwd(team: str):
         """Return the default working directory for shell commands in a team.

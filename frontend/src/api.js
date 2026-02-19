@@ -355,6 +355,15 @@ export async function createProject({ name, repoPath, agentCount = 2, model = "s
   return r.json();
 }
 
+export async function deleteProject(name) {
+  const r = await fetch(`/projects/${encodeURIComponent(name)}`, { method: "DELETE" });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
 // --- Version ---
 
 export async function fetchVersion() {

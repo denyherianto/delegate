@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import {
   currentTeam, teams, activeTab,
   sidebarCollapsed, projectModalOpen,
@@ -7,7 +7,7 @@ import {
   allTeamsTurnState,
 } from "../state.js";
 import { cap, prettyName } from "../utils.js";
-import { fetchVersion } from "../api.js";
+import { fetchVersion, deleteProject } from "../api.js";
 import { UpdateModal } from "./UpdateModal.jsx";
 
 // ── SVG Icons ──
@@ -64,6 +64,101 @@ function FeedbackIcon() {
     <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14 2H2a1 1 0 00-1 1v8a1 1 0 001 1h3l3 3 3-3h3a1 1 0 001-1V3a1 1 0 00-1-1z" />
     </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6"/>
+      <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+      <path d="M10 11v6M14 11v6"/>
+      <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+    </svg>
+  );
+}
+
+// ── Delete Project Modal ──
+function DeleteProjectModal({ projectName, onClose }) {
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+  const cancelRef = useRef(null);
+
+  // Auto-focus Cancel button on open
+  useEffect(() => {
+    if (cancelRef.current) cancelRef.current.focus();
+  }, []);
+
+  // Escape closes modal
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const handleDelete = useCallback(async () => {
+    setError("");
+    setDeleting(true);
+    try {
+      await deleteProject(projectName);
+      // Remove from teams signal
+      const wasCurrent = currentTeam.value === projectName;
+      teams.value = (teams.value || []).filter(t => {
+        const n = typeof t === "object" ? t.name : t;
+        return n !== projectName;
+      });
+      onClose();
+      // Navigate away if we just deleted the current project
+      if (wasCurrent) {
+        const remaining = teams.value || [];
+        if (remaining.length > 0) {
+          const first = typeof remaining[0] === "object" ? remaining[0].name : remaining[0];
+          navigate(first, "chat");
+        } else {
+          // No projects left — clear current team
+          currentTeam.value = null;
+        }
+      }
+    } catch (err) {
+      setError(err.message || "Failed to delete project");
+      setDeleting(false);
+    }
+  }, [projectName, onClose]);
+
+  return (
+    <div class="modal-overlay" onClick={onClose}>
+      <div class="dpm-modal" onClick={(e) => e.stopPropagation()}>
+        <div class="dpm-header">
+          <h2 class="dpm-title">Delete project?</h2>
+        </div>
+        <div class="dpm-body">
+          <p class="dpm-message">
+            Deleting <strong>"{prettyName(projectName)}"</strong> will permanently remove all agents,
+            tasks, and data. This cannot be undone.
+          </p>
+          {error && <div class="dpm-error">{error}</div>}
+        </div>
+        <div class="dpm-actions">
+          <button
+            ref={cancelRef}
+            class="dpm-btn dpm-btn-cancel"
+            onClick={onClose}
+            disabled={deleting}
+          >
+            Cancel
+          </button>
+          <button
+            class="dpm-btn dpm-btn-delete"
+            onClick={handleDelete}
+            disabled={deleting}
+          >
+            {deleting ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -142,13 +237,22 @@ function ProjectList({ collapsed }) {
   const teamList = teams.value || [];
   const current = currentTeam.value;
   const turnState = allTeamsTurnState.value;  // { teamName: { agentName: { inTurn, ... } } }
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  const openDeleteModal = useCallback((name) => {
+    setDeleteTarget(name);
+  }, []);
+
+  const closeDeleteModal = useCallback(() => {
+    setDeleteTarget(null);
+  }, []);
 
   return (
     <div class="sb-projects">
       {!collapsed && (
         <div class="sb-projects-header">
           <span class="sb-projects-label">Projects</span>
-      </div>
+        </div>
       )}
       {!collapsed && teamList.length > 0 && (
         <div class="sb-projects-list">
@@ -159,7 +263,7 @@ function ProjectList({ collapsed }) {
             // Check if any agent in this team is active
             const teamTurnState = turnState[name] || {};
             const hasActiveAgent = Object.values(teamTurnState).some(a => a.inTurn);
-                return (
+            return (
               <button
                 key={name}
                 class={"sb-project-item" + (isCurrent ? " active" : "")}
@@ -167,13 +271,23 @@ function ProjectList({ collapsed }) {
               >
                 <span class={"sb-project-dot" + (hasActiveAgent ? " dot-active" : " dot-idle")}></span>
                 <span class="sb-project-name">{prettyName(name)}</span>
+                <span
+                  class="sb-project-delete"
+                  onClick={(e) => { e.stopPropagation(); openDeleteModal(name); }}
+                  title="Delete project"
+                >
+                  <TrashIcon />
+                </span>
               </button>
-                );
-              })}
-            </div>
+            );
+          })}
+        </div>
       )}
       {!collapsed && teamList.length === 0 && (
         <div class="sb-projects-empty">No projects yet</div>
+      )}
+      {deleteTarget && (
+        <DeleteProjectModal projectName={deleteTarget} onClose={closeDeleteModal} />
       )}
     </div>
   );
