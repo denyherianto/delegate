@@ -73,7 +73,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from delegate.runtime import TelephoneExchange
 
-from delegate.config import get_repo_approval, get_pre_merge_script
+from delegate.config import get_repo_approval
 from delegate.notify import notify_conflict
 from delegate.review import get_current_review
 from delegate.task import (
@@ -514,7 +514,7 @@ def _indent(text: str, spaces: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Pre-merge tests (runs inside temp worktree)
+# Pre-merge tests (runs inside agent worktree)
 # ---------------------------------------------------------------------------
 
 def _run_pre_merge(
@@ -523,63 +523,72 @@ def _run_pre_merge(
     team: str | None = None,
     repo_name: str | None = None,
 ) -> tuple[bool, str]:
-    """Run pre-merge script or auto-detected tests inside the temp worktree.
+    """Run pre-merge validation inside the agent worktree.
 
-    The temp worktree already has the rebased code checked out, so no
-    ``git checkout`` is needed.
+    Executes in two steps:
+    1. Source ``.delegate/setup.sh`` (if present) to activate the environment
+       (e.g. ``source .venv/bin/activate``, ``export PATH=...``).
+    2. Source ``.delegate/premerge.sh`` (if present) to run the test suite.
+
+    Both scripts are *sourced* (not executed) so that environment mutations
+    (activated virtualenvs, exported variables) from setup carry forward
+    into the test run.
+
+    Graceful degradation: if a script is missing, log a warning and continue.
+    A missing premerge script is not a failure — it means the repo hasn't
+    adopted the convention yet.
 
     Returns ``(success, output)``.
     """
-    # Check for a configured pre-merge script
-    script: str | None = None
-    if hc_home is not None and team is not None and repo_name:
-        script = get_pre_merge_script(hc_home, team, repo_name)
-
-    if script is not None:
-        try:
-            script_result = subprocess.run(
-                script,
-                cwd=wt_dir,
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=600,
-                shell=True,
-            )
-            output = script_result.stdout + script_result.stderr
-            ok = script_result.returncode == 0
-            return ok, output if not ok else f"Pre-merge script passed:\n{output}"
-        except subprocess.TimeoutExpired:
-            return False, "Pre-merge script timed out after 600 seconds."
-        except OSError as exc:
-            return False, f"Pre-merge script failed to start: {exc}"
-
-    # Fall back to auto-detection (no script configured)
-    test_cmd: list[str] | None = None
     wt_path = Path(wt_dir)
-    if (wt_path / "pyproject.toml").exists() or (wt_path / "tests").is_dir():
-        test_cmd = ["python", "-m", "pytest", "-x", "-q"]
-    elif (wt_path / "package.json").exists():
-        test_cmd = ["npm", "test"]
-    elif (wt_path / "Makefile").exists():
-        test_cmd = ["make", "test"]
+    setup_script = wt_path / ".delegate" / "setup.sh"
+    test_script = wt_path / ".delegate" / "premerge.sh"
 
-    if test_cmd is None:
-        return True, "No test runner detected, skipping tests."
+    # Build a single shell command that:
+    # 1. Sources setup.sh if it exists (warns + continues if missing).
+    # 2. Sources premerge.sh if it exists (warns + skips if missing).
+    # 3. Fails (propagates exit code) if premerge.sh exits non-zero.
+    #
+    # Each script is sourced so env changes (venv activation, PATH exports)
+    # survive into subsequent commands within the same shell.
+
+    setup_exists = setup_script.exists()
+    test_exists = test_script.exists()
+
+    if not setup_exists:
+        logger.warning("%s: .delegate/setup.sh not found — skipping env setup", wt_dir)
+    if not test_exists:
+        logger.warning("%s: .delegate/premerge.sh not found — skipping pre-merge tests", wt_dir)
+        return True, ".delegate/premerge.sh not found — skipping pre-merge tests"
+
+    # Build the shell command: optionally source setup, then source premerge.
+    # We always run in a login-ish shell so that standard env is available.
+    shell_parts: list[str] = []
+    if setup_exists:
+        shell_parts.append(". ./.delegate/setup.sh")
+    shell_parts.append(". ./.delegate/premerge.sh")
+    shell_cmd = " && ".join(shell_parts)
 
     try:
-        test_result = subprocess.run(
-            test_cmd,
+        result = subprocess.run(
+            ["/bin/sh", "-c", shell_cmd],
             cwd=wt_dir,
             stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=600,
         )
-        output = test_result.stdout + test_result.stderr
-        return test_result.returncode == 0, output
+        output = result.stdout + result.stderr
+        if result.returncode != 0:
+            # Include last 50 lines of output in failure message
+            lines = output.splitlines()
+            tail = "\n".join(lines[-50:]) if len(lines) > 50 else output
+            return False, f".delegate/premerge.sh exited {result.returncode}:\n{tail}"
+        return True, f"Pre-merge checks passed:\n{output}"
     except subprocess.TimeoutExpired:
-        return False, "Tests timed out after 300 seconds."
+        return False, ".delegate/premerge.sh timed out after 600 seconds."
+    except OSError as exc:
+        return False, f"Pre-merge script failed to start: {exc}"
 
 
 # Keep old names as aliases for backward compatibility
