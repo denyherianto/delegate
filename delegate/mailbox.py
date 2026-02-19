@@ -114,14 +114,14 @@ def send(
             )
 
     now = _now()
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     try:
         cursor = conn.execute(
             """\
-            INSERT INTO messages (sender, recipient, content, type, task_id, delivered_at, team, team_uuid)
+            INSERT INTO messages (sender, recipient, content, type, task_id, delivered_at, project, project_uuid)
             VALUES (?, ?, ?, 'chat', ?, ?, ?, ?)""",
-            (sender, recipient, message, task_id, now, team, team_uuid),
+            (sender, recipient, message, task_id, now, project, project_uuid),
         )
         conn.commit()
         msg_id = cursor.lastrowid
@@ -140,18 +140,18 @@ def read_inbox(
     Messages must be delivered (``delivered_at IS NOT NULL``) to be visible.
     Filters by team to ensure cross-team isolation.
     """
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     try:
         if unread_only:
             rows = conn.execute(
-                "SELECT * FROM messages WHERE type = 'chat' AND team_uuid = ? AND recipient = ? AND delivered_at IS NOT NULL AND processed_at IS NULL ORDER BY id ASC",
-                (team_uuid, agent),
+                "SELECT * FROM messages WHERE type = 'chat' AND project_uuid = ? AND recipient = ? AND delivered_at IS NOT NULL AND processed_at IS NULL ORDER BY id ASC",
+                (project_uuid, agent),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM messages WHERE type = 'chat' AND team_uuid = ? AND recipient = ? AND delivered_at IS NOT NULL ORDER BY id ASC",
-                (team_uuid, agent),
+                "SELECT * FROM messages WHERE type = 'chat' AND project_uuid = ? AND recipient = ? AND delivered_at IS NOT NULL ORDER BY id ASC",
+                (project_uuid, agent),
             ).fetchall()
     finally:
         conn.close()
@@ -167,18 +167,18 @@ def read_outbox(
     (``delivered_at IS NULL``).
     Filters by team to ensure cross-team isolation.
     """
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     try:
         if pending_only:
             rows = conn.execute(
-                "SELECT * FROM messages WHERE type = 'chat' AND team_uuid = ? AND sender = ? AND delivered_at IS NULL ORDER BY id ASC",
-                (team_uuid, agent),
+                "SELECT * FROM messages WHERE type = 'chat' AND project_uuid = ? AND sender = ? AND delivered_at IS NULL ORDER BY id ASC",
+                (project_uuid, agent),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM messages WHERE type = 'chat' AND team_uuid = ? AND sender = ? ORDER BY id ASC",
-                (team_uuid, agent),
+                "SELECT * FROM messages WHERE type = 'chat' AND project_uuid = ? AND sender = ? ORDER BY id ASC",
+                (project_uuid, agent),
             ).fetchall()
     finally:
         conn.close()
@@ -187,7 +187,7 @@ def read_outbox(
 
 def mark_seen(hc_home: Path, team: str, msg_id: int) -> None:
     """Mark a message as seen (agent control loop picked it up at turn start)."""
-    conn = get_connection(hc_home, team)
+    conn = get_connection(hc_home, project)
     try:
         conn.execute(
             "UPDATE messages SET seen_at = ? WHERE id = ? AND type = 'chat' AND seen_at IS NULL",
@@ -203,7 +203,7 @@ def mark_seen_batch(hc_home: Path, team: str, msg_ids: list[int]) -> None:
     if not msg_ids:
         return
     now = _now()
-    conn = get_connection(hc_home, team)
+    conn = get_connection(hc_home, project)
     try:
         conn.executemany(
             "UPDATE messages SET seen_at = ? WHERE id = ? AND type = 'chat' AND seen_at IS NULL",
@@ -216,7 +216,7 @@ def mark_seen_batch(hc_home: Path, team: str, msg_ids: list[int]) -> None:
 
 def mark_processed(hc_home: Path, team: str, msg_id: int) -> None:
     """Mark a message as processed (agent finished the turn)."""
-    conn = get_connection(hc_home, team)
+    conn = get_connection(hc_home, project)
     try:
         conn.execute(
             "UPDATE messages SET processed_at = ? WHERE id = ? AND type = 'chat' AND processed_at IS NULL",
@@ -232,7 +232,7 @@ def mark_processed_batch(hc_home: Path, team: str, msg_ids: list[int]) -> None:
     if not msg_ids:
         return
     now = _now()
-    conn = get_connection(hc_home, team)
+    conn = get_connection(hc_home, project)
     try:
         conn.executemany(
             "UPDATE messages SET processed_at = ? WHERE id = ? AND type = 'chat' AND processed_at IS NULL",
@@ -251,7 +251,7 @@ def mark_outbox_routed(
     With immediate delivery in ``send()``, this is typically a no-op.
     Kept for backward compatibility.
     """
-    conn = get_connection(hc_home, team)
+    conn = get_connection(hc_home, project)
     try:
         conn.execute(
             "UPDATE messages SET delivered_at = ? WHERE id = ? AND type = 'chat' AND delivered_at IS NULL",
@@ -272,14 +272,14 @@ def deliver(hc_home: Path, team: str, message: Message) -> int:
     Returns the message id.
     """
     now = _now()
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     try:
         cursor = conn.execute(
             """\
-            INSERT INTO messages (sender, recipient, content, type, task_id, delivered_at, team, team_uuid)
+            INSERT INTO messages (sender, recipient, content, type, task_id, delivered_at, project, project_uuid)
             VALUES (?, ?, ?, 'chat', ?, ?, ?, ?)""",
-            (message.sender, message.recipient, message.body, message.task_id, now, team, team_uuid),
+            (message.sender, message.recipient, message.body, message.task_id, now, project, project_uuid),
         )
         conn.commit()
         msg_id = cursor.lastrowid
@@ -300,22 +300,22 @@ def recent_processed(
     If *from_sender* is specified, only return messages from that sender.
     Otherwise return messages from any sender. Results are ordered newest-first.
     """
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     try:
         if from_sender:
             rows = conn.execute(
-                "SELECT * FROM messages WHERE type = 'chat' AND team_uuid = ? AND recipient = ? AND sender = ? "
+                "SELECT * FROM messages WHERE type = 'chat' AND project_uuid = ? AND recipient = ? AND sender = ? "
                 "AND processed_at IS NOT NULL "
                 "ORDER BY id DESC LIMIT ?",
-                (team_uuid, agent, from_sender, limit),
+                (project_uuid, agent, from_sender, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM messages WHERE type = 'chat' AND team_uuid = ? AND recipient = ? "
+                "SELECT * FROM messages WHERE type = 'chat' AND project_uuid = ? AND recipient = ? "
                 "AND processed_at IS NOT NULL "
                 "ORDER BY id DESC LIMIT ?",
-                (team_uuid, agent, limit),
+                (project_uuid, agent, limit),
             ).fetchall()
     finally:
         conn.close()
@@ -341,24 +341,24 @@ def recent_conversation(
 
     Results are in chronological order (oldest first).
     """
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     try:
         if peer:
             rows = conn.execute(
-                "SELECT * FROM messages WHERE type = 'chat' AND team_uuid = ? AND "
+                "SELECT * FROM messages WHERE type = 'chat' AND project_uuid = ? AND "
                 "((recipient = ? AND sender = ? AND processed_at IS NOT NULL) "
                 " OR (sender = ? AND recipient = ?)) "
                 "ORDER BY id DESC LIMIT ?",
-                (team_uuid, agent, peer, agent, peer, limit),
+                (project_uuid, agent, peer, agent, peer, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM messages WHERE type = 'chat' AND team_uuid = ? AND "
+                "SELECT * FROM messages WHERE type = 'chat' AND project_uuid = ? AND "
                 "((recipient = ? AND processed_at IS NOT NULL) "
                 "OR sender = ?) "
                 "ORDER BY id DESC LIMIT ?",
-                (team_uuid, agent, agent, limit),
+                (project_uuid, agent, agent, limit),
             ).fetchall()
     finally:
         conn.close()
@@ -370,12 +370,12 @@ def has_unread(hc_home: Path, team: str, agent: str) -> bool:
 
     Fast path for the orchestrator — avoids fetching full message content.
     """
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     try:
         row = conn.execute(
-            "SELECT 1 FROM messages WHERE type = 'chat' AND team_uuid = ? AND recipient = ? AND delivered_at IS NOT NULL AND processed_at IS NULL LIMIT 1",
-            (team_uuid, agent),
+            "SELECT 1 FROM messages WHERE type = 'chat' AND project_uuid = ? AND recipient = ? AND delivered_at IS NOT NULL AND processed_at IS NULL LIMIT 1",
+            (project_uuid, agent),
         ).fetchone()
     finally:
         conn.close()
@@ -387,13 +387,13 @@ def agents_with_unread(hc_home: Path, team: str) -> list[str]:
 
     Single query — used by the daemon to find every agent needing a turn.
     """
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     try:
         rows = conn.execute(
             "SELECT DISTINCT recipient FROM messages "
-            "WHERE type = 'chat' AND team_uuid = ? AND delivered_at IS NOT NULL AND processed_at IS NULL",
-            (team_uuid,),
+            "WHERE type = 'chat' AND project_uuid = ? AND delivered_at IS NOT NULL AND processed_at IS NULL",
+            (project_uuid,),
         ).fetchall()
     finally:
         conn.close()
@@ -402,12 +402,12 @@ def agents_with_unread(hc_home: Path, team: str) -> list[str]:
 
 def count_unread(hc_home: Path, team: str, agent: str) -> int:
     """Count unread delivered messages for an agent."""
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     try:
         row = conn.execute(
-            "SELECT COUNT(*) FROM messages WHERE type = 'chat' AND team_uuid = ? AND recipient = ? AND delivered_at IS NOT NULL AND processed_at IS NULL",
-            (team_uuid, agent),
+            "SELECT COUNT(*) FROM messages WHERE type = 'chat' AND project_uuid = ? AND recipient = ? AND delivered_at IS NOT NULL AND processed_at IS NULL",
+            (project_uuid, agent),
         ).fetchone()
     finally:
         conn.close()
@@ -461,7 +461,7 @@ def main():
             from delegate.db import get_connection
             conn = get_connection(args.home)
             try:
-                teams_rows = conn.execute("SELECT name FROM teams ORDER BY name").fetchall()
+                teams_rows = conn.execute("SELECT name FROM projects ORDER BY name").fetchall()
                 teams = [row["name"] for row in teams_rows]
             finally:
                 conn.close()
@@ -469,7 +469,7 @@ def main():
             all_messages = []
             for team in teams:
                 try:
-                    team_msgs = read_inbox(args.home, team, args.agent, unread_only=not args.all)
+                    team_msgs = read_inbox(args.home, project, args.agent, unread_only=not args.all)
                     for msg in team_msgs:
                         msg.team = team  # Add team field to message
                     all_messages.extend(team_msgs)

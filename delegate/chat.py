@@ -34,11 +34,11 @@ def _parse_result_column(rows: list[dict]) -> list[dict]:
 
 def log_event(hc_home: Path, team: str, description: str, *, task_id: int | None = None) -> int:
     """Log a system event. Returns the event ID."""
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     cursor = conn.execute(
-        "INSERT INTO messages (sender, recipient, content, type, task_id, team, team_uuid) VALUES (?, ?, ?, 'event', ?, ?, ?)",
-        (SYSTEM_USER, SYSTEM_USER, description, task_id, team, team_uuid),
+        "INSERT INTO messages (sender, recipient, content, type, task_id, project, project_uuid) VALUES (?, ?, ?, 'event', ?, ?, ?)",
+        (SYSTEM_USER, SYSTEM_USER, description, task_id, project, project_uuid),
     )
     conn.commit()
     msg_id = cursor.lastrowid
@@ -63,8 +63,8 @@ def get_messages(
     When limit is used without before_id, returns the LAST N messages (most recent).
     When before_id is provided, returns messages with id < before_id (for pagination).
     """
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     # Hide system→agent chat messages from the UI (e.g. daemon startup
     # notifications, merge results).  Events (type='event') from system
     # are still shown — they're the activity feed.
@@ -73,10 +73,10 @@ def get_messages(
             id, timestamp, sender, recipient, content, type, task_id,
             delivered_at, seen_at, processed_at, result
         FROM messages
-        WHERE team_uuid = ?
+        WHERE project_uuid = ?
           AND NOT (sender = ? AND type = 'chat')
     """
-    params: list = [team_uuid, SYSTEM_USER]
+    params: list = [project_uuid, SYSTEM_USER]
 
     if since:
         query += " AND timestamp > ?"
@@ -127,12 +127,12 @@ def get_task_activity(
     inter-agent messages that reference the task.  Results are ordered
     chronologically, oldest first.
     """
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     query = """
         SELECT id, timestamp, sender, recipient, content, type, task_id
         FROM messages
-        WHERE task_id = ? AND team_uuid = ?
+        WHERE task_id = ? AND project_uuid = ?
         ORDER BY id ASC
     """
     params: list = [task_id, team_uuid]
@@ -161,14 +161,14 @@ def get_task_timeline(
     ``author`` as ``sender``.  This makes the shape uniform with event
     rows so the UI can render them in a single timeline.
     """
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
 
     # --- UNION ALL query combines events and comments with ordering at DB level ---
     query = """
         SELECT id, timestamp, sender, recipient, content, type, task_id
         FROM messages
-        WHERE task_id = ? AND type = 'event' AND team_uuid = ?
+        WHERE task_id = ? AND type = 'event' AND project_uuid = ?
 
         UNION ALL
 
@@ -176,11 +176,11 @@ def get_task_timeline(
                '' AS recipient, body AS content, 'comment' AS type,
                task_id
         FROM task_comments
-        WHERE task_id = ? AND team_uuid = ?
+        WHERE task_id = ? AND project_uuid = ?
 
         ORDER BY timestamp ASC, id ASC
     """
-    params = [task_id, team_uuid, task_id, team_uuid]
+    params = [task_id, project_uuid, task_id, team_uuid]
     if limit:
         query += " LIMIT ?"
         params.append(limit)
@@ -196,11 +196,11 @@ def get_task_timeline(
 
 def start_session(hc_home: Path, team: str, agent: str, task_id: int | None = None) -> int:
     """Start a new agent session. Returns session ID."""
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     cursor = conn.execute(
-        "INSERT INTO sessions (agent, task_id, team, team_uuid) VALUES (?, ?, ?, ?)",
-        (agent, task_id, team, team_uuid),
+        "INSERT INTO sessions (agent, task_id, project, project_uuid) VALUES (?, ?, ?, ?)",
+        (agent, task_id, project, project_uuid),
     )
     conn.commit()
     session_id = cursor.lastrowid
@@ -219,8 +219,8 @@ def end_session(
     cache_write_tokens: int = 0,
 ) -> None:
     """End an agent session, recording duration and token usage."""
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     conn.execute(
         """UPDATE sessions SET
             ended_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
@@ -230,8 +230,8 @@ def end_session(
             cost_usd = ?,
             cache_read_tokens = ?,
             cache_write_tokens = ?
-        WHERE id = ? AND team_uuid = ?""",
-        (tokens_in, tokens_out, cost_usd, cache_read_tokens, cache_write_tokens, session_id, team_uuid),
+        WHERE id = ? AND project_uuid = ?""",
+        (tokens_in, tokens_out, cost_usd, cache_read_tokens, cache_write_tokens, session_id, project_uuid),
     )
     conn.commit()
     conn.close()
@@ -239,11 +239,11 @@ def end_session(
 
 def update_session_task(hc_home: Path, team: str, session_id: int, task_id: int) -> None:
     """Update the task_id on a running session."""
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     conn.execute(
-        "UPDATE sessions SET task_id = ? WHERE id = ? AND task_id IS NULL AND team_uuid = ?",
-        (task_id, session_id, team_uuid),
+        "UPDATE sessions SET task_id = ? WHERE id = ? AND task_id IS NULL AND project_uuid = ?",
+        (task_id, session_id, project_uuid),
     )
     conn.commit()
     conn.close()
@@ -264,8 +264,8 @@ def update_session_tokens(
     Called after each agent turn so the dashboard reflects live usage
     even if the agent crashes before end_session().
     """
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     conn.execute(
         """UPDATE sessions SET
             tokens_in = ?,
@@ -273,8 +273,8 @@ def update_session_tokens(
             cost_usd = ?,
             cache_read_tokens = ?,
             cache_write_tokens = ?
-        WHERE id = ? AND team_uuid = ?""",
-        (tokens_in, tokens_out, cost_usd, cache_read_tokens, cache_write_tokens, session_id, team_uuid),
+        WHERE id = ? AND project_uuid = ?""",
+        (tokens_in, tokens_out, cost_usd, cache_read_tokens, cache_write_tokens, session_id, project_uuid),
     )
     conn.commit()
     conn.close()
@@ -282,8 +282,8 @@ def update_session_tokens(
 
 def get_task_stats(hc_home: Path, team: str, task_id: int) -> dict:
     """Get aggregated stats for a task from the sessions table."""
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     row = conn.execute(
         """SELECT
             COUNT(*) as session_count,
@@ -293,8 +293,8 @@ def get_task_stats(hc_home: Path, team: str, task_id: int) -> dict:
             COALESCE(SUM(cost_usd), 0.0) as total_cost_usd,
             COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
             COALESCE(SUM(cache_write_tokens), 0) as total_cache_write
-        FROM sessions WHERE task_id = ? AND team_uuid = ?""",
-        (task_id, team_uuid),
+        FROM sessions WHERE task_id = ? AND project_uuid = ?""",
+        (task_id, project_uuid),
     ).fetchone()
     conn.close()
     return dict(row) if row else {}
@@ -304,8 +304,8 @@ def get_agent_stats(hc_home: Path, team: str, agent: str) -> dict:
     """Get aggregated stats for an agent from sessions and tasks."""
     from delegate.task import list_tasks
 
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     row = conn.execute(
         """SELECT
             COUNT(*) as session_count,
@@ -315,8 +315,8 @@ def get_agent_stats(hc_home: Path, team: str, agent: str) -> dict:
             COALESCE(SUM(cost_usd), 0.0) as total_cost_usd,
             COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
             COALESCE(SUM(cache_write_tokens), 0) as total_cache_write
-        FROM sessions WHERE agent = ? AND team_uuid = ?""",
-        (agent, team_uuid),
+        FROM sessions WHERE agent = ? AND project_uuid = ?""",
+        (agent, project_uuid),
     ).fetchone()
     conn.close()
 
@@ -330,7 +330,7 @@ def get_agent_stats(hc_home: Path, team: str, agent: str) -> dict:
         "total_cache_write": 0,
     }
 
-    all_tasks = list_tasks(hc_home, team, assignee=agent)
+    all_tasks = list_tasks(hc_home, project, assignee=agent)
     tasks_done = sum(1 for t in all_tasks if t.get("status") == "done")
     tasks_in_review = sum(1 for t in all_tasks if t.get("status") == "in_review")
     avg_task_seconds = stats["agent_time_seconds"] / tasks_done if tasks_done > 0 else 0.0
@@ -365,8 +365,8 @@ def get_team_agent_stats(hc_home: Path, team: str, agent_names: list[str]) -> di
     if not agent_names:
         return {}
 
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     try:
         # Single aggregate query for all agents at once
         rows = conn.execute(
@@ -378,9 +378,9 @@ def get_team_agent_stats(hc_home: Path, team: str, agent_names: list[str]) -> di
                 COALESCE(SUM(cost_usd), 0.0) as total_cost_usd,
                 COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
                 COALESCE(SUM(cache_write_tokens), 0) as total_cache_write
-            FROM sessions WHERE team_uuid = ?
+            FROM sessions WHERE project_uuid = ?
             GROUP BY agent""",
-            (team_uuid,),
+            (project_uuid,),
         ).fetchall()
     finally:
         conn.close()
@@ -390,7 +390,7 @@ def get_team_agent_stats(hc_home: Path, team: str, agent_names: list[str]) -> di
         session_map[r["agent"]] = dict(r)
 
     # Single list_tasks call for the whole team, group by assignee in Python
-    all_tasks = list_tasks(hc_home, team)
+    all_tasks = list_tasks(hc_home, project)
     tasks_by_agent: dict[str, list[dict]] = {}
     for t in all_tasks:
         a = t.get("assignee")
@@ -420,7 +420,7 @@ def get_project_stats(hc_home: Path, team: str, project: str) -> dict:
     """Get aggregated stats for all tasks in a project."""
     from delegate.task import list_tasks
 
-    tasks = list_tasks(hc_home, team, project=project)
+    tasks = list_tasks(hc_home, project, project=project)
     task_ids = [t["id"] for t in tasks]
 
     if not task_ids:
@@ -434,8 +434,8 @@ def get_project_stats(hc_home: Path, team: str, project: str) -> dict:
             "total_cache_write": 0,
         }
 
-    team_uuid = _team(hc_home, team)
-    conn = get_connection(hc_home, team)
+    team_uuid = _team(hc_home, project)
+    conn = get_connection(hc_home, project)
     placeholders = ",".join("?" * len(task_ids))
     row = conn.execute(
         f"""SELECT
@@ -446,7 +446,7 @@ def get_project_stats(hc_home: Path, team: str, project: str) -> dict:
             COALESCE(SUM(cost_usd), 0.0) as total_cost_usd,
             COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
             COALESCE(SUM(cache_write_tokens), 0) as total_cache_write
-        FROM sessions WHERE task_id IN ({placeholders}) AND team_uuid = ?""",
+        FROM sessions WHERE task_id IN ({placeholders}) AND project_uuid = ?""",
         task_ids + [team_uuid],
     ).fetchone()
     conn.close()

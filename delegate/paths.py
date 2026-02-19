@@ -13,11 +13,11 @@ Layout::
         config.yaml
         network.yaml
         members/
-        teams/<team>/
+        projects/<team>/
           repos.yaml
           roster.md
           team_id
-      teams/                      # Working data (inside agent sandbox)
+      projects/                   # Working data (inside agent sandbox)
         <team>/
           override.md
           agents/<agent>/
@@ -59,12 +59,12 @@ def protected_dir(hc_home: Path) -> Path:
 
 
 def protected_team_dir(hc_home: Path, team: str) -> Path:
-    """Per-team metadata inside protected: ``protected/teams/<team_uuid>/``.
+    """Per-team metadata inside protected: ``protected/projects/<team_uuid>/``.
 
     Resolves *team* (name) to UUID via the team map.
     Falls back to the name if no mapping exists.
     """
-    return protected_dir(hc_home) / "teams" / resolve_team_uuid(hc_home, team)
+    return protected_dir(hc_home) / "projects" / resolve_team_uuid(hc_home, team)
 
 
 # --- Global infrastructure ---
@@ -121,7 +121,7 @@ def member_path(hc_home: Path, name: str) -> Path:
 # --- Per-team metadata (inside protected/) ---
 
 def roster_path(hc_home: Path, team: str) -> Path:
-    """Team roster: ``protected/teams/<team>/roster.md``."""
+    """Team roster: ``protected/projects/<team>/roster.md``."""
     return protected_team_dir(hc_home, team) / "roster.md"
 
 
@@ -131,7 +131,7 @@ def team_id_path(hc_home: Path, team: str) -> Path:
 
 
 def repos_config_path(hc_home: Path, team: str) -> Path:
-    """Per-team repos config: ``protected/teams/<team>/repos.yaml``."""
+    """Per-team repos config: ``protected/projects/<team>/repos.yaml``."""
     return protected_team_dir(hc_home, team) / "repos.yaml"
 
 
@@ -163,7 +163,7 @@ _team_map_cache: dict[str, dict[str, str]] = {}  # hc_home_str -> {name: uuid}
 
 def _team_map_path(hc_home: Path) -> Path:
     """Path to the team name → UUID mapping file."""
-    return protected_dir(hc_home) / "team_map.json"
+    return protected_dir(hc_home) / "project_map.json"
 
 
 def _load_team_map(hc_home: Path) -> dict[str, str]:
@@ -250,11 +250,11 @@ def invalidate_team_map_cache(hc_home: Path | None = None) -> None:
 # =========================================================================
 
 def teams_dir(hc_home: Path) -> Path:
-    return hc_home / "teams"
+    return hc_home / "projects"
 
 
 def team_dir(hc_home: Path, team: str) -> Path:
-    """Team working directory: ``teams/<team_uuid>/``.
+    """Team working directory: ``projects/<team_uuid>/``.
 
     Resolves *team* (a human-readable name) to its UUID for the
     directory path.  Falls back to the name itself if no UUID
@@ -335,7 +335,7 @@ def ensure_protected(hc_home: Path) -> None:
     """Create the protected/ directory structure if it doesn't exist."""
     protected = protected_dir(hc_home)
     protected.mkdir(parents=True, exist_ok=True)
-    (protected / "teams").mkdir(exist_ok=True)
+    (protected / "projects").mkdir(exist_ok=True)
     members_dir(hc_home).mkdir(exist_ok=True)
 
 

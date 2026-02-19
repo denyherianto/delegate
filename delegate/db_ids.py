@@ -1,7 +1,7 @@
 """UUID translation layer for team and member identities.
 
 This module provides functions to resolve names to UUIDs and vice versa,
-manage the team_ids and member_ids translation tables, and handle entity
+manage the project_ids and member_ids translation tables, and handle entity
 registration and soft deletion.
 
 All DB-facing code should use UUIDs for queries (via resolve_* functions)
@@ -54,7 +54,7 @@ def resolve_team(conn: sqlite3.Connection, name: str) -> str:
         ValueError: If no active team found with that name
     """
     row = conn.execute(
-        "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0", (name,)
+        "SELECT uuid FROM project_ids WHERE name = ? AND deleted = 0", (name,)
     ).fetchone()
     if not row:
         raise ValueError(f"No active team found: {name}")
@@ -149,7 +149,7 @@ def lookup_team(conn: sqlite3.Connection, team_uuid: str) -> str:
     Raises:
         ValueError: If unknown team UUID
     """
-    row = conn.execute("SELECT name FROM team_ids WHERE uuid = ?", (team_uuid,)).fetchone()
+    row = conn.execute("SELECT name FROM project_ids WHERE uuid = ?", (team_uuid,)).fetchone()
     if not row:
         raise ValueError(f"Unknown team UUID: {team_uuid}")
     return row[0]
@@ -181,7 +181,7 @@ def lookup_member(conn: sqlite3.Connection, member_uuid: str) -> tuple[str, str 
 # ---------------------------------------------------------------------------
 
 def register_team(conn: sqlite3.Connection, name: str, *, team_uuid: str | None = None) -> str:
-    """Generate uuid4, insert into team_ids, return full 32-char hex UUID.
+    """Generate uuid4, insert into project_ids, return full 32-char hex UUID.
 
     Args:
         conn: Database connection
@@ -193,11 +193,11 @@ def register_team(conn: sqlite3.Connection, name: str, *, team_uuid: str | None 
     """
     new_uuid = team_uuid or uuid_module.uuid4().hex
     conn.execute(
-        "INSERT OR IGNORE INTO team_ids (uuid, name) VALUES (?, ?)",
+        "INSERT OR IGNORE INTO project_ids (uuid, name) VALUES (?, ?)",
         (new_uuid, name)
     )
     # Return existing UUID if insert was ignored (active team with same name exists)
-    row = conn.execute("SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0", (name,)).fetchone()
+    row = conn.execute("SELECT uuid FROM project_ids WHERE name = ? AND deleted = 0", (name,)).fetchone()
     _invalidate_caches()
     return row[0] if row else new_uuid
 
@@ -250,6 +250,6 @@ def soft_delete_team(conn: sqlite3.Connection, team_uuid: str):
         conn: Database connection
         team_uuid: Team UUID to delete
     """
-    conn.execute("UPDATE team_ids SET deleted = 1 WHERE uuid = ?", (team_uuid,))
+    conn.execute("UPDATE project_ids SET deleted = 1 WHERE uuid = ?", (team_uuid,))
     conn.execute("UPDATE member_ids SET deleted = 1 WHERE team_uuid = ?", (team_uuid,))
     _invalidate_caches()

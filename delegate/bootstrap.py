@@ -291,7 +291,7 @@ def bootstrap(
         tid_path.parent.mkdir(parents=True, exist_ok=True)
         tid_path.write_text(team_uuid[:6] + "\n")
 
-    # Register team in global teams table and team_ids translation table.
+    # Register team in global projects table and project_ids translation table.
     # Always runs (INSERT OR IGNORE is idempotent) — even if the tid file
     # already exists the DB row may be missing (e.g. after a DB wipe).
     from delegate.db import get_connection
@@ -299,7 +299,7 @@ def bootstrap(
     conn = get_connection(hc_home, "")
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO teams (name, team_id) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO projects (name, project_id) VALUES (?, ?)",
             (team_name, team_uuid),
         )
         register_team(conn, team_name, team_uuid=team_uuid)

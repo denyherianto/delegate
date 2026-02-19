@@ -14,10 +14,10 @@ Usage::
     from delegate.db import get_connection, ensure_schema
 
     # At daemon startup (or lazily on first query):
-    ensure_schema(hc_home, team)
+    ensure_schema(hc_home, project)
 
     # For individual operations:
-    conn = get_connection(hc_home, team)
+    conn = get_connection(hc_home, project)
     ...
     conn.close()
 """
@@ -101,11 +101,11 @@ def _current_version(conn: sqlite3.Connection) -> int:
 
 
 def _backfill_uuid_tables(conn: sqlite3.Connection, hc_home: Path) -> None:
-    """Backfill team_ids and member_ids tables from existing data.
+    """Backfill project_ids and member_ids tables from existing data.
 
     This function is idempotent and safe to call multiple times.
     It populates:
-    1. team_ids from the teams table
+    1. project_ids from the projects table
     2. member_ids from filesystem (agents) and members/*.yaml (humans)
     3. *_uuid columns in all data tables
 
@@ -113,31 +113,55 @@ def _backfill_uuid_tables(conn: sqlite3.Connection, hc_home: Path) -> None:
         conn: Database connection (should be in autocommit mode)
         hc_home: Delegate home directory
     """
-    # Check if team_ids table exists (V15 applied)
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='team_ids'"
-    ).fetchone()
-    if not row:
+    # Check if project_ids table exists (V15+V18 applied).
+    # Also accept the legacy name team_ids (V15 only, before V18 ran).
+    ids_table = None
+    for candidate in ("project_ids", "team_ids"):
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (candidate,),
+        ).fetchone()
+        if row:
+            ids_table = candidate
+            break
+    if ids_table is None:
         # V15 not yet applied, skip backfill
         return
 
+    # Determine which projects/teams table name to use (V18 may not have run yet)
+    projects_table = None
+    for candidate in ("projects", "teams"):
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (candidate,),
+        ).fetchone()
+        if row:
+            projects_table = candidate
+            break
+    if projects_table is None:
+        return
+
     # -------------------------------------------------------------------------
-    # Part 1: Backfill team_ids from teams table
+    # Part 1: Backfill project_ids (or team_ids) from projects (or teams) table
     # -------------------------------------------------------------------------
-    teams_rows = conn.execute("SELECT name, team_id FROM teams").fetchall()
-    for team_name, team_id in teams_rows:
+    proj_id_col = "project_id" if projects_table == "projects" else "team_id"
+    projects_rows = conn.execute(
+        f"SELECT name, {proj_id_col} FROM {projects_table}"
+    ).fetchall()
+    for team_name, team_id in projects_rows:
         # INSERT OR IGNORE to handle re-runs
         conn.execute(
-            "INSERT OR IGNORE INTO team_ids (uuid, name) VALUES (?, ?)",
+f"INSERT OR IGNORE INTO {ids_table} (uuid, name) VALUES (?, ?)",
             (team_id, team_name)
         )
 
     # -------------------------------------------------------------------------
     # Part 2: Backfill member_ids from filesystem
     # -------------------------------------------------------------------------
-    teams_dir = hc_home / "teams"
-    if teams_dir.is_dir():
-        for team_dir in teams_dir.iterdir():
+    from delegate.paths import teams_dir as _teams_dir
+    projects_dir = _teams_dir(hc_home)
+    if projects_dir.is_dir():
+        for team_dir in projects_dir.iterdir():
             if not team_dir.is_dir():
                 continue
             # Directory names are UUIDs (not human-readable team names)
@@ -145,13 +169,13 @@ def _backfill_uuid_tables(conn: sqlite3.Connection, hc_home: Path) -> None:
 
             # Try to match by UUID first (new layout), then by name (legacy)
             team_row = conn.execute(
-                "SELECT uuid FROM team_ids WHERE uuid = ? AND deleted = 0",
+                f"SELECT uuid FROM {ids_table} WHERE uuid = ? AND deleted = 0",
                 (dir_name,)
             ).fetchone()
             if not team_row:
                 # Legacy fallback: directory might still be named by team name
                 team_row = conn.execute(
-                    "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0",
+                    f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0",
                     (dir_name,)
                 ).fetchone()
             if not team_row:
@@ -184,32 +208,38 @@ def _backfill_uuid_tables(conn: sqlite3.Connection, hc_home: Path) -> None:
     # -------------------------------------------------------------------------
     # Part 3: Backfill *_uuid columns in data tables (only if V16 applied)
     # -------------------------------------------------------------------------
-    # Check if messages has team_uuid column
+    # Check if messages has project_uuid (V18) or team_uuid (V16 before V18) column
     cursor = conn.execute("PRAGMA table_info(messages)")
     columns = {row[1] for row in cursor.fetchall()}
-    if "team_uuid" not in columns:
+    uuid_col = "project_uuid" if "project_uuid" in columns else (
+        "team_uuid" if "team_uuid" in columns else None
+    )
+    if uuid_col is None:
         # V16 not yet applied, skip UUID column backfill
         return
 
+    # Determine project/team column name used in data tables (project or team)
+    proj_col = "project" if "project" in columns else "team"
+
     # Messages table
-    conn.execute("""
+    conn.execute(f"""
         UPDATE messages
-        SET team_uuid = COALESCE(
-            (SELECT uuid FROM team_ids WHERE name = messages.team AND deleted = 0),
+        SET {uuid_col} = COALESCE(
+            (SELECT uuid FROM {ids_table} WHERE name = messages.{proj_col} AND deleted = 0),
             ''
         )
-        WHERE team_uuid = ''
+        WHERE {uuid_col} = ''
     """)
 
     # For sender_uuid and recipient_uuid, we need to try agent first then human
     # This is complex in SQL, so we'll do it row by row in Python for the backfill
     messages_to_update = conn.execute(
-        "SELECT id, team, sender, recipient FROM messages WHERE sender_uuid = ''"
+        f"SELECT id, {proj_col}, sender, recipient FROM messages WHERE sender_uuid = ''"
     ).fetchall()
-    for msg_id, team, sender, recipient in messages_to_update:
+    for msg_id, project, sender, recipient in messages_to_update:
         # Get team UUID
         team_uuid_row = conn.execute(
-            "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0", (team,)
+            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (team,)
         ).fetchone()
         if not team_uuid_row:
             continue
@@ -255,31 +285,31 @@ def _backfill_uuid_tables(conn: sqlite3.Connection, hc_home: Path) -> None:
             )
 
     # Sessions table
-    conn.execute("""
+    conn.execute(f"""
         UPDATE sessions
-        SET team_uuid = COALESCE(
-            (SELECT uuid FROM team_ids WHERE name = sessions.team AND deleted = 0),
+        SET {uuid_col} = COALESCE(
+            (SELECT uuid FROM {ids_table} WHERE name = sessions.{proj_col} AND deleted = 0),
             ''
         ),
         agent_uuid = COALESCE(
             (SELECT m.uuid FROM member_ids m
-             JOIN team_ids t ON m.team_uuid = t.uuid
-             WHERE m.kind = 'agent' AND t.name = sessions.team AND m.name = sessions.agent AND m.deleted = 0),
+             JOIN {ids_table} t ON m.team_uuid = t.uuid
+             WHERE m.kind = 'agent' AND t.name = sessions.{proj_col} AND m.name = sessions.agent AND m.deleted = 0),
             ''
         )
-        WHERE team_uuid = ''
+        WHERE {uuid_col} = ''
     """)
 
     # Tasks table
     tasks_to_update = conn.execute(
-        "SELECT id, team, dri, assignee FROM tasks WHERE team_uuid = ''"
+        f"SELECT id, {proj_col}, dri, assignee FROM tasks WHERE {uuid_col} = ''"
     ).fetchall()
-    for task_id, team, dri, assignee in tasks_to_update:
+    for task_id, project, dri, assignee in tasks_to_update:
         team_uuid_row = conn.execute(
-            "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0", (team,)
+            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (team,)
         ).fetchone()
         if not team_uuid_row:
-            continue
+continue
         team_uuid = team_uuid_row[0]
 
         # Resolve DRI (flexible)
@@ -317,31 +347,31 @@ def _backfill_uuid_tables(conn: sqlite3.Connection, hc_home: Path) -> None:
                     assignee_uuid = row[0]
 
         conn.execute(
-            "UPDATE tasks SET team_uuid = ?, dri_uuid = ?, assignee_uuid = ? WHERE id = ?",
+            f"UPDATE tasks SET {uuid_col} = ?, dri_uuid = ?, assignee_uuid = ? WHERE id = ?",
             (team_uuid, dri_uuid, assignee_uuid, task_id)
         )
 
     # Task comments table
-    conn.execute("""
+    conn.execute(f"""
         UPDATE task_comments
-        SET team_uuid = COALESCE(
+        SET {uuid_col} = COALESCE(
             (SELECT t.uuid FROM tasks tk
-             JOIN team_ids t ON t.name = tk.team
+             JOIN {ids_table} t ON t.name = tk.{proj_col}
              WHERE tk.id = task_comments.task_id AND t.deleted = 0),
             ''
         )
-        WHERE team_uuid = ''
+        WHERE {uuid_col} = ''
     """)
 
     # For author_uuid, need flexible resolution
     comments_to_update = conn.execute(
-        "SELECT task_comments.id, tasks.team, task_comments.author FROM task_comments "
+        f"SELECT task_comments.id, tasks.{proj_col}, task_comments.author FROM task_comments "
         "JOIN tasks ON task_comments.task_id = tasks.id "
         "WHERE task_comments.author_uuid = ''"
     ).fetchall()
-    for comment_id, team, author in comments_to_update:
+    for comment_id, project, author in comments_to_update:
         team_uuid_row = conn.execute(
-            "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0", (team,)
+            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (team,)
         ).fetchone()
         if not team_uuid_row:
             continue
@@ -370,13 +400,13 @@ def _backfill_uuid_tables(conn: sqlite3.Connection, hc_home: Path) -> None:
 
     # Reviews table
     reviews_to_update = conn.execute(
-        "SELECT reviews.id, tasks.team, reviews.reviewer FROM reviews "
-        "JOIN tasks ON reviews.task_id = tasks.id "
-        "WHERE reviews.team_uuid = ''"
+        f"SELECT reviews.id, tasks.{proj_col}, reviews.reviewer FROM reviews "
+        f"JOIN tasks ON reviews.task_id = tasks.id "
+        f"WHERE reviews.{uuid_col} = ''"
     ).fetchall()
-    for review_id, team, reviewer in reviews_to_update:
+    for review_id, project, reviewer in reviews_to_update:
         team_uuid_row = conn.execute(
-            "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0", (team,)
+            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (team,)
         ).fetchone()
         if not team_uuid_row:
             continue
@@ -399,19 +429,19 @@ def _backfill_uuid_tables(conn: sqlite3.Connection, hc_home: Path) -> None:
                     reviewer_uuid = row[0]
 
         conn.execute(
-            "UPDATE reviews SET team_uuid = ?, reviewer_uuid = ? WHERE id = ?",
+            f"UPDATE reviews SET {uuid_col} = ?, reviewer_uuid = ? WHERE id = ?",
             (team_uuid, reviewer_uuid, review_id)
         )
 
     # Review comments table
     review_comments_to_update = conn.execute(
-        "SELECT review_comments.id, tasks.team, review_comments.author FROM review_comments "
-        "JOIN tasks ON review_comments.task_id = tasks.id "
-        "WHERE review_comments.team_uuid = ''"
+        f"SELECT review_comments.id, tasks.{proj_col}, review_comments.author FROM review_comments "
+        f"JOIN tasks ON review_comments.task_id = tasks.id "
+        f"WHERE review_comments.{uuid_col} = ''"
     ).fetchall()
-    for rc_id, team, author in review_comments_to_update:
+    for rc_id, project, author in review_comments_to_update:
         team_uuid_row = conn.execute(
-            "SELECT uuid FROM team_ids WHERE name = ? AND deleted = 0", (team,)
+            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (team,)
         ).fetchone()
         if not team_uuid_row:
             continue
@@ -480,12 +510,13 @@ def _validate_hc_home(hc_home: Path) -> None:
     """Raise ValueError if hc_home looks like a team subdirectory rather than
     the real delegate home.
 
-    The real hc_home (~/.delegate) never contains /teams/ in its path.
-    A team directory (~/.delegate/teams/<id>/) does. Passing a team
+    The real hc_home (~/.delegate) never contains /projects/ in its path.
+    A team directory (~/.delegate/projects/<id>/) does. Passing a team
     directory causes the global database to be silently created in the wrong
     location, so we reject it loudly instead.
     """
-    if "teams" in hc_home.resolve().parts:
+    parts = hc_home.resolve().parts
+    if "projects" in parts or "teams" in parts:
         raise ValueError(
             f"hc_home looks like a team directory, not the delegate home: {hc_home}. "
             f"Pass ~/.delegate (or DELEGATE_HOME) as hc_home, not a team subdirectory."
@@ -608,7 +639,7 @@ def get_connection(hc_home: Path, team: str = "") -> sqlite3.Connection:
 
     Note: team parameter is kept for backward compatibility but is no longer used.
     """
-    ensure_schema(hc_home, team)
+    ensure_schema(hc_home, project)
     path = global_db_path(hc_home)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
