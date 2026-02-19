@@ -5035,10 +5035,25 @@ select option:hover {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
 }
 .file-ac-item.is-dir { color: var(--text-muted); }
 .file-ac-item.selected,
 .file-ac-item:hover { background: var(--bg-hover); }
+.file-ac-item-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.file-ac-git-tag {
+  margin-left: 6px;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--accent, #4a7fa5);
+  color: #fff;
+  opacity: 0.8;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
 
 /* Editor area -- fills remaining height */
 .rem-editor-area {
@@ -5125,7 +5140,22 @@ select option:hover {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
 }
 .file-ac-item.is-dir { color: var(--text-muted); }
 .file-ac-item.selected,
 .file-ac-item:hover { background: var(--bg-hover); }
+.file-ac-item-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.file-ac-git-tag {
+  margin-left: 6px;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--accent, #4a7fa5);
+  color: #fff;
+  opacity: 0.8;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}

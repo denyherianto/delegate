@@ -38,11 +38,13 @@ export function NewProjectModal() {
   }, []);
 
   // Fetch path completions for the repo path FileAutocomplete.
-  // api.completeFiles returns [{ path, is_dir, has_git }] — extract path strings,
-  // appending "/" to directories so FileAutocomplete can identify them.
+  // Only show directories (repos must be directories). Return { path, hasGit }
+  // objects so FileAutocomplete can render the git badge.
   const fetchRepoPaths = useCallback(async (q) => {
     const entries = await api.completeFiles(q);
-    return entries.map(e => e.path + (e.is_dir ? "/" : ""));
+    return entries
+      .filter(e => e.is_dir)
+      .map(e => ({ path: e.path + "/", hasGit: e.has_git }));
   }, []);
 
   const handleSubmit = useCallback(async (e) => {
