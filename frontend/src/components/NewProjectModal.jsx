@@ -59,12 +59,18 @@ export function NewProjectModal() {
       return;
     }
 
+    const count = parseInt(agentCount, 10);
+    if (!count || count < 1) {
+      setError("Agent count must be at least 1");
+      return;
+    }
+
     setSubmitting(true);
     try {
       const result = await api.createProject({
         name: trimmed,
         repoPath: repoPath.trim(),
-        agentCount,
+        agentCount: count,
         model,
       });
       // Refresh teams list
@@ -134,16 +140,24 @@ export function NewProjectModal() {
             <div class="npm-field npm-field-half">
               <label class="npm-label" for="npm-agents">Agents</label>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 id="npm-agents"
                 class="npm-agents-input"
-                min="1"
-                max="8"
                 value={agentCount}
-                onInput={(e) => setAgentCount(Math.max(1, Math.min(8, parseInt(e.target.value) || 1)))}
+                onInput={(e) => {
+                  const raw = e.target.value.replace(/[^0-9]/g, "");
+                  setAgentCount(raw === "" ? "" : Math.max(1, Math.min(8, parseInt(raw, 10))));
+                }}
+                onBlur={() => {
+                  const n = parseInt(agentCount, 10);
+                  if (!n || n < 1) setAgentCount(2);
+                }}
                 disabled={submitting}
+                autocomplete="off"
               />
-              <span class="npm-hint">You can add more agents later</span>
+              <span class="npm-hint">Worker agents (manager added automatically)</span>
             </div>
 
             <div class="npm-field npm-field-half">

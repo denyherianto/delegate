@@ -1047,6 +1047,7 @@ body {
 }
 .npm-agents-input:focus { border-color: var(--dot-active); }
 .npm-agents-input:disabled { opacity: 0.4; cursor: default; }
+.npm-agents-input[type="text"] { -moz-appearance: textfield; }
 
 .npm-select-wrap {
   position: relative;
