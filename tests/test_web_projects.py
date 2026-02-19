@@ -1,9 +1,11 @@
 """Tests for the POST /projects endpoint in delegate/web.py.
 
-Covers tilde expansion in repo_path and related validation behavior.
+Covers tilde expansion in repo_path and related validation behavior,
+and agent name generation.
 """
 
 import os
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -86,3 +88,37 @@ class TestCreateProjectTildeExpansion:
 
         assert resp.status_code == 200, resp.text
         assert resp.json()["name"] == "abs-test"
+
+
+class TestAgentNameGeneration:
+    def test_agent_names_are_not_agent_n_format(self, tmp_team, tmp_path, client, monkeypatch):
+        """Agents created via POST /projects use friendly names, not 'agent-N' format."""
+        from delegate.paths import agents_dir
+
+        repo_dir = tmp_path / "my-repo"
+        repo_dir.mkdir()
+
+        with patch("delegate.repo.register_repo"), \
+             patch("delegate.activity.broadcast_teams_refresh"):
+            resp = client.post(
+                "/projects",
+                json={
+                    "name": "friendly-names-test",
+                    "repo_path": str(repo_dir),
+                    "agent_count": 2,
+                    "model": "sonnet",
+                },
+            )
+
+        assert resp.status_code == 200, resp.text
+
+        # Check that none of the created worker agents have "agent-N" names
+        ad = agents_dir(tmp_team, "friendly-names-test")
+        agent_names = [p.name for p in ad.iterdir() if p.is_dir()]
+        # Filter out the manager ("delegate")
+        worker_names = [n for n in agent_names if n != "delegate"]
+        assert len(worker_names) == 2
+        for name in worker_names:
+            assert not re.match(r"^agent-\d+$", name), (
+                f"Agent name '{name}' looks like a hardcoded name, expected a friendly name"
+            )

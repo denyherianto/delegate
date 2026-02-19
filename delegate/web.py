@@ -60,6 +60,7 @@ from delegate.paths import (
     get_bootstrap_id as _get_bootstrap_id,
 )
 from delegate.config import get_default_human
+from delegate.names import pick_names
 from delegate.task import list_tasks as _list_tasks, get_task as _get_task, get_task_diff as _get_task_diff, get_task_merge_preview as _get_merge_preview, get_task_commit_diffs as _get_commit_diffs, update_task as _update_task, change_status as _change_status, VALID_STATUSES, format_task_id
 from delegate.chat import get_messages as _get_messages, get_task_stats as _get_task_stats, get_agent_stats as _get_agent_stats, get_team_agent_stats as _get_team_agent_stats, log_event as _log_event
 from delegate.mailbox import send as _send, read_inbox as _read_inbox, read_outbox as _read_outbox, count_unread as _count_unread
@@ -1664,8 +1665,13 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         if existing:
             raise HTTPException(status_code=409, detail=f"Project '{name}' already exists")
 
-        # Generate agent names
-        agent_list = [(f"agent-{i+1}", "engineer") for i in range(req.agent_count)]
+        # Generate agent names using friendly name pool
+        exclude = {"delegate"}
+        human = get_default_human(hc_home)
+        if human:
+            exclude.add(human)
+        generated = pick_names(req.agent_count, exclude=exclude)
+        agent_list = [(name, "engineer") for name in generated]
 
         # Bootstrap
         models_dict = {"*": req.model} if req.model in ("opus", "sonnet") else None
