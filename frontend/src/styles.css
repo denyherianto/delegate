@@ -2530,7 +2530,7 @@ select option:hover {
 .diff-tab { padding: 8px 14px; cursor: pointer; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-family: inherit; font-size: 12px; font-weight: 500; transition: color 100ms; }
 .diff-tab:hover { color: var(--text-secondary); }
 .diff-tab.active { color: var(--text-heading); border-bottom-color: var(--text-heading); }
-.diff-panel-body { flex: 1; overflow-y: auto; padding: 16px 20px; background: var(--bg-primary); }
+.diff-panel-body { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 16px 20px; background: var(--bg-primary); }
 
 /* Diff file list */
 .diff-file-list { display: flex; flex-direction: column; gap: 2px; }
