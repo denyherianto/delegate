@@ -91,7 +91,7 @@ export function NewProjectModal() {
     <div class="modal-overlay" onClick={close} onKeyDown={handleKeyDown}>
       <div class="npm-modal" onClick={(e) => e.stopPropagation()}>
         <div class="npm-header">
-          <h2 class="npm-title">New Project</h2>
+          <h2 class="npm-title">{!teams.value || teams.value.length === 0 ? "Create your first project" : "New Project"}</h2>
           <button class="npm-close" onClick={close} title="Close">&times;</button>
         </div>
 
@@ -133,35 +133,34 @@ export function NewProjectModal() {
           <div class="npm-row">
             <div class="npm-field npm-field-half">
               <label class="npm-label" for="npm-agents">Agents</label>
-              <div class="npm-stepper">
-                <button
-                  type="button"
-                  class="npm-stepper-btn"
-                  onClick={() => setAgentCount(Math.max(1, agentCount - 1))}
-                  disabled={submitting || agentCount <= 1}
-                >-</button>
-                <span class="npm-stepper-value">{agentCount}</span>
-                <button
-                  type="button"
-                  class="npm-stepper-btn"
-                  onClick={() => setAgentCount(Math.min(8, agentCount + 1))}
-                  disabled={submitting || agentCount >= 8}
-                >+</button>
-              </div>
+              <input
+                type="number"
+                id="npm-agents"
+                class="npm-agents-input"
+                min="1"
+                max="8"
+                value={agentCount}
+                onInput={(e) => setAgentCount(Math.max(1, Math.min(8, parseInt(e.target.value) || 1)))}
+                disabled={submitting}
+              />
+              <span class="npm-hint">You can add more agents later</span>
             </div>
 
             <div class="npm-field npm-field-half">
               <label class="npm-label" for="npm-model">Model</label>
-              <select
-                id="npm-model"
-                class="npm-select"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                disabled={submitting}
-              >
-                <option value="sonnet">Sonnet</option>
-                <option value="opus">Opus</option>
-              </select>
+              <div class="npm-select-wrap">
+                <select
+                  id="npm-model"
+                  class="npm-select"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  disabled={submitting}
+                >
+                  <option value="sonnet">Sonnet</option>
+                  <option value="opus">Opus</option>
+                </select>
+              </div>
+              <span class="npm-hint">You can change the model later</span>
             </div>
           </div>
 

@@ -1,29 +1,15 @@
+import { useEffect } from "preact/hooks";
 import { teams, projectModalOpen } from "../state.js";
 
+// When no projects exist, open NewProjectModal directly — no intermediate step.
 export function NoTeamsModal() {
-  // Only show when teams array is loaded AND empty
-  // Need to distinguish "not yet fetched" from "fetched but empty"
-  if (teams.value === null || teams.value.length > 0) return null;
+  const isEmpty = teams.value !== null && teams.value.length === 0;
 
-  return (
-    <div class="no-teams-backdrop">
-      <div class="no-teams-modal">
-        <div class="no-teams-header">
-          <h2>Create your first project</h2>
-        </div>
-        <div class="no-teams-body">
-          <p>Create a project to get started:</p>
-          <div class="no-teams-commands">
-            <button
-              class="npm-btn npm-btn-create"
-              onClick={() => { projectModalOpen.value = true; }}
-            >
-              + New Project
-            </button>
-          </div>
-          <p class="no-teams-hint">The page will update automatically once a project is created.</p>
-        </div>
-      </div>
-    </div>
-  );
+  useEffect(() => {
+    if (isEmpty) {
+      projectModalOpen.value = true;
+    }
+  }, [isEmpty]);
+
+  return null;
 }
