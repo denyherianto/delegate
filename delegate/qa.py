@@ -24,7 +24,6 @@ from delegate.paths import agent_dir as _resolve_agent_dir
 from delegate.mailbox import send, read_inbox, mark_processed, Message
 from delegate.chat import log_event
 from delegate.task import list_tasks, set_task_branch, change_status, get_task, format_task_id
-from delegate.config import get_pre_merge_script
 from delegate.bootstrap import get_member_by_role
 
 logger = logging.getLogger(__name__)
@@ -187,45 +186,6 @@ def run_tests(repo_path: Path, test_command: str | None = None) -> ReviewResult:
         )
 
 
-def run_pre_merge_script(repo_path: Path, script: str) -> ReviewResult:
-    """Run a pre-merge script in the given repo directory.
-
-    Args:
-        repo_path: Path to the checked-out repo.
-        script: Shell command to execute before merge.
-
-    Returns:
-        ReviewResult with output from the script.
-    """
-    import shlex
-
-    cmd = shlex.split(script)
-    try:
-        result = subprocess.run(
-            cmd,
-            cwd=str(repo_path),
-            capture_output=True,
-            text=True,
-            timeout=600,
-        )
-        output = result.stdout + result.stderr
-        return ReviewResult(
-            approved=result.returncode == 0,
-            output=output,
-            repo=repo_path.name,
-            branch="unknown",
-        )
-    except subprocess.TimeoutExpired as e:
-        logger.warning(
-            "Pre-merge script timed out after 600s in %s: %s",
-            repo_path.name, script
-        )
-        return ReviewResult(
-            approved=False,
-            output="Pre-merge script timed out after 600 seconds.",
-            repo=repo_path.name,
-            branch="unknown",
-        )
 
 
 MIN_COVERAGE_PERCENT = 60
@@ -368,15 +328,9 @@ def handle_review_request(
         _update_task_on_rejection(hc_home, team, task_id, req)
         return result
 
-    # Check for a configured pre-merge script, then fall back to test_command
-    script = get_pre_merge_script(hc_home, team, req.repo)
     if test_command is not None:
-        # Explicit test_command overrides pre-merge script
         result = run_tests(wt_path, test_command)
-    elif script is not None:
-        result = run_pre_merge_script(wt_path, script)
     else:
-        # No script, no explicit command — auto-detect
         result = run_tests(wt_path)
     result.repo = req.repo
     result.branch = req.branch

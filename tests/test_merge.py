@@ -28,7 +28,6 @@ from delegate.task import (
 )
 from delegate.config import (
     add_repo, get_repo_approval, get_repo_test_cmd, update_repo_test_cmd, set_boss,
-    get_pre_merge_script, set_pre_merge_script,
 )
 from delegate.merge import merge_task, merge_once, _run_pre_merge, _other_unmerged_tasks_on_branch, MergeResult, MergeFailureReason
 from delegate.bootstrap import bootstrap
@@ -855,48 +854,6 @@ class TestRepoTestCmd:
         """update_repo_test_cmd raises KeyError for unknown repo."""
         with pytest.raises(KeyError, match="not found"):
             update_repo_test_cmd(hc_home, SAMPLE_TEAM, "no_such_repo", "pytest")
-
-
-# ---------------------------------------------------------------------------
-# Pre-merge script config tests
-# ---------------------------------------------------------------------------
-
-class TestPreMergeScriptConfig:
-    def test_returns_none_by_default(self, hc_home):
-        """Repo without pre-merge script or test_cmd returns None."""
-        add_repo(hc_home, SAMPLE_TEAM, "myrepo", "/tmp/repo")
-        assert get_pre_merge_script(hc_home, SAMPLE_TEAM, "myrepo") is None
-
-    def test_returns_none_for_missing_repo(self, hc_home):
-        assert get_pre_merge_script(hc_home, SAMPLE_TEAM, "nonexistent") is None
-
-    def test_backward_compat_test_cmd(self, hc_home):
-        """Legacy test_cmd should be returned as pre-merge script."""
-        add_repo(hc_home, SAMPLE_TEAM, "myrepo", "/tmp/repo", test_cmd="pytest -x")
-        script = get_pre_merge_script(hc_home, SAMPLE_TEAM, "myrepo")
-        assert script == "pytest -x"
-
-    def test_set_pre_merge_script(self, hc_home):
-        add_repo(hc_home, SAMPLE_TEAM, "myrepo", "/tmp/repo")
-        set_pre_merge_script(hc_home, SAMPLE_TEAM, "myrepo", "./scripts/pre-merge.sh")
-        assert get_pre_merge_script(hc_home, SAMPLE_TEAM, "myrepo") == "./scripts/pre-merge.sh"
-
-    def test_set_pre_merge_script_missing_repo(self, hc_home):
-        with pytest.raises(KeyError, match="not found"):
-            set_pre_merge_script(hc_home, SAMPLE_TEAM, "no_such_repo", "echo test")
-
-    def test_clear_pre_merge_script(self, hc_home):
-        add_repo(hc_home, SAMPLE_TEAM, "myrepo", "/tmp/repo")
-        set_pre_merge_script(hc_home, SAMPLE_TEAM, "myrepo", "./test.sh")
-        assert get_pre_merge_script(hc_home, SAMPLE_TEAM, "myrepo") == "./test.sh"
-        set_pre_merge_script(hc_home, SAMPLE_TEAM, "myrepo", "")
-        assert get_pre_merge_script(hc_home, SAMPLE_TEAM, "myrepo") is None
-
-    def test_set_cleans_up_legacy_fields(self, hc_home):
-        """Setting pre-merge script should remove legacy pipeline and test_cmd."""
-        add_repo(hc_home, SAMPLE_TEAM, "myrepo", "/tmp/repo", test_cmd="pytest -x")
-        set_pre_merge_script(hc_home, SAMPLE_TEAM, "myrepo", "./ci.sh")
-        assert get_pre_merge_script(hc_home, SAMPLE_TEAM, "myrepo") == "./ci.sh"
 
 
 # ---------------------------------------------------------------------------

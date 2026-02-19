@@ -742,44 +742,6 @@ def repo_list(ctx: click.Context, team_name: str) -> None:
         click.echo(f"  - {name}: {meta.get('source', '?')}")
 
 
-# ── delegate repo pre-merge-script ──
-
-@repo.command("pre-merge-script")
-@click.argument("team_name")
-@click.argument("repo_name")
-@click.option("--set", "script_path", default=None, help="Path to the pre-merge script (relative to repo root or absolute). Pass empty string to clear.")
-@click.pass_context
-def repo_pre_merge_script(ctx: click.Context, team_name: str, repo_name: str, script_path: str | None) -> None:
-    """Show or set the pre-merge script for a repo.
-
-    Without --set, displays the current pre-merge script.
-    With --set <path>, sets the pre-merge script.
-    With --set '', clears the pre-merge script.
-    """
-    from delegate.config import get_pre_merge_script, set_pre_merge_script
-
-    hc_home = _get_home(ctx)
-
-    if script_path is None:
-        # Show current script
-        script = get_pre_merge_script(hc_home, team_name, repo_name)
-        if script:
-            click.echo(f"Pre-merge script for '{repo_name}' (team: {team_name}): {script}")
-        else:
-            click.echo(f"No pre-merge script configured for repo '{repo_name}'.")
-        return
-
-    try:
-        set_pre_merge_script(hc_home, team_name, repo_name, script_path)
-    except KeyError as exc:
-        raise click.ClickException(str(exc))
-
-    if script_path:
-        click.echo(f"Set pre-merge script for '{repo_name}' (team: {team_name}): {script_path}")
-    else:
-        click.echo(f"Cleared pre-merge script for '{repo_name}' (team: {team_name})")
-
-
 # ──────────────────────────────────────────────────────────────
 # delegate self-update
 # ──────────────────────────────────────────────────────────────

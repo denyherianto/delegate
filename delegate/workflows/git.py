@@ -231,11 +231,11 @@ class GitMixin:
     def run_tests(self, command: str | None = None, repo: str | None = None) -> TestResult:
         """Run the test suite in the task's worktree.
 
-        If *command* is None, uses the configured pre-merge script or
-        auto-detects the test framework.
+        If *command* is None and no command is provided, returns pass
+        (tests are not auto-detected here; use .delegate/premerge.sh
+        checked into the repo for automated test execution).
         """
         from delegate.paths import task_worktree_dir
-        from delegate.config import get_pre_merge_script
 
         repos = [repo] if repo else self.task.get("repo", [])
         if not repos:
@@ -247,8 +247,6 @@ class GitMixin:
                 continue
 
             cmd = command
-            if cmd is None:
-                cmd = get_pre_merge_script(self._hc_home, self._team, r)
 
             if cmd:
                 try:
