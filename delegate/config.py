@@ -109,13 +109,15 @@ def get_human_members(hc_home: Path) -> list[dict]:
 def get_default_human(hc_home: Path) -> str:
     """Return the name of the default (first) human member.
 
-    Falls back to the legacy ``config.yaml:boss`` field, then ``"human"``.
+    Falls back to the legacy ``config.yaml:boss`` field, then ``"boss"``.
+    Never returns ``"human"`` — that was the old fallback and is treated as
+    a placeholder by the frontend display layer.
     """
     members = get_human_members(hc_home)
     if members:
         return members[0]["name"]
     # Legacy fallback
-    return get_boss(hc_home) or "human"
+    return get_boss(hc_home) or "boss"
 
 
 def add_member(hc_home: Path, name: str, **extra) -> dict:

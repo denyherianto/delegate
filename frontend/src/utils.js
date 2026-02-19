@@ -98,6 +98,16 @@ export function cap(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/**
+ * Display a member name, substituting "You" for generic fallback names
+ * ("human", "boss").  Use this wherever a human member name is shown in the UI.
+ */
+export function displayName(s) {
+  if (!s) return "";
+  if (s === "human" || s === "boss") return "You";
+  return cap(s);
+}
+
 // Convert a slug (hyphens/underscores as word separators) to title-case display name.
 // Examples: "my-project" -> "My Project", "q4_launch" -> "Q4 Launch"
 export function prettyName(slug) {

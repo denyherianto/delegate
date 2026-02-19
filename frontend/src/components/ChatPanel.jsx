@@ -11,7 +11,7 @@ import {
 } from "../state.js";
 import * as api from "../api.js";
 import {
-  cap, esc, fmtTimestamp, renderMarkdown,
+  cap, displayName, esc, fmtTimestamp, renderMarkdown,
   linkifyTaskRefs, linkifyFilePaths, agentifyRefs, msgStatusIcon, taskIdStr,
   handleCopyClick, toApiPath, renderFileReferences,
 } from "../utils.js";
@@ -1388,9 +1388,9 @@ export function ChatPanel() {
                     class={senderClass}
                     onClick={() => { openPanel("agent", m.sender); }}
                   >
-                    {cap(m.sender)}<CopyBtn text={m.sender} />
+                    {displayName(m.sender)}<CopyBtn text={m.sender} />
                   </span>
-                  <span class="msg-recipient"> → {cap(m.recipient)}</span>
+                  <span class="msg-recipient"> → {displayName(m.recipient)}</span>
                   {m.task_id != null && (
                     <>
                       <span class="msg-task-sep">|</span>

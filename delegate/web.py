@@ -108,23 +108,27 @@ def _first_team(hc_home: Path) -> str:
     return teams[0] if teams else "default"
 
 
-def _heal_human_name(hc_home: Path) -> None:
-    """Auto-heal: rename the human member from "human" to the git-detected name.
+def _bootstrap_human_member(hc_home: Path) -> None:
+    """One-time bootstrap: create the human member entry if none exists yet.
 
-    If the stored default human name is the generic fallback "human", re-run
-    git config detection and rename the member if a real name is found.  This
-    heals existing installations that were created before git-config detection
-    was in place.  Idempotent — no-ops if the name is already non-fallback or
-    if git config is unavailable.
+    Runs at daemon startup.  If the members directory is empty (fresh install),
+    detects the human name from git config / Unix login and creates the member
+    file immediately — before any team or project is bootstrapped.
+
+    This avoids storing the placeholder name "human" (the old fallback) and
+    ensures the real name is available from the first API call.
+
+    Idempotent — no-ops if at least one member already exists.
     """
-    if get_default_human(hc_home) != "human":
-        return  # Already has a real name — nothing to do
+    from delegate.paths import members_dir
     from delegate.bootstrap import _detect_human_name
-    from delegate.config import rename_member
-    detected = _detect_human_name()
-    if detected != "human":
-        rename_member(hc_home, "human", detected)
-        logger.info("Auto-healed human member name: 'human' -> '%s'", detected)
+    from delegate.config import add_member
+    md = members_dir(hc_home)
+    if md.is_dir() and any(md.iterdir()):
+        return  # Member already exists — nothing to do
+    name = _detect_human_name()
+    add_member(hc_home, name)
+    logger.info("Bootstrapped human member: '%s'", name)
 
 
 def _reconcile_team_map(hc_home: Path) -> None:
@@ -1065,9 +1069,9 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     for team_name in _list_teams(hc_home):
         ensure_schema(hc_home, team_name)
 
-    # Auto-heal: if the stored human member name is the generic fallback "human",
-    # re-detect from git config and rename it to the real name.
-    _heal_human_name(hc_home)
+    # One-time bootstrap: create the human member entry if no members exist yet.
+    # On fresh installs this ensures the real name is stored from the first startup.
+    _bootstrap_human_member(hc_home)
 
     app = FastAPI(title="Delegate UI", lifespan=_lifespan)
     app.state.hc_home = hc_home

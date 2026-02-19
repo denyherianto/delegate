@@ -10,7 +10,7 @@ import {
   cap, prettyName, esc, fmtStatus, fmtTimestamp, fmtElapsed, fmtTokens, fmtCost,
   fmtRelativeTime, taskIdStr, renderMarkdown, linkifyTaskRefs, linkifyFilePaths,
   agentifyRefs, flattenDiffDict, flattenCommitsDict, diff2HtmlRender, diff2HtmlParse,
-  stripEmojis, handleCopyClick, toApiPath, fmtCompactDuration,
+  stripEmojis, handleCopyClick, toApiPath, fmtCompactDuration, displayName,
 } from "../utils.js";
 import { ReviewableDiff } from "./ReviewableDiff.jsx";
 import { ReviewerEditModal } from "./ReviewerEditModal.jsx";
@@ -393,10 +393,10 @@ function OverviewTab({ task, stats }) {
       {/* 2-column property grid */}
       <div class="task-overview-grid">
         <span class="task-overview-key">Assignee</span>
-        <span class="task-overview-val">{t.assignee ? cap(t.assignee) : "\u2014"}</span>
+        <span class="task-overview-val">{t.assignee ? displayName(t.assignee) : "\u2014"}</span>
 
         <span class="task-overview-key">DRI</span>
-        <span class="task-overview-val">{t.dri ? cap(t.dri) : "\u2014"}</span>
+        <span class="task-overview-val">{t.dri ? displayName(t.dri) : "\u2014"}</span>
 
         <span class="task-overview-key">Priority</span>
         <span class="task-overview-val">{t.priority ? cap(t.priority) : "\u2014"}</span>

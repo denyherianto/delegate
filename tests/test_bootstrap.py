@@ -501,19 +501,22 @@ def test_bootstrap_detects_human_name_from_git_config(tmp_path):
 
 
 def test_bootstrap_fallback_when_git_config_unavailable(tmp_path):
-    """If git config is unavailable, human name falls back to 'human'."""
+    """If git config and Unix login are unavailable, human name falls back to 'boss'."""
     hc_home = tmp_path / "hc"
     hc_home.mkdir()
 
-    with patch("subprocess.run", side_effect=Exception("git not found")):
+    # Patch all detection sources to ensure the final "boss" fallback is reached
+    with patch("subprocess.run", side_effect=Exception("git not found")), \
+         patch("os.getlogin", side_effect=Exception("no tty")), \
+         patch("pwd.getpwuid", side_effect=Exception("no passwd entry")):
         bootstrap(hc_home, TEAM, manager="mgr", agents=["alice"])
 
     from delegate.config import get_default_human
-    assert get_default_human(hc_home) == "human"
+    assert get_default_human(hc_home) == "boss"
 
 
 def test_rename_member_auto_heals_human_fallback(tmp_path):
-    """rename_member renames YAML + DB entry; heal_human_name uses it to fix 'human'."""
+    """rename_member renames YAML + DB entry; correctly updates member file and DB."""
     hc_home = tmp_path / "hc"
     hc_home.mkdir()
     # Simulate pre-existing install with "human" as the fallback name

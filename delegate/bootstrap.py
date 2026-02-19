@@ -88,11 +88,19 @@ def get_all_member_names(hc_home: Path) -> set[str]:
 
 
 def _detect_human_name() -> str:
-    """Auto-detect human member name from ``git config user.name``.
+    """Auto-detect human member name.
+
+    Priority order:
+    1. ``git config user.name`` — first word, lowercased.
+    2. Unix login name (``os.getlogin()`` or ``pwd.getpwuid``).
+    3. ``"boss"`` — final fallback (never ``"human"``).
 
     Returns the first name lowercased (e.g. "Nikhil Gupta" → "nikhil").
-    Falls back to ``"human"`` if git config is not set or fails.
     """
+    import os
+    import pwd
+
+    # 1. git config user.name
     try:
         result = subprocess.run(
             ["git", "config", "user.name"],
@@ -103,10 +111,31 @@ def _detect_human_name() -> str:
             first = full_name.split()[0].lower()
             # Sanitize: only keep alphanumeric chars
             first = "".join(c for c in first if c.isalnum())
-            return first if first else "human"
+            if first:
+                return first
     except Exception:
         pass
-    return "human"
+
+    # 2. Unix login name
+    try:
+        login = os.getlogin()
+        if login:
+            sanitized = "".join(c for c in login.lower() if c.isalnum())
+            if sanitized:
+                return sanitized
+    except Exception:
+        pass
+    try:
+        pw_name = pwd.getpwuid(os.getuid()).pw_name
+        if pw_name:
+            sanitized = "".join(c for c in pw_name.lower() if c.isalnum())
+            if sanitized:
+                return sanitized
+    except Exception:
+        pass
+
+    # 3. Final fallback — never "human"
+    return "boss"
 
 
 # Backward-compat alias (will be removed in a future release)
@@ -373,19 +402,16 @@ def bootstrap(
 
     # --- Human member (org-wide, outside any team) ---
     # Ensure at least one human member exists.
-    # Auto-detect from git config user.name (first name, lowercased), fall back to "human".
+    # Auto-detect from git config / Unix login, fall back to "boss".
     from delegate.config import get_human_members
-    stored_name = get_default_human(hc_home)
-    if not stored_name or stored_name == "human":
-        detected = _detect_human_name()
-        if detected != "human" and stored_name == "human":
-            # Rename the existing "human" entry to the detected name
-            rename_member(hc_home, "human", detected)
-        human_name = detected
+    existing_members = get_human_members(hc_home)
+    if not existing_members:
+        # No member yet — detect the real name now
+        human_name = _detect_human_name()
+        add_member(hc_home, human_name)
     else:
-        human_name = stored_name
-    # Ensure member file exists (idempotent)
-    add_member(hc_home, human_name)
+        # Member already exists — leave it alone (idempotent)
+        human_name = existing_members[0]["name"]
 
     # (Legacy boss dir creation removed — no backward compatibility needed.)
 

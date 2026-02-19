@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "preact/hooks";
 import { currentTeam, tasks, activeTab, openPanel, taskTeamFilter, teams, getWorkflowStages, isInputFocused } from "../state.js";
-import { cap, prettyName, fmtStatus, taskIdStr } from "../utils.js";
+import { cap, displayName, prettyName, fmtStatus, taskIdStr } from "../utils.js";
 import { playTaskSound, playApprovalSound } from "../audio.js";
 import { seedTaskCache } from "./TaskSidePanel.jsx";
 import { FilterBar, applyFilters } from "./FilterBar.jsx";
@@ -373,7 +373,7 @@ export function TasksPanel() {
                                 <span class="task-title">{t.title}</span>
                               </div>
                               <div class="task-summary-line2">
-                                <span class="task-assignee">{t.assignee ? cap(t.assignee) : "\u2014"}</span>
+                                <span class="task-assignee">{t.assignee ? displayName(t.assignee) : "\u2014"}</span>
                                 <span><span class={"badge badge-" + t.status}>{fmtStatus(t.status)}</span></span>
                                 <span class="task-priority">{cap(t.priority)}</span>
                               </div>
@@ -401,7 +401,7 @@ export function TasksPanel() {
                     <span class="task-title">{t.title}</span>
                   </div>
                   <div class="task-summary-line2">
-                    <span class="task-assignee">{t.assignee ? cap(t.assignee) : "\u2014"}</span>
+                    <span class="task-assignee">{t.assignee ? displayName(t.assignee) : "\u2014"}</span>
                     <span><span class={"badge badge-" + t.status}>{fmtStatus(t.status)}</span></span>
                     <span class="task-priority">{cap(t.priority)}</span>
                   </div>
