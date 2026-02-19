@@ -153,7 +153,7 @@ class TestNotifyConflict:
 
         assert "rebase_to_main" in body
         assert "alice" in body
-        assert "onto main: Build login feature" in body
+        assert "Build login feature" in body
 
     def test_no_details_shows_placeholder(self, notify_team):
         task = _make_task_at_in_approval(notify_team)

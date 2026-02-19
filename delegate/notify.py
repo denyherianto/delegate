@@ -194,7 +194,7 @@ def notify_conflict(
             f"     The staged changes contain ALL of the feature's work.\n"
             f"     Edit conflicting files so they work with the current main.\n"
             f"  3. git add -A\n"
-            f"  4. git commit -m \"rebase {format_task_id(task_id)} onto main: {title}\"\n"
+            f"  4. git commit -m \"{title}\"\n"
             f"\n"
             f"ACTION: Assign this task back to {dri}, send them these instructions,\n"
             f"and transition the task to in_progress. After they resolve and commit,\n"
