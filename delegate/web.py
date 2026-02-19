@@ -2558,7 +2558,8 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         """List filesystem entries whose absolute paths begin with ``path``.
 
         Query params:
-            path:  Optional. Must be an absolute path (starts with ``/``).
+            path:  Optional. Absolute path (starts with ``/``) or a ``~``-prefixed
+                   path which is expanded to the user's home directory.
                    Defaults to the user's home directory when empty.
             limit: Optional. Default 20, max 50.
 
@@ -2566,10 +2567,12 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             { "entries": [{ "path": "/abs/path", "is_dir": true }, ...] }
 
         Errors:
-            400 if path is non-empty, non-absolute, or contains ``..`` components.
+            400 if path is non-empty, non-absolute (after ~ expansion), or contains ``..`` components.
         """
         if not path:
             path = str(Path.home()) + "/"
+        elif path.startswith("~"):
+            path = str(Path(path).expanduser())
         if not path.startswith("/"):
             raise HTTPException(status_code=400, detail="path must be an absolute path starting with /")
         if ".." in path.split("/"):

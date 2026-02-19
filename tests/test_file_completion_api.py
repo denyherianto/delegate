@@ -141,6 +141,28 @@ class TestGlobalFilesComplete:
                 f"Expected entry under home dir {home!r}, got {e['path']!r}"
             )
 
+    def test_tilde_alone_returns_home_dir(self, client):
+        """Path of '~' is expanded to the home directory."""
+        resp = client.get("/api/files/complete", params={"path": "~"})
+        assert resp.status_code == 200
+        entries = resp.json()["entries"]
+        home = str(Path.home())
+        for e in entries:
+            assert e["path"].startswith(home), (
+                f"Expected entry under home dir {home!r}, got {e['path']!r}"
+            )
+
+    def test_tilde_prefix_expanded(self, client):
+        """Path starting with ~/ is expanded to an absolute path."""
+        resp = client.get("/api/files/complete", params={"path": "~/"})
+        assert resp.status_code == 200
+        entries = resp.json()["entries"]
+        home = str(Path.home())
+        for e in entries:
+            assert e["path"].startswith(home), (
+                f"Expected entry under home dir {home!r}, got {e['path']!r}"
+            )
+
     def test_requires_absolute_path(self, client, tmp_path):
         """Relative paths are rejected with 400."""
         resp = client.get("/api/files/complete", params={"path": "relative/path"})
