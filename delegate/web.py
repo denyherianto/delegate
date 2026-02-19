@@ -123,7 +123,6 @@ def _reconcile_team_map(hc_home: Path) -> None:
     from delegate.paths import (
         register_team_path,
         list_team_names,
-        resolve_project_uuid,
     )
     from delegate.db import get_connection
 

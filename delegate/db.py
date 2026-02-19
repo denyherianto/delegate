@@ -355,11 +355,14 @@ f"INSERT OR IGNORE INTO {ids_table} (uuid, name) VALUES (?, ?)",
         )
 
     # Task comments table
+    # Note: tasks.team is used here (not proj_col) because tasks.team is the team name column.
+    # tasks.team was NOT renamed to tasks.project (collision with the existing tasks.project
+    # label column from V002). proj_col would resolve to "project" post-V018 — wrong column.
     conn.execute(f"""
         UPDATE task_comments
         SET {uuid_col} = COALESCE(
             (SELECT t.uuid FROM tasks tk
-             JOIN {ids_table} t ON t.name = tk.{proj_col}
+             JOIN {ids_table} t ON t.name = tk.team
              WHERE tk.id = task_comments.task_id AND t.deleted = 0),
             ''
         )
@@ -368,7 +371,7 @@ f"INSERT OR IGNORE INTO {ids_table} (uuid, name) VALUES (?, ?)",
 
     # For author_uuid, need flexible resolution
     comments_to_update = conn.execute(
-        f"SELECT task_comments.id, tasks.{proj_col}, task_comments.author FROM task_comments "
+        f"SELECT task_comments.id, tasks.team, task_comments.author FROM task_comments "
         "JOIN tasks ON task_comments.task_id = tasks.id "
         "WHERE task_comments.author_uuid = ''"
     ).fetchall()
@@ -402,8 +405,9 @@ f"INSERT OR IGNORE INTO {ids_table} (uuid, name) VALUES (?, ?)",
             )
 
     # Reviews table
+    # Use tasks.team (not proj_col) — tasks.team is the team name; tasks.project is the label.
     reviews_to_update = conn.execute(
-        f"SELECT reviews.id, tasks.{proj_col}, reviews.reviewer FROM reviews "
+        f"SELECT reviews.id, tasks.team, reviews.reviewer FROM reviews "
         f"JOIN tasks ON reviews.task_id = tasks.id "
         f"WHERE reviews.{uuid_col} = ''"
     ).fetchall()
@@ -437,8 +441,9 @@ f"INSERT OR IGNORE INTO {ids_table} (uuid, name) VALUES (?, ?)",
         )
 
     # Review comments table
+    # Use tasks.team (not proj_col) — tasks.team is the team name; tasks.project is the label.
     review_comments_to_update = conn.execute(
-        f"SELECT review_comments.id, tasks.{proj_col}, review_comments.author FROM review_comments "
+        f"SELECT review_comments.id, tasks.team, review_comments.author FROM review_comments "
         f"JOIN tasks ON review_comments.task_id = tasks.id "
         f"WHERE review_comments.{uuid_col} = ''"
     ).fetchall()

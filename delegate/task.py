@@ -1194,7 +1194,7 @@ def main():
                 try:
                     team_tasks = list_tasks(
                         args.home,
-                        project,
+                        team,
                         status=args.status,
                         assignee=args.assignee,
                         project=args.project,
