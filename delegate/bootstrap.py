@@ -32,7 +32,7 @@ from delegate.paths import (
     resolve_team_uuid,
     resolve_team_name,
 )
-from delegate.config import get_boss, get_default_human, add_member, get_human_members
+from delegate.config import get_boss, get_default_human, add_member, get_human_members, rename_member
 
 # Project name must start with a lowercase letter or digit, followed by any mix
 # of lowercase letters, digits, hyphens, and underscores.
@@ -375,9 +375,15 @@ def bootstrap(
     # Ensure at least one human member exists.
     # Auto-detect from git config user.name (first name, lowercased), fall back to "human".
     from delegate.config import get_human_members
-    human_name = get_default_human(hc_home)
-    if not human_name or human_name == "human":
-        human_name = _detect_human_name()
+    stored_name = get_default_human(hc_home)
+    if not stored_name or stored_name == "human":
+        detected = _detect_human_name()
+        if detected != "human" and stored_name == "human":
+            # Rename the existing "human" entry to the detected name
+            rename_member(hc_home, "human", detected)
+        human_name = detected
+    else:
+        human_name = stored_name
     # Ensure member file exists (idempotent)
     add_member(hc_home, human_name)
 

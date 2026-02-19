@@ -1,6 +1,7 @@
 """Tests for delegate/bootstrap.py."""
 
 import sqlite3
+from unittest.mock import patch, MagicMock
 
 import pytest
 import yaml
@@ -474,3 +475,56 @@ def test_bootstrap_id_changes_after_nuke(tmp_path):
     assert second_id is not None
     assert len(second_id) == 32
     assert second_id != first_id, "bootstrap_id should be different for fresh install"
+
+
+# ---------------------------------------------------------------------------
+# Human name detection and auto-heal tests
+# ---------------------------------------------------------------------------
+
+def _make_git_result(name: str):
+    """Return a mock subprocess.CompletedProcess for git config user.name."""
+    result = MagicMock()
+    result.stdout = name
+    return result
+
+
+def test_bootstrap_detects_human_name_from_git_config(tmp_path):
+    """On fresh bootstrap, human member name is read from git config user.name."""
+    hc_home = tmp_path / "hc"
+    hc_home.mkdir()
+
+    with patch("subprocess.run", return_value=_make_git_result("Nikhil Gupta\n")):
+        bootstrap(hc_home, TEAM, manager="mgr", agents=["alice"])
+
+    from delegate.config import get_default_human
+    assert get_default_human(hc_home) == "nikhil"
+
+
+def test_bootstrap_fallback_when_git_config_unavailable(tmp_path):
+    """If git config is unavailable, human name falls back to 'human'."""
+    hc_home = tmp_path / "hc"
+    hc_home.mkdir()
+
+    with patch("subprocess.run", side_effect=Exception("git not found")):
+        bootstrap(hc_home, TEAM, manager="mgr", agents=["alice"])
+
+    from delegate.config import get_default_human
+    assert get_default_human(hc_home) == "human"
+
+
+def test_rename_member_auto_heals_human_fallback(tmp_path):
+    """rename_member renames YAML + DB entry; heal_human_name uses it to fix 'human'."""
+    hc_home = tmp_path / "hc"
+    hc_home.mkdir()
+    # Simulate pre-existing install with "human" as the fallback name
+    add_member(hc_home, "human")
+
+    from delegate.config import rename_member, get_default_human
+    renamed = rename_member(hc_home, "human", "nikhil")
+    assert renamed is True
+    assert get_default_human(hc_home) == "nikhil"
+
+    # Old file gone, new file present
+    from delegate.paths import member_path
+    assert not member_path(hc_home, "human").exists()
+    assert member_path(hc_home, "nikhil").exists()

@@ -152,6 +152,66 @@ def add_member(hc_home: Path, name: str, **extra) -> dict:
     return data
 
 
+def rename_member(hc_home: Path, old_name: str, new_name: str) -> bool:
+    """Rename a human member from *old_name* to *new_name*.
+
+    Updates:
+    - The member YAML file (``members/<old_name>.yaml`` → ``members/<new_name>.yaml``)
+    - The ``member_ids`` row in the global DB
+    - All team roster files that reference the old name
+
+    Returns True if a rename was performed, False if ``old_name`` did not exist
+    or ``new_name`` already exists.
+    """
+    if old_name == new_name:
+        return False
+    mp_old = member_path(hc_home, old_name)
+    if not mp_old.exists():
+        return False
+    mp_new = member_path(hc_home, new_name)
+    if mp_new.exists():
+        # Target already exists — do not overwrite
+        return False
+
+    # Rename the YAML file
+    old_data = yaml.safe_load(mp_old.read_text()) or {}
+    new_data = {**old_data, "name": new_name}
+    mp_new.write_text(yaml.dump(new_data, default_flow_style=False, sort_keys=False))
+    mp_old.unlink()
+
+    # Update member_ids in the global DB
+    from delegate.db import get_connection
+    conn = get_connection(hc_home, "")
+    try:
+        conn.execute(
+            "UPDATE member_ids SET name = ? WHERE kind = 'human' AND team_uuid IS NULL AND name = ? AND deleted = 0",
+            (new_name, old_name),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+    # Update all team roster files that reference the old name
+    from delegate.paths import teams_dir as _teams_dir_fn, roster_path as _roster_path_fn
+    teams_root = _teams_dir_fn(hc_home)
+    if teams_root.is_dir():
+        for team_dir_obj in teams_root.iterdir():
+            if not team_dir_obj.is_dir():
+                continue
+            team_name = team_dir_obj.name
+            rp = _roster_path_fn(hc_home, team_name)
+            if rp.exists():
+                text = rp.read_text()
+                # Replace exact name match in roster lines (bold-wrapped: **name**)
+                new_text = text.replace(f"**{old_name}**", f"**{new_name}**")
+                if new_text != text:
+                    rp.write_text(new_text)
+
+    return True
+
+
 def remove_member(hc_home: Path, name: str) -> bool:
     """Remove a human member YAML file.  Returns True if removed."""
     mp = member_path(hc_home, name)
