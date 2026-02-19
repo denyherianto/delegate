@@ -195,6 +195,7 @@ Team data: {hc_home}/teams/{team}/"""
             "task-management.md",
             "code-review.md",
             "continuous-improvement.md",
+            "environment.md",
         ]
         sections = []
         for fname in charter_files:
@@ -380,6 +381,12 @@ Team data: {hc_home}/teams/{team}/"""
                 "\n- Commit your changes frequently with clear messages."
                 f"\n- Do NOT switch branches — stay on {current_task.get('branch', '')}."
                 "\n- Your branch is local-only and will be merged by the merge worker when approved."
+            )
+            parts.append(
+                "\n## Environment reminder\n"
+                "At the start of this task: check for `.delegate/setup.sh` in your worktree root. "
+                "If present, source it (`. .delegate/setup.sh`) before running any commands. "
+                "If absent, create it following the Environment Setup charter section."
             )
 
         # Task activity

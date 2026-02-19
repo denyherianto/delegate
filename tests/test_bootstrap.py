@@ -89,7 +89,7 @@ def test_charter_shipped_with_package():
     """Base charter files are shipped with the package."""
     cd = base_charter_dir()
     assert cd.is_dir()
-    expected_top = {"values.md", "communication.md", "task-management.md", "code-review.md", "continuous-improvement.md"}
+    expected_top = {"values.md", "communication.md", "task-management.md", "code-review.md", "continuous-improvement.md", "environment.md"}
     actual = {f.name for f in cd.glob("*.md")}
     assert actual == expected_top
     for f in cd.glob("*.md"):
