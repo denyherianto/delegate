@@ -674,14 +674,6 @@ def create_task_worktree(
 
     logger.info("Created worktree at %s (branch: %s)", wt_path, branch)
 
-    # Generate env scripts if not already present.
-    # Only the first agent to get a worktree will write them; subsequent worktrees
-    # inherit the scripts from main after the first merge.
-    try:
-        generate_env_scripts(wt_path)
-    except Exception as exc:
-        logger.warning("Could not generate env scripts for %s: %s", wt_path, exc)
-
     return wt_path
 
 
