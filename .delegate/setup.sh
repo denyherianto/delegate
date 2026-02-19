@@ -24,10 +24,9 @@ if [ ! -f "$VENV_DIR/bin/pytest" ]; then
   rm -rf "$VENV_DIR"
   if [ -n "$UV" ]; then
     cd "$WORKTREE_ROOT"
-    # uv sync reads [dependency-groups] (PEP 735) and uv.lock correctly
-    if ! "$UV" sync --group dev 2>/dev/null; then
-      "$UV" sync --group dev --no-cache
-    fi
+    # uv sync reads [dependency-groups] (PEP 735) and uv.lock for reproducible installs.
+    # uv reuses its global cache (~/.cache/uv) — do NOT pass --no-cache routinely.
+    "$UV" sync --group dev
   else
     python3 -m venv "$VENV_DIR"
     cd "$WORKTREE_ROOT"
