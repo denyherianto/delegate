@@ -28,7 +28,15 @@ Look at the repo root for existing environment tooling and use it — do not dup
 9. **`Gemfile`** → Ruby. See "Ruby" guide below.
 10. **Nothing found** → write a placeholder with a comment asking the user to fill it in.
 
-**Isolation requirement**: every worktree must have its own isolated environment (`.venv`, `node_modules`, `vendor/bundle`, etc.). Never share an environment between worktrees or with the main repo.
+**Isolation requirement — CRITICAL**: every worktree MUST have its own isolated environment (`.venv`, `node_modules`, `vendor/bundle`, etc.) created INSIDE the worktree directory. NEVER reuse or symlink to the main repo's environment, another worktree's environment, or any absolute path outside the worktree.
+
+Forbidden patterns — if you catch yourself writing any of these, stop and fix it:
+- `VENV_DIR="$REPO_ROOT/.venv"` — links to the main repo's venv
+- `VENV_DIR="/Users/.../some-project/.venv"` — hardcoded absolute path to another location
+- `source "$REPO_ROOT/.venv/bin/activate"` — activating a shared venv
+- "reuse the pre-existing venv" / "shared across worktrees" — this reasoning is always wrong
+
+The correct pattern is always: `VENV_DIR="$WORKTREE_ROOT/.venv"` — the venv lives inside the worktree. If creating the venv fails (e.g. no network), exit with a clear error — do NOT fall back to sharing another environment.
 
 ---
 
@@ -61,7 +69,7 @@ GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)"
 REPO_ROOT="$(cd "$GIT_COMMON/.." && pwd)"
 ```
 
-`REPO_ROOT` is where `shell.nix`/`flake.nix` live.
+`REPO_ROOT` is where `shell.nix`/`flake.nix` live. Use `REPO_ROOT` ONLY for locating nix files — never use it to share environments. The venv/node_modules must still live inside `$WORKTREE_ROOT`.
 
 ### Nix setup.sh template
 
@@ -406,6 +414,7 @@ These are hard constraints. Never violate them.
 - Install system packages (`brew install`, `apt install`, `yum install`, etc.)
 - Start system services (`postgres`, `redis`, `docker`, etc.)
 - Change global tool versions (`nvm use --default`, `pyenv global`, etc.)
+- Share a `.venv`, `node_modules`, or any environment with the main repo or other worktrees — every worktree gets its own
 
 **Always:**
 - Use project-local environments (`.venv`, `node_modules`, etc.)
