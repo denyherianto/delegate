@@ -133,6 +133,7 @@ Key rules:
 - **`uv pip install -e ".[dev]"` silently skips `[dependency-groups]`** — use it only when there is no `uv.lock`. It works for `[project.optional-dependencies]` but not PEP 735 groups.
 - **pip fallback**: use non-editable install (`pip install ".[dev]"` not `-e`) — editable installs require pip >= 21.3 + a PEP 660 build backend. Older pip + hatchling combinations fail silently.
 - **Detect dependency format**: `grep -q '^\[dependency-groups\]' pyproject.toml` for PEP 735; `grep -q '^\[tool.poetry\]' pyproject.toml` for Poetry.
+- **Use the global uv cache** — never pass `--no-cache` routinely. uv's shared cache (`~/.cache/uv`) is a major speed advantage over pip; reusing compiled wheels across worktrees makes installs fast. Only pass `--no-cache` if you have diagnosed a specific cache corruption (e.g. `uv cache clean` after an interrupted download). Same principle for Node: prefer `pnpm` (shared content-addressable store) or `npm ci` with its local cache over `--prefer-offline` flags that skip caching entirely.
 
 ### Poetry setup.sh template
 
@@ -169,13 +170,12 @@ if [ ! -f "$VENV_DIR/bin/pytest" ]; then
   rm -rf "$VENV_DIR"
   if command -v uv >/dev/null 2>&1; then
     cd "$WORKTREE_ROOT"
+    cd "$WORKTREE_ROOT"
     # CHOOSE one based on the decision table:
     #   uv.lock + [dependency-groups]:             uv sync --group dev
     #   uv.lock + [project.optional-dependencies]: uv sync --extra dev
     #   no lockfile:                               uv pip install -e ".[dev]"
-    if ! uv sync --group dev 2>/dev/null; then
-      uv sync --group dev --no-cache
-    fi
+    uv sync --group dev
   else
     python3 -m venv "$VENV_DIR"
     cd "$WORKTREE_ROOT"
