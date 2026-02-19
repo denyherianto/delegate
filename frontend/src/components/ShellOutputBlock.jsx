@@ -41,6 +41,7 @@ export function ShellOutputBlock({ result, onErrorState }) {
   const { stdout = '', stderr = '', exit_code = 0, cwd = '', duration_ms = 0, error = '' } = result;
   const hasError = exit_code !== 0 || !!error;
   const durationSec = (duration_ms / 1000).toFixed(2);
+  const hasOutput = !!(stdout?.trim() || stderr?.trim() || error?.trim());
 
   // Notify parent of error state
   useEffect(() => {
@@ -73,44 +74,63 @@ export function ShellOutputBlock({ result, onErrorState }) {
   return (
     <div class="shell-output-block">
       <div class="shell-output-toolbar">
-        <button class="shell-output-copy-icon" onClick={handleCopy} title="Copy output">
-          <ClipboardIcon />
-        </button>
-      </div>
-      <div class="shell-output-body" ref={contentRef}>
-        <pre class="shell-output-stdout">{displayContent}</pre>
-        {shouldCollapse && !expanded && (
-          <button class="shell-expand-btn" onClick={() => setExpanded(true)}>
-            Show all ({lineCount} lines)
+        {hasOutput && (
+          <button class="shell-output-copy-icon" onClick={handleCopy} title="Copy output">
+            <ClipboardIcon />
           </button>
         )}
-        {error && (
-          <div class="shell-output-stderr">
-            <div class="shell-output-stderr-label">Error:</div>
-            <pre>{error}</pre>
-          </div>
-        )}
-        {stderr && hasError && (
-          <div class="shell-output-stderr">
-            <div class="shell-output-stderr-label">stderr:</div>
-            <pre>{stderr}</pre>
-          </div>
-        )}
-        {stderr && !hasError && (
-          <div class="shell-output-stderr-neutral">
-            <button
-              class="shell-stderr-toggle"
-              onClick={() => setStderrExpanded(!stderrExpanded)}
-            >
-              <span class="shell-stderr-chevron">{stderrExpanded ? 'v' : '>'}</span>
-              {' '}stderr ({stderr.split('\n').length} lines)
-            </button>
-            {stderrExpanded && (
-              <pre>{stderr}</pre>
-            )}
-          </div>
+        {!hasOutput && (
+          exit_code === 0
+            ? <span class="shell-status-icon shell-status-ok">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="2 8 6 12 14 4" />
+                </svg>
+              </span>
+            : <span class="shell-status-icon shell-status-fail">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="3" y1="3" x2="13" y2="13" />
+                  <line x1="13" y1="3" x2="3" y2="13" />
+                </svg>
+                <span class="shell-status-exit">exited {exit_code}</span>
+              </span>
         )}
       </div>
+      {hasOutput && (
+        <div class="shell-output-body" ref={contentRef}>
+          <pre class="shell-output-stdout">{displayContent}</pre>
+          {shouldCollapse && !expanded && (
+            <button class="shell-expand-btn" onClick={() => setExpanded(true)}>
+              Show all ({lineCount} lines)
+            </button>
+          )}
+          {error && (
+            <div class="shell-output-stderr">
+              <div class="shell-output-stderr-label">Error:</div>
+              <pre>{error}</pre>
+            </div>
+          )}
+          {stderr && hasError && (
+            <div class="shell-output-stderr">
+              <div class="shell-output-stderr-label">stderr:</div>
+              <pre>{stderr}</pre>
+            </div>
+          )}
+          {stderr && !hasError && (
+            <div class="shell-output-stderr-neutral">
+              <button
+                class="shell-stderr-toggle"
+                onClick={() => setStderrExpanded(!stderrExpanded)}
+              >
+                <span class="shell-stderr-chevron">{stderrExpanded ? 'v' : '>'}</span>
+                {' '}stderr ({stderr.split('\n').length} lines)
+              </button>
+              {stderrExpanded && (
+                <pre>{stderr}</pre>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

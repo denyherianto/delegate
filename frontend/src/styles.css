@@ -3733,6 +3733,23 @@ select option:hover {
   height: 14px;
 }
 
+.shell-status-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.shell-status-ok {
+  color: #4a9eff;
+}
+.shell-status-fail {
+  color: #f14c4c;
+}
+.shell-status-exit {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 11px;
+}
+
 
 .shell-output-body {
   max-height: 400px;
