@@ -753,32 +753,6 @@ async def _daemon_loop(
                     if _shutdown_flag:
                         break
 
-                    # Task state gate: skip dispatch if this agent is the DRI
-                    # on a task currently in `merging` state.  The merge worker
-                    # will reset the agent's worktree; dispatching a turn now
-                    # would create a race between the agent writing files and
-                    # the merge worker doing `git reset --hard`.
-                    # This is defense-in-depth — the worktree lock in
-                    # TelephoneExchange provides the primary serialization
-                    # guarantee; this gate prevents the turn from starting at
-                    # all when merge is in progress.
-                    try:
-                        from delegate.task import list_tasks as _lt
-                        merging_tasks = _lt(hc_home, team, status="merging")
-                        agent_merging = any(
-                            t.get("dri") == agent
-                            for t in merging_tasks
-                        )
-                    except Exception:
-                        agent_merging = False
-
-                    if agent_merging:
-                        logger.debug(
-                            "Skipping turn dispatch for %s/%s — task in merging state",
-                            team, agent,
-                        )
-                        continue
-
                     key = (team, agent)
                     if key not in in_flight:
                         in_flight.add(key)
