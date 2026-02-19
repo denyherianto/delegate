@@ -1,7 +1,9 @@
 """Tests for GET /api/version endpoint."""
 
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 import json
+import tomllib
 
 import pytest
 from fastapi.testclient import TestClient
@@ -112,3 +114,20 @@ class TestVersionEndpoint:
         data = resp.json()
         assert data["latest"] is None
         assert data["update_available"] is False
+
+    def test_falls_back_to_pyproject_when_metadata_unavailable(self, client):
+        """When importlib.metadata raises PackageNotFoundError, version is read from pyproject.toml."""
+        from importlib.metadata import PackageNotFoundError
+
+        # Read the expected version directly from pyproject.toml
+        _pyproject = Path(__file__).parent.parent / "pyproject.toml"
+        with open(_pyproject, "rb") as f:
+            expected_version = tomllib.load(f)["project"]["version"]
+
+        with patch("importlib.metadata.version", side_effect=PackageNotFoundError("delegate-ai")):
+            with patch("urllib.request.urlopen", return_value=_make_pypi_response("1.0.0")):
+                resp = client.get("/api/version")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["current"] == expected_version

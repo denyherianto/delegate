@@ -1834,7 +1834,14 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         from importlib.metadata import version as _pkg_version
         from packaging.version import Version
 
-        current = _pkg_version("delegate-ai")
+        try:
+            current = _pkg_version("delegate-ai")
+        except Exception:
+            # Package not installed via pip — read version directly from pyproject.toml
+            import tomllib
+            _pyproject = Path(__file__).parent.parent / "pyproject.toml"
+            with open(_pyproject, "rb") as _f:
+                current = tomllib.load(_f)["project"]["version"]
 
         # Serve from cache if fresh
         now = time.monotonic()
