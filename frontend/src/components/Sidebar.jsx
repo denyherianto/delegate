@@ -80,53 +80,6 @@ function SidebarFooter({ collapsed }) {
     });
   }, []);
 
-  // #region agent log
-  useEffect(() => {
-    if (!versionInfo || collapsed) return;
-    setTimeout(() => {
-      const sidebar = document.querySelector('.sb');
-      if (!sidebar) return;
-      const sidebarRect = sidebar.getBoundingClientRect();
-      const footer = sidebar.querySelector('.sb-footer');
-      if (!footer) return;
-      const footerStyle = getComputedStyle(footer);
-      const link = footer.querySelector('.sb-footer-link');
-      const linkStyle = link ? getComputedStyle(link) : {};
-      const icon = link ? link.querySelector('svg') : null;
-      const iconRect = icon ? icon.getBoundingClientRect() : {};
-      const textSpan = link ? link.querySelector('span') : null;
-      const textRect = textSpan ? textSpan.getBoundingClientRect() : {};
-      const version = footer.querySelector('.sb-version');
-      const versionRect = version ? version.getBoundingClientRect() : {};
-      const versionStyle = version ? getComputedStyle(version) : {};
-      const navBtn = sidebar.querySelector('.sb-nav-btn');
-      const navLabel = navBtn ? navBtn.querySelector('.sb-nav-label') : null;
-      const navLabelRect = navLabel ? navLabel.getBoundingClientRect() : {};
-      const data = {
-        sidebarLeft: sidebarRect.left,
-        footerPadLeft: footerStyle.paddingLeft,
-        linkPadLeft: linkStyle.paddingLeft,
-        linkLeft: link ? link.getBoundingClientRect().left : null,
-        iconLeft: iconRect.left, iconWidth: iconRect.width,
-        textSpanLeft: textRect.left,
-        textOffsetFromSidebar: textRect.left - sidebarRect.left,
-        versionPadLeft: versionStyle.paddingLeft,
-        versionLeft: versionRect.left,
-        versionOffsetFromSidebar: versionRect.left - sidebarRect.left,
-        navLabelLeft: navLabelRect.left,
-        navLabelOffsetFromSidebar: navLabelRect.left ? navLabelRect.left - sidebarRect.left : null,
-        versionDisplay: versionStyle.display,
-        versionText: version ? version.textContent : null,
-      };
-      console.warn('[DEBUG-ALIGN]', JSON.stringify(data));
-      // Also write as title on version element for easy inspection
-      if (version) version.title = JSON.stringify(data);
-      // Attempt beacon (no CORS)
-      try { navigator.sendBeacon('http://127.0.0.1:7247/ingest/4f17b133-4495-46e2-92a9-f419145cffd9', new Blob([JSON.stringify({location:'Sidebar.jsx:footer-debug',message:'Footer alignment debug',data,timestamp:Date.now()})], {type:'application/json'})); } catch(e) {}
-    }, 300);
-  }, [versionInfo, collapsed]);
-  // #endregion
-
   if (collapsed) return null;
 
   return (
