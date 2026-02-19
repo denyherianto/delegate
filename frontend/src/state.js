@@ -346,14 +346,14 @@ export function updateLastSeen() {
   localStorage.setItem(lsKey("last-seen"), new Date().toISOString());
 }
 
-// ── Last-greeted tracking (localStorage) ──
+// ── Last-greeted tracking (localStorage, scoped per team) ──
 
-export function getLastGreeted() {
-  return localStorage.getItem(lsKey("last-greeted")) || null;
+export function getLastGreeted(team) {
+  return localStorage.getItem(lsKey(`last-greeted-${team}`)) || null;
 }
 
-export function updateLastGreeted() {
-  localStorage.setItem(lsKey("last-greeted"), new Date().toISOString());
+export function updateLastGreeted(team) {
+  localStorage.setItem(lsKey(`last-greeted-${team}`), new Date().toISOString());
 }
 
 // ── Keyboard helpers ──

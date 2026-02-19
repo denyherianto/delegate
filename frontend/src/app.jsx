@@ -377,12 +377,18 @@ function App() {
 
       // Send welcome greeting if first visit or after meaningful absence
       const now = Date.now();
-      const lastGreeted = getLastGreeted();
+      const lastGreeted = getLastGreeted(t);
       const lastGreetedTime = lastGreeted ? new Date(lastGreeted).getTime() : null;
       const shouldGreet = !lastGreetedTime || (now - lastGreetedTime) >= GREETING_THRESHOLD;
       if (shouldGreet) {
-        api.greetTeam(t, getLastSeen()).catch(() => {});
-        updateLastGreeted();
+        (async () => {
+          try {
+            await api.greetTeam(t, getLastSeen());
+            updateLastGreeted(t);
+          } catch (e) {
+            console.warn("greetTeam failed:", e);
+          }
+        })();
       }
       return;
     }
@@ -418,14 +424,17 @@ function App() {
 
         // Send welcome greeting if this is first visit or after meaningful absence
         const now = Date.now();
-        const lastGreeted = getLastGreeted();
+        const lastGreeted = getLastGreeted(t);
         const lastGreetedTime = lastGreeted ? new Date(lastGreeted).getTime() : null;
         const shouldGreet = !lastGreetedTime || (now - lastGreetedTime) >= GREETING_THRESHOLD;
 
         if (shouldGreet) {
-          const lastSeen = getLastSeen();
-          api.greetTeam(t, lastSeen).catch(() => {});
-          updateLastGreeted();
+          try {
+            await api.greetTeam(t, getLastSeen());
+            updateLastGreeted(t);
+          } catch (e) {
+            console.warn("greetTeam failed:", e);
+          }
         }
       } catch (e) { }
     })();
@@ -513,14 +522,15 @@ function App() {
 
           // Send greeting if away time exceeds greeting threshold
           const now = Date.now();
-          const lastGreeted = getLastGreeted();
+          const team = currentTeam.value;
+          const lastGreeted = getLastGreeted(team);
           const lastGreetedTime = lastGreeted ? new Date(lastGreeted).getTime() : null;
           const shouldGreet = awayMs >= GREETING_THRESHOLD &&
                               (!lastGreetedTime || (now - lastGreetedTime) >= GREETING_THRESHOLD);
 
           if (shouldGreet) {
-            api.greetTeam(currentTeam.value, lastSeen).catch(() => {});
-            updateLastGreeted();
+            api.greetTeam(team, lastSeen).catch(() => {});
+            updateLastGreeted(team);
           }
         }
 
