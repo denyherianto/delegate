@@ -714,7 +714,6 @@ body {
 
 .mc-agents-panel {
   border-bottom: 1px solid var(--border-default);
-  flex-grow: 2;
 }
 
 /* ── Agent row (unified: idle = header only, active = header + body) ── */
@@ -1159,29 +1158,22 @@ body {
   border-left-color: var(--semantic-blue);
 }
 .task-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 8px 12px;
-}
-.task-summary-line1 {
-  display: flex;
+  display: grid;
+  grid-template-columns: 56px 1fr auto auto auto;
+  gap: 12px;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  justify-items: start;
+  padding: 10px 12px;
+  font-size: 13px;
 }
-.task-summary-line2 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+.task-summary > span { white-space: nowrap; }
 .task-id {
   color: var(--text-muted);
   font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
   font-variant-numeric: tabular-nums;
   font-size: 12px;
 }
-.task-title { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; font-size: 12px; color: var(--text-primary); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.task-title { color: var(--text-primary); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-assignee { font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace; color: var(--text-secondary); font-size: 12px; min-width: 70px; text-align: left; }
 .task-priority { color: var(--text-muted); font-size: 12px; min-width: 50px; text-align: left; }
 /* ================================================================
