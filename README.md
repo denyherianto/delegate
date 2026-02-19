@@ -65,7 +65,7 @@ You: "Add a /health endpoint that returns uptime and version"
 ```
 
 1. **Delegate** (the manager agent) breaks it down, creates tasks, assigns to available engineers
-2. **Engineer** gets a git worktree, writes the code, runs tests, submits for review
+2. **Engineer** gets an isolated git worktree with its own environment (venv, node_modules, etc.), writes the code, runs tests, submits for review
 3. **Reviewer** (another agent) checks the diff, runs the test suite, approves or requests changes
 4. **You** approve the merge (or set repos to auto-merge)
 5. **Merge worker** rebases onto main, runs pre-merge checks, fast-forward merges
@@ -87,6 +87,8 @@ Meanwhile, you can send more tasks — Delegate will prioritize, assign, and mul
 **Works with your existing setup.** Delegate reads `claude.md`, `AGENTS.md`, `.cursorrules`, and `.github/copilot-instructions.md` from your repos automatically — no migration needed.
 
 **Real git, real branches.** Each agent works in isolated [git worktrees](https://git-scm.com/docs/git-worktree). Branches are named `delegate/<team>/T0001`. No magic file systems — you can `git log` any branch anytime.
+
+**Isolated environments per task.** Every worktree gets its own environment — Python venvs, Node modules, Rust targets — so agents never step on each other. Delegate auto-detects your project's tooling (pyproject.toml, package.json, Cargo.toml, shell.nix, etc.) and generates `.delegate/setup.sh` and `.delegate/premerge.sh` scripts that reproduce the environment and run tests before merge. These are committed to the repo — edit them if the defaults don't fit.
 
 **Customizable workflows.** Define your own task lifecycle in Python:
 

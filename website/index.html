@@ -631,7 +631,7 @@
         <div class="flow-num">1</div>
         <div>
           <div class="flow-title">Engineer writes code</div>
-          <div class="flow-desc">An engineer agent gets an isolated git worktree, writes the implementation, runs your test suite, and submits for review. Branches are named <code>delegate/&lt;team&gt;/T0001</code> — fully visible in your repo.</div>
+          <div class="flow-desc">An engineer agent gets an isolated git worktree with its own environment — venv, node_modules, etc. — writes the implementation, runs your test suite, and submits for review. Branches are named <code>delegate/&lt;team&gt;/T0001</code> — fully visible in your repo.</div>
           <div class="flow-tag">todo → in_progress</div>
         </div>
       </div>
@@ -690,6 +690,11 @@
         <span class="feature-glyph">&gt;&gt;</span>
         <div class="feature-title">Real git, real branches</div>
         <div class="feature-desc">Each agent works in an isolated git worktree. Branches are named <code>delegate/&lt;team&gt;/T0001</code>. No magic filesystems — you can <code>git log</code> any branch, <code>git diff</code> any commit, anytime.</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-glyph">⚙</span>
+        <div class="feature-title">Isolated environments per task</div>
+        <div class="feature-desc">Every worktree gets its own environment — Python venvs, node_modules, Rust targets — so agents never collide. Delegate auto-generates <code>.delegate/setup.sh</code> and <code>.delegate/premerge.sh</code> scripts. They're committed to the repo — edit them if the defaults don't fit.</div>
       </div>
       <div class="feature-card">
         <span class="feature-glyph">##</span>
