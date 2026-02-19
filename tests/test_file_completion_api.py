@@ -118,6 +118,29 @@ def worktree_task(hc_home, registered_repo):
 # ---------------------------------------------------------------------------
 
 class TestGlobalFilesComplete:
+    def test_empty_path_returns_home_dir(self, client):
+        """Empty path defaults to the user's home directory listing."""
+        resp = client.get("/api/files/complete", params={"path": ""})
+        assert resp.status_code == 200
+        entries = resp.json()["entries"]
+        # Each entry path must be absolute and start with the home directory
+        home = str(Path.home())
+        for e in entries:
+            assert e["path"].startswith(home), (
+                f"Expected entry under home dir {home!r}, got {e['path']!r}"
+            )
+
+    def test_missing_path_param_returns_home_dir(self, client):
+        """Omitting path entirely defaults to the user's home directory listing."""
+        resp = client.get("/api/files/complete")
+        assert resp.status_code == 200
+        entries = resp.json()["entries"]
+        home = str(Path.home())
+        for e in entries:
+            assert e["path"].startswith(home), (
+                f"Expected entry under home dir {home!r}, got {e['path']!r}"
+            )
+
     def test_requires_absolute_path(self, client, tmp_path):
         """Relative paths are rejected with 400."""
         resp = client.get("/api/files/complete", params={"path": "relative/path"})

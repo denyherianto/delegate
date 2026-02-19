@@ -2554,19 +2554,22 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     _COMPLETION_MAX_LIMIT = 50
 
     @app.get("/api/files/complete")
-    def get_files_complete(path: str, limit: int = 20):
+    def get_files_complete(path: str = "", limit: int = 20):
         """List filesystem entries whose absolute paths begin with ``path``.
 
         Query params:
-            path:  Required. Must be an absolute path (starts with ``/``).
+            path:  Optional. Must be an absolute path (starts with ``/``).
+                   Defaults to the user's home directory when empty.
             limit: Optional. Default 20, max 50.
 
         Returns:
             { "entries": [{ "path": "/abs/path", "is_dir": true }, ...] }
 
         Errors:
-            400 if path is relative or contains ``..`` components.
+            400 if path is non-empty, non-absolute, or contains ``..`` components.
         """
+        if not path:
+            path = str(Path.home()) + "/"
         if not path.startswith("/"):
             raise HTTPException(status_code=400, detail="path must be an absolute path starting with /")
         if ".." in path.split("/"):
