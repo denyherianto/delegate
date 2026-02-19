@@ -1007,6 +1007,9 @@ body {
   margin-top: 4px;
   display: block;
 }
+/* FileAutocomplete wired into the repo path field — override fixed width */
+.npm-repo-ac { width: 100%; }
+.npm-repo-ac .file-ac-input { width: 100%; box-sizing: border-box; font-size: 13px; padding: 6px 10px; border-radius: 6px; }
 
 .npm-row {
   display: flex;
@@ -5035,3 +5038,54 @@ select option:hover {
   color: var(--text-muted);
   font-size: 13px;
 }
+
+/* ── FileAutocomplete component ── */
+.file-ac-wrap {
+  position: relative;
+}
+.file-ac-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  padding: 3px 8px;
+  width: 280px;
+  outline: none;
+}
+.file-ac-input:focus {
+  border-color: var(--border-focus);
+}
+.file-ac-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 100%;
+  max-width: 480px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  z-index: 1100;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.file-ac-dropdown-above {
+  top: auto;
+  bottom: 100%;
+  margin-bottom: 2px;
+}
+.file-ac-item {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-ac-item.is-dir { color: var(--text-muted); }
+.file-ac-item.selected,
+.file-ac-item:hover { background: var(--bg-hover); }

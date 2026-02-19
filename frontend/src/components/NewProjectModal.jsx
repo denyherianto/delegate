@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "preact/hooks";
 import { projectModalOpen, teams, navigate } from "../state.js";
 import * as api from "../api.js";
+import { FileAutocomplete } from "./FileAutocomplete.jsx";
 
 // ---------------------------------------------------------------------------
 // NewProjectModal
@@ -34,6 +35,14 @@ export function NewProjectModal() {
 
   const close = useCallback(() => {
     projectModalOpen.value = false;
+  }, []);
+
+  // Fetch path completions for the repo path FileAutocomplete.
+  // api.completeFiles returns [{ path, is_dir, has_git }] — extract path strings,
+  // appending "/" to directories so FileAutocomplete can identify them.
+  const fetchRepoPaths = useCallback(async (q) => {
+    const entries = await api.completeFiles(q);
+    return entries.map(e => e.path + (e.is_dir ? "/" : ""));
   }, []);
 
   const handleSubmit = useCallback(async (e) => {
@@ -107,15 +116,15 @@ export function NewProjectModal() {
           {/* Repository path */}
           <div class="npm-field">
             <label class="npm-label" for="npm-repo">Repository path</label>
-            <input
-              id="npm-repo"
-              class="npm-input"
-              type="text"
-              placeholder="/Users/you/dev/my-project"
+            <FileAutocomplete
               value={repoPath}
-              onInput={(e) => setRepoPath(e.target.value)}
-              disabled={submitting}
-              autocomplete="off"
+              onChange={setRepoPath}
+              onSelect={setRepoPath}
+              onCancel={() => {}}
+              fetchSuggestions={fetchRepoPaths}
+              placeholder="/Users/you/dev/my-project"
+              className="npm-repo-ac"
+              autoFocus={false}
             />
             <span class="npm-hint">Absolute path to a local git repository</span>
           </div>

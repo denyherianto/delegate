@@ -384,6 +384,15 @@ export async function completeTaskFiles(taskId, q) {
 }
 // --- File Upload ---
 
+// Complete filesystem paths (global, for repo path autocomplete).
+// Returns entries: [{ path, is_dir, has_git }]
+export async function completeFiles(path) {
+  const res = await fetch(`/api/files/complete?path=${encodeURIComponent(path)}&limit=20`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.entries || [];
+}
+
 export async function uploadFiles(team, files, onProgress) {
   const formData = new FormData();
   for (const file of files) {
