@@ -256,6 +256,7 @@ export function ChatPanel() {
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [showDropZone, setShowDropZone] = useState(false);
+  const dragCounter = useRef(0);
 
   // Command history state
   const [historyIndex, setHistoryIndex] = useState(-1); // -1 = not navigating history
@@ -382,10 +383,13 @@ export function ChatPanel() {
   }, []);
 
   // Drag-and-drop handlers
+  // Use a counter to reliably track nested enter/leave events, avoiding the stuck
+  // overlay problem where dragLeave fires on child elements rather than the container.
   const handleDragEnter = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      dragCounter.current += 1;
       setShowDropZone(true);
     }
   }, []);
@@ -398,15 +402,23 @@ export function ChatPanel() {
   const handleDragLeave = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
-    // Only hide if leaving the container itself, not a child element
-    if (e.target === e.currentTarget) {
+    dragCounter.current -= 1;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
       setShowDropZone(false);
     }
+  }, []);
+
+  // Reset counter if drag is abandoned outside the window (no drop fires).
+  const handleDragEnd = useCallback(() => {
+    dragCounter.current = 0;
+    setShowDropZone(false);
   }, []);
 
   const handleDrop = useCallback(async (e) => {
     e.preventDefault();
     e.stopPropagation();
+    dragCounter.current = 0;
     setShowDropZone(false);
 
     const files = Array.from(e.dataTransfer.files || []);
@@ -1310,6 +1322,7 @@ export function ChatPanel() {
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
+      onDragEnd={handleDragEnd}
       onDrop={handleDrop}
     >
       {/* Drop zone overlay */}

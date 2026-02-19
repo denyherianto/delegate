@@ -576,7 +576,7 @@ body {
 .sb-version {
   font-size: 11px;
   color: var(--text-faint);
-  padding: 0 4px;
+  padding: 0 4px 0 24px;  /* 24px = icon(14px) + gap(6px) + link-padding-left(4px) */
 }
 .sb-update-chip {
   display: inline-flex;
