@@ -384,7 +384,7 @@ def _run_pre_merge(
     team: str | None = None,
     repo_name: str | None = None,
 ) -> tuple[bool, str]:
-    """Run pre-merge validation inside the agent worktree.
+    """Run pre-merge validation inside the merge worktree.
 
     Executes in two steps:
     1. Source ``.delegate/setup.sh`` (if present) to activate the environment
