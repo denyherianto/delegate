@@ -46,6 +46,8 @@ export function FileAutocomplete({
   const wrapRef = useRef(null);
   const debounceRef = useRef(null);
   const latestQueryRef = useRef("");  // guard stale async results
+  const suppressNextOpen = useRef(false); // set true after a selection to block the effect-triggered reopen
+  const isFocusedRef = useRef(false);     // ref mirror of isFocused for use inside the fetch effect
 
   // Auto-focus on mount
   useEffect(() => {
@@ -71,8 +73,13 @@ export function FileAutocomplete({
         const normalized = (results || []).map(normalize);
         setSuggestions(normalized);
         setSelectedIdx(-1);
+        // If a selection just fired, suppress the automatic reopen and reset the flag
+        if (suppressNextOpen.current) {
+          suppressNextOpen.current = false;
+          return;
+        }
         // Only show dropdown when input is focused
-        setDropdownOpen(isFocused && normalized.length > 0);
+        setDropdownOpen(isFocusedRef.current && normalized.length > 0);
       } catch (_) {
         // Silently ignore fetch errors — just hide the dropdown
         setSuggestions([]);
@@ -81,7 +88,7 @@ export function FileAutocomplete({
     }, 150);
 
     return () => clearTimeout(debounceRef.current);
-  }, [value, fetchSuggestions, isFocused]);
+  }, [value, fetchSuggestions]);
 
   // Position: flip above input when near bottom of viewport
   useEffect(() => {
@@ -95,14 +102,17 @@ export function FileAutocomplete({
     const item = suggestions[idx];
     if (!item) return;
     if (item.path.endsWith("/")) {
-      // Directory — fill input, keep dropdown open for further typing
-      onChange(item.path);
-      // Reset so next render refetches with the new dir prefix
+      // Directory — fill input, keep dropdown open for further typing.
+      // Suppress the fetch-effect reopen so the dropdown stays closed until
+      // the user types more into the directory prefix.
       setDropdownOpen(false);
+      suppressNextOpen.current = true;
+      onChange(item.path);
     } else {
       // File — close and call onSelect
       setDropdownOpen(false);
       setSuggestions([]);
+      suppressNextOpen.current = true;
       onSelect(item.path);
     }
   }, [suggestions, onChange, onSelect]);
@@ -170,6 +180,7 @@ export function FileAutocomplete({
   }, [onChange]);
 
   const handleFocus = useCallback(() => {
+    isFocusedRef.current = true;
     setIsFocused(true);
   }, []);
 
@@ -178,8 +189,10 @@ export function FileAutocomplete({
     // Small delay so mousedown on a suggestion fires first.
     setTimeout(() => {
       if (document.activeElement !== inputRef.current) {
+        isFocusedRef.current = false;
         setIsFocused(false);
         setDropdownOpen(false);
+        setSuggestions([]);  // clear so stale results don't flash on quick refocus
         setSelectedIdx(-1);
       }
     }, 150);
