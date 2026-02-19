@@ -788,12 +788,8 @@ async def _daemon_loop(
                     async def _run_auto_stages(t: str) -> None:
                         async with merge_sem:
                             # Legacy merge path (for tasks without workflow).
-                            # Pass exchange + running loop so merge_task() can
-                            # acquire the per-task worktree lock before resetting
-                            # the agent worktree.
-                            _loop = asyncio.get_event_loop()
                             results = await asyncio.to_thread(
-                                merge_once, hc_home, t, exchange, _loop,
+                                merge_once, hc_home, t,
                             )
                             for mr in results:
                                 if mr.success:

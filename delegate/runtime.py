@@ -123,47 +123,6 @@ _turn_counts: dict[tuple[str, str], int] = {}
 
 
 # ---------------------------------------------------------------------------
-# AsyncRWLock — async read-write lock
-# ---------------------------------------------------------------------------
-
-class AsyncRWLock:
-    """Async read-write lock.
-
-    Multiple readers (agent turns) can hold the lock simultaneously.
-    A single writer (merge worker) gets exclusive access -- blocks until
-    all readers release and prevents new readers while held.
-    """
-
-    def __init__(self) -> None:
-        self._cond = asyncio.Condition()
-        self._readers: int = 0
-        self._writer: bool = False
-
-    async def acquire_read(self) -> None:
-        async with self._cond:
-            while self._writer:
-                await self._cond.wait()
-            self._readers += 1
-
-    async def release_read(self) -> None:
-        async with self._cond:
-            self._readers -= 1
-            if self._readers == 0:
-                self._cond.notify_all()
-
-    async def acquire_write(self) -> None:
-        async with self._cond:
-            while self._writer or self._readers > 0:
-                await self._cond.wait()
-            self._writer = True
-
-    async def release_write(self) -> None:
-        async with self._cond:
-            self._writer = False
-            self._cond.notify_all()
-
-
-# ---------------------------------------------------------------------------
 # TelephoneExchange — registry of persistent agent conversations
 # ---------------------------------------------------------------------------
 
@@ -173,25 +132,10 @@ class TelephoneExchange:
     Created once by the daemon and passed to every ``run_turn()`` call.
     ``close_all()`` is called during graceful shutdown to clean up all
     agent subprocesses.
-
-    Also manages per-worktree AsyncRWLocks (keyed by (team, task_id)) that
-    coordinate access between the turn dispatcher and merge worker.  Both run
-    in the same event loop.
-
-    Locking protocol:
-    - Turn dispatcher: acquires READ lock via ``worktree_lock(team, task_id)``
-      for the duration of the turn.  Multiple agent turns on the same task can
-      hold the read lock simultaneously (e.g. manager + DRI reviewing together).
-    - Merge worker: acquires WRITE lock via ``worktree_lock(team, task_id)``
-      before ``git reset --hard`` in the agent worktree, releases after reset.
-      The write lock waits for all active readers and blocks new readers.
-    - This prevents the merge worker from resetting a worktree while an
-      agent turn is actively writing to it.
     """
 
     def __init__(self) -> None:
         self._telephones: dict[tuple[str, str], Any] = {}  # -> Telephone
-        self._worktree_locks: dict[tuple[str, int], AsyncRWLock] = {}
 
     # --- Telephone registry ---
 
@@ -215,27 +159,6 @@ class TelephoneExchange:
             except Exception:
                 pass
         self._telephones.clear()
-
-    # --- Worktree lock registry ---
-
-    def worktree_lock(self, team: str, task_id: int) -> AsyncRWLock:
-        """Return the AsyncRWLock for (team, task_id), creating it if needed.
-
-        The lock is keyed by task_id (not agent name) because worktrees are
-        per-task, not per-agent — and the merge worker only knows task_id.
-        """
-        key = (team, task_id)
-        if key not in self._worktree_locks:
-            self._worktree_locks[key] = AsyncRWLock()
-        return self._worktree_locks[key]
-
-    def discard_worktree_lock(self, team: str, task_id: int) -> None:
-        """Remove the lock for (team, task_id) after task completion.
-
-        Call this after a task reaches ``done`` or ``merge_failed`` to
-        avoid unbounded growth of the lock registry.
-        """
-        self._worktree_locks.pop((team, task_id), None)
 
 
 # ---------------------------------------------------------------------------
@@ -859,16 +782,6 @@ async def run_turn(
         log_caller.reset(_prev_caller)
         return result
 
-    # --- Acquire worktree read lock for the duration of this turn ---
-    # Multiple agent turns on the same task can hold the read lock
-    # simultaneously (e.g. manager and DRI both active). The merge worker
-    # acquires a write lock before ``git reset --hard``, which waits for
-    # all readers to finish and blocks new readers while held.
-    worktree_lock = None
-    if current_task_id is not None:
-        worktree_lock = exchange.worktree_lock(team, current_task_id)
-        await worktree_lock.acquire_read()
-
     # --- Workspace resolution ---
     workspace, workspace_paths = _resolve_workspace(
         hc_home, team, agent, current_task,
@@ -1037,8 +950,6 @@ async def run_turn(
         clear_thinking_buffer(agent, team)
         broadcast_turn_event('turn_ended', agent, team=team, task_id=current_task_id, sender=primary_sender)
         log_caller.reset(_prev_caller)
-        if worktree_lock is not None:
-            await worktree_lock.release_read()
         return result
 
     # --- Post-turn bookkeeping ---
@@ -1167,12 +1078,6 @@ async def run_turn(
         clear_thinking_buffer(agent, team)
         broadcast_turn_event('turn_ended', agent, team=team, task_id=current_task_id, sender=primary_sender)
         log_caller.reset(_prev_caller)
-
-        # Release the worktree read lock now that the turn is fully complete.
-        # Placed here (after all bookkeeping) so the merge worker waits for
-        # the entire turn to finish, not just the tool calls.
-        if worktree_lock is not None:
-            await worktree_lock.release_read()
 
     return result
 

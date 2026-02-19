@@ -91,6 +91,26 @@ def _make_feature_branch(repo: Path, branch: str, filename: str = "feature.py", 
     subprocess.run(["git", "checkout", "main"], cwd=str(repo), capture_output=True, check=True)
 
 
+def _make_feature_branch_with_failing_premerge(repo: Path, branch: str) -> None:
+    """Create a feature branch that includes a failing .delegate/premerge.sh.
+
+    Since the merge worker runs premerge.sh from the merge worktree (which is
+    created from the feature branch), the failing script must be committed to
+    the feature branch itself — not placed in the agent worktree after the fact.
+    """
+    subprocess.run(["git", "checkout", "-b", branch], cwd=str(repo), capture_output=True, check=True)
+    (repo / "feature.py").write_text("# New\n")
+    delegate_dir = repo / ".delegate"
+    delegate_dir.mkdir(exist_ok=True)
+    (delegate_dir / "premerge.sh").write_text("#!/usr/bin/env bash\nexit 1\n")
+    subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Add feature with failing premerge"],
+        cwd=str(repo), capture_output=True, check=True,
+    )
+    subprocess.run(["git", "checkout", "main"], cwd=str(repo), capture_output=True, check=True)
+
+
 def _register_repo_with_symlink(hc_home: Path, name: str, source_repo: Path):
     """Register a repo by creating a symlink in hc_home/teams/<team>/repos/."""
     from delegate.paths import repos_dir
@@ -340,14 +360,15 @@ class TestMergeTask:
     def test_feature_branch_intact_on_test_failure(self, hc_home, tmp_path):
         """On pre-merge test failure, the feature branch must still exist and be valid.
 
-        After a rebase, the branch is updated to the rebased tip (by design — the
-        agent worktree is left at the rebased tip so the agent can fix and resubmit
-        without manual recovery).  What matters is that the branch exists, not
-        that it's unchanged.
+        The merge worker runs premerge.sh inside the merge worktree (not the agent
+        worktree), so the failing script must be committed to the feature branch.
+        The feature branch must survive the failed merge attempt.
         """
         repo = _setup_git_repo(tmp_path)
         branch = "alice/T0001"
-        _make_feature_branch(repo, branch)
+        # Commit a failing premerge.sh to the feature branch so the merge worktree
+        # inherits it (merge worker runs premerge.sh in its own worktree, not the agent's).
+        _make_feature_branch_with_failing_premerge(repo, branch)
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
         # Advance main to create a rebase scenario
@@ -357,37 +378,36 @@ class TestMergeTask:
 
         task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
 
-        # Place a failing .delegate/premerge.sh in the agent worktree so pre-merge fails
-        agent_wt = _create_agent_worktree_for_task(hc_home, repo, "myrepo", branch, task["id"])
-        (agent_wt / ".delegate").mkdir(exist_ok=True)
-        (agent_wt / ".delegate" / "premerge.sh").write_text("exit 1\n")
-
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
 
         assert result.success is False
         assert result.reason == MergeFailureReason.PRE_MERGE_FAILED
 
-        # Feature branch must still exist (agent worktree preserved for re-submission)
+        # Feature branch must still exist (agent can fix and resubmit)
         branch_check = subprocess.run(
             ["git", "branch", "--list", branch], cwd=str(repo), capture_output=True, text=True,
         )
         assert branch in branch_check.stdout, f"Feature branch '{branch}' was deleted after test failure"
 
     def test_agent_worktree_survives_failure(self, hc_home, tmp_path):
-        """On failure, the agent's worktree should remain intact."""
+        """On failure, the agent's worktree should remain intact.
+
+        The merge worker runs premerge.sh in its own merge worktree, never in the
+        agent's worktree.  On pre-merge failure, the agent worktree is untouched.
+        The failing script must be committed to the feature branch so the merge
+        worktree inherits it.
+        """
         repo = _setup_git_repo(tmp_path)
         branch = "alice/T0001"
-        _make_feature_branch(repo, branch)
+        # Commit a failing premerge.sh to the feature branch so the merge worktree
+        # inherits it — the agent worktree is never touched during merge.
+        _make_feature_branch_with_failing_premerge(repo, branch)
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
         # Create task first so we know the ID, then create its worktree
         task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
         wt_path = _create_agent_worktree_for_task(hc_home, repo, "myrepo", branch, task["id"])
         assert wt_path.exists()
-
-        # Place a failing .delegate/premerge.sh in the agent worktree to force failure
-        (wt_path / ".delegate").mkdir(exist_ok=True)
-        (wt_path / ".delegate" / "premerge.sh").write_text("exit 1\n")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
 
@@ -416,15 +436,12 @@ class TestMergeTask:
         """Temp merge worktree should be removed even on failure."""
         repo = _setup_git_repo(tmp_path)
         branch = "alice/T0001"
-        _make_feature_branch(repo, branch)
+        # Commit a failing premerge.sh to the feature branch so the merge worktree
+        # inherits it (merge worker runs premerge.sh in its own worktree).
+        _make_feature_branch_with_failing_premerge(repo, branch)
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
         task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
-
-        # Place a failing .delegate/premerge.sh in the agent worktree to force failure
-        agent_wt = _create_agent_worktree_for_task(hc_home, repo, "myrepo", branch, task["id"])
-        (agent_wt / ".delegate").mkdir(exist_ok=True)
-        (agent_wt / ".delegate" / "premerge.sh").write_text("exit 1\n")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
 
@@ -942,16 +959,20 @@ class TestRunPreMerge:
         assert "test-failure-output" in output
 
     def test_merge_with_premerge_script_failure(self, hc_home, tmp_path):
-        """merge_task fails with PRE_MERGE_FAILED when .delegate/premerge.sh exits non-zero."""
+        """merge_task fails with PRE_MERGE_FAILED when .delegate/premerge.sh exits non-zero.
+
+        The merge worker runs premerge.sh from the merge worktree, which is created
+        from the feature branch.  The failing script must be committed to the feature
+        branch so the merge worktree inherits it.
+        """
         repo = _setup_git_repo(tmp_path)
         branch = "alice/T0001"
-        _make_feature_branch(repo, branch)
+        # Commit a failing premerge.sh to the feature branch so the merge worktree
+        # picks it up (merge worker never reads from the agent worktree).
+        _make_feature_branch_with_failing_premerge(repo, branch)
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
         task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
-        agent_wt = _create_agent_worktree_for_task(hc_home, repo, "myrepo", branch, task["id"])
-        (agent_wt / ".delegate").mkdir(exist_ok=True)
-        (agent_wt / ".delegate" / "premerge.sh").write_text("exit 1\n")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
 
@@ -959,17 +980,24 @@ class TestRunPreMerge:
         assert result.reason == MergeFailureReason.PRE_MERGE_FAILED
 
     def test_merge_with_premerge_script_success(self, hc_home, tmp_path):
-        """merge_task succeeds when .delegate/premerge.sh exits zero."""
+        """merge_task succeeds when .delegate/premerge.sh exits zero.
+
+        The script must be committed to the feature branch so the merge worktree
+        inherits it (merge worker runs premerge.sh in its own worktree).
+        """
         repo = _setup_git_repo(tmp_path)
         branch = "alice/T0001"
-        _make_feature_branch(repo, branch)
+        # Commit a passing premerge.sh to the feature branch.
+        subprocess.run(["git", "checkout", "-b", branch], cwd=str(repo), capture_output=True, check=True)
+        (repo / "feature.py").write_text("# New\n")
+        (repo / ".delegate").mkdir(exist_ok=True)
+        (repo / ".delegate" / "premerge.sh").write_text("#!/usr/bin/env bash\necho all-checks-pass\n")
+        subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Add feature with passing premerge"], cwd=str(repo), capture_output=True, check=True)
+        subprocess.run(["git", "checkout", "main"], cwd=str(repo), capture_output=True, check=True)
         _register_repo_with_symlink(hc_home, "myrepo", repo)
 
         task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
-        update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
-        agent_wt = _create_agent_worktree_for_task(hc_home, repo, "myrepo", branch, task["id"])
-        (agent_wt / ".delegate").mkdir(exist_ok=True)
-        (agent_wt / ".delegate" / "premerge.sh").write_text("echo all-checks-pass\n")
 
         result = merge_task(hc_home, SAMPLE_TEAM, task["id"])
         assert result.success is True
