@@ -1844,7 +1844,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 with open(_pyproject, "rb") as _f:
                     current = tomllib.load(_f)["project"]["version"]
             except Exception:
-                current = "unknown"
+                current = None
 
         # Serve from cache if fresh
         now = time.monotonic()
@@ -1868,7 +1868,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 pass  # network error, timeout, bad JSON — leave latest as None
 
         update_available = False
-        if latest is not None:
+        if latest is not None and current is not None:
             try:
                 update_available = Version(latest) > Version(current)
             except Exception:

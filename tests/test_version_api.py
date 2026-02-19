@@ -143,4 +143,5 @@ class TestVersionEndpoint:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["current"] == "unknown"
+        assert data["current"] is None
+        assert data["update_available"] is False
