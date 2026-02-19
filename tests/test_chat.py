@@ -27,9 +27,10 @@ class TestSchema:
         conn.close()
         # V9 added delivered_at, seen_at, processed_at to messages table
         # V10 added result for magic commands support
-        # V12 added team for multi-team support
-        # V16 added team_uuid, sender_uuid, recipient_uuid for UUID translation
-        assert columns == {"id", "timestamp", "sender", "recipient", "content", "type", "task_id", "delivered_at", "seen_at", "processed_at", "result", "team", "team_uuid", "sender_uuid", "recipient_uuid"}
+        # V12 added team/team_uuid for multi-team support
+        # V16 added sender_uuid, recipient_uuid for UUID translation
+        # V18 renamed team->project, team_uuid->project_uuid
+        assert columns == {"id", "timestamp", "sender", "recipient", "content", "type", "task_id", "delivered_at", "seen_at", "processed_at", "result", "project", "project_uuid", "sender_uuid", "recipient_uuid"}
 
     def test_sessions_table_exists(self, tmp_team):
         conn = sqlite3.connect(str(_db_path(tmp_team)))
@@ -40,7 +41,7 @@ class TestSchema:
         assert "task_id" in columns
         assert "tokens_in" in columns
         assert "tokens_out" in columns
-        assert "team" in columns
+        assert "project" in columns  # V18: renamed from team
 
 
 class TestSendMessage:

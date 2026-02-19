@@ -4,6 +4,10 @@
 -- any version-specific ALTER TABLE RENAME TABLE edge-cases.
 -- Column renames use ALTER TABLE ... RENAME COLUMN (SQLite 3.25+).
 -- No data is dropped — all rows are preserved.
+--
+-- NOTE: tasks.team cannot be renamed to tasks.project because tasks
+-- already has a `project` column (added in V002) used as a task label/grouping.
+-- tasks.team is left as tasks.team and tasks.team_uuid -> tasks.project_uuid.
 
 -- -----------------------------------------------------------------------
 -- 1. Rename `teams` table to `projects`
@@ -53,8 +57,9 @@ ALTER TABLE messages RENAME COLUMN team_uuid TO project_uuid;
 ALTER TABLE sessions RENAME COLUMN team TO project;
 ALTER TABLE sessions RENAME COLUMN team_uuid TO project_uuid;
 
--- tasks
-ALTER TABLE tasks RENAME COLUMN team TO project;
+-- tasks: team_uuid -> project_uuid only.
+-- tasks.team CANNOT be renamed to tasks.project — collision with existing
+-- tasks.project label column (V002). tasks.team is left as-is.
 ALTER TABLE tasks RENAME COLUMN team_uuid TO project_uuid;
 
 -- task_comments

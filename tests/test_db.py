@@ -69,7 +69,8 @@ class TestSchemaInitialization:
         tables = {row[0] for row in cursor.fetchall()}
         conn.close()
 
-        # Expected tables from all migrations (mailbox dropped in V9, teams added in V11)
+        # Expected tables from all migrations (mailbox dropped in V9, teams added in V11,
+        # teams->projects renamed in V18)
         expected = {
             "schema_meta",
             "messages",
@@ -78,7 +79,7 @@ class TestSchemaInitialization:
             "reviews",
             "review_comments",
             "task_comments",
-            "teams",
+            "projects",
         }
         assert expected.issubset(tables)
 

@@ -34,7 +34,7 @@ def _broadcast_update(task_id: int, team: str, changes: dict) -> None:
     """Best-effort SSE broadcast of a task mutation."""
     try:
         from delegate.activity import broadcast_task_update
-        broadcast_task_update(task_id, project, changes)
+        broadcast_task_update(task_id, team, changes)
     except Exception:
         pass
 
@@ -133,11 +133,11 @@ def create_task(
     # Resolve workflow version
     if workflow_version is None:
         from delegate.workflow import get_latest_version
-        workflow_version = get_latest_version(hc_home, project, workflow_name) or 1
+        workflow_version = get_latest_version(hc_home, team, workflow_name) or 1
 
     now = _now()
-    team_uuid = _team(hc_home, project)
-    conn = get_connection(hc_home, project)
+    team_uuid = _team(hc_home, team)
+    conn = get_connection(hc_home, team)
     try:
         cursor = conn.execute(
             """\
@@ -146,8 +146,8 @@ def create_task(
                 project, priority, repo, tags,
                 created_at, updated_at, completed_at,
                 depends_on, branch, base_sha, commits,
-                rejection_reason, approval_status, merge_base, merge_tip, project,
-                workflow, workflow_version, metadata, team_uuid
+                rejection_reason, approval_status, merge_base, merge_tip, team,
+                workflow, workflow_version, metadata, project_uuid
             ) VALUES (
                 ?, ?, 'todo', ?, ?,
                 ?, ?, ?, ?,
@@ -163,23 +163,23 @@ def create_task(
                 json.dumps([str(tg) for tg in tags] if tags else []),
                 now, now,
                 json.dumps([int(d) for d in depends_on] if depends_on else []),
-                project,  # human-readable name in 'team' column
+                team,  # human-readable name in 'team' column
                 workflow_name, workflow_version,
                 json.dumps(metadata or {}),
-                project_uuid,  # UUID in 'team_uuid' column
+                team_uuid,  # UUID in 'project_uuid' column
             ),
         )
         conn.commit()
         task_id = cursor.lastrowid
 
         # Read back the full row to return
-        row = conn.execute("SELECT * FROM tasks WHERE project_uuid = ? AND id = ?", (project_uuid, task_id)).fetchone()
+        row = conn.execute("SELECT * FROM tasks WHERE project_uuid = ? AND id = ?", (team_uuid, task_id)).fetchone()
         task = task_row_to_dict(row)
     finally:
         conn.close()
 
     from delegate.chat import log_event
-    log_event(hc_home, project, f"{format_task_id(task_id)} created \u2014 {title}", task_id=task_id)
+    log_event(hc_home, team, f"{format_task_id(task_id)} created \u2014 {title}", task_id=task_id)
 
     # Record a deterministic branch name.  Worktree creation is handled by
     # the daemon (which runs unsandboxed) — see _ensure_task_infra() in
@@ -187,9 +187,9 @@ def create_task(
     # works from inside a sandboxed agent subprocess.
     if repo_list:
         from delegate.paths import get_team_id
-        tid = get_team_id(hc_home, project)
+        tid = get_team_id(hc_home, team)
         branch_name = f"delegate/{tid}/{team}/{format_task_id(task_id)}"
-        task = update_task(hc_home, project, task_id, branch=branch_name)
+        task = update_task(hc_home, team, task_id, branch=branch_name)
 
     return task
 
@@ -200,10 +200,10 @@ def get_task(hc_home: Path, team: str, task_id: int) -> dict:
     Raises ``FileNotFoundError`` if the task does not exist (preserves
     the same exception type used by the previous YAML implementation).
     """
-    team_uuid = _team(hc_home, project)
-    conn = get_connection(hc_home, project)
+    team_uuid = _team(hc_home, team)
+    conn = get_connection(hc_home, team)
     try:
-        row = conn.execute("SELECT * FROM tasks WHERE project_uuid = ? AND id = ?", (project_uuid, task_id)).fetchone()
+        row = conn.execute("SELECT * FROM tasks WHERE project_uuid = ? AND id = ?", (team_uuid, task_id)).fetchone()
     finally:
         conn.close()
 
@@ -229,7 +229,7 @@ def _all_deps_resolved(hc_home: Path, team: str, task: dict) -> bool:
 
     for dep_id in deps:
         try:
-            dep_task = get_task(hc_home, project, dep_id)
+            dep_task = get_task(hc_home, team, dep_id)
         except Exception:
             # Dep task doesn't exist — treat as unresolved
             return False
@@ -239,7 +239,7 @@ def _all_deps_resolved(hc_home: Path, team: str, task: dict) -> bool:
         # Check workflow-aware terminal status
         try:
             from delegate.workflow import load_workflow
-            wf = load_workflow(hc_home, project)
+            wf = load_workflow(hc_home, team)
             if wf and wf.is_terminal(dep_status):
                 continue
         except Exception:
@@ -256,7 +256,7 @@ def update_task(hc_home: Path, team: str, task_id: int, **updates) -> dict:
             raise ValueError(f"Unknown task field: '{key}'")
 
     # Verify task exists and check depends_on freeze
-    current_task = get_task(hc_home, project, task_id)
+    current_task = get_task(hc_home, team, task_id)
 
     # --- depends_on freeze: disallow adding new deps when all current deps
     # are resolved (work may have started) ---
@@ -265,7 +265,7 @@ def update_task(hc_home: Path, team: str, task_id: int, **updates) -> dict:
         old_deps = set(int(d) for d in current_task.get("depends_on", []))
 
         added_deps = new_deps - old_deps
-        if added_deps and _all_deps_resolved(hc_home, project, current_task):
+        if added_deps and _all_deps_resolved(hc_home, team, current_task):
             raise ValueError(
                 f"Cannot add dependencies {sorted(added_deps)} to task "
                 f"{format_task_id(task_id)} — all existing dependencies are "
@@ -301,17 +301,17 @@ def update_task(hc_home: Path, team: str, task_id: int, **updates) -> dict:
                 params.append(json.dumps(value) if value else "{}")
         else:
             params.append(value)
-    team_uuid = _team(hc_home, project)
-    params.extend([project_uuid, task_id])
+    team_uuid = _team(hc_home, team)
+    params.extend([team_uuid, task_id])
 
-    conn = get_connection(hc_home, project)
+    conn = get_connection(hc_home, team)
     try:
         conn.execute(
             f"UPDATE tasks SET {', '.join(set_parts)} WHERE project_uuid = ? AND id = ?",
             params,
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM tasks WHERE project_uuid = ? AND id = ?", (project_uuid, task_id)).fetchone()
+        row = conn.execute("SELECT * FROM tasks WHERE project_uuid = ? AND id = ?", (team_uuid, task_id)).fetchone()
         task = task_row_to_dict(row)
     finally:
         conn.close()
@@ -333,16 +333,16 @@ def assign_task(hc_home: Path, team: str, task_id: int, assignee: str, suppress_
         assignee: Agent name to assign to
         suppress_log: If True, skip logging the assignment event (default: False)
     """
-    task = get_task(hc_home, project, task_id)
+    task = get_task(hc_home, team, task_id)
     updates: dict[str, str] = {"assignee": assignee}
     if not task.get("dri"):
         updates["dri"] = assignee
-    task = update_task(hc_home, project, task_id, **updates)
+    task = update_task(hc_home, team, task_id, **updates)
 
     if not suppress_log:
         from delegate.chat import log_event
-        log_event(hc_home, project, f"{format_task_id(task_id)} assigned to {assignee.capitalize()}", task_id=task_id)
-        _broadcast_update(task_id, project, {"assignee": assignee})
+        log_event(hc_home, team, f"{format_task_id(task_id)} assigned to {assignee.capitalize()}", task_id=task_id)
+        _broadcast_update(task_id, team, {"assignee": assignee})
 
     return task
 
@@ -368,7 +368,7 @@ def _backfill_branch_metadata(hc_home: Path, team: str, task: dict, updates: dic
     # Backfill branch name
     if not task.get("branch") and "branch" not in updates:
         from delegate.paths import get_team_id
-        tid = get_team_id(hc_home, project)
+        tid = get_team_id(hc_home, team)
         branch = f"delegate/{tid}/{team}/{format_task_id(task_id)}"
         updates["branch"] = branch
         _log.warning(
@@ -385,7 +385,7 @@ def _backfill_branch_metadata(hc_home: Path, team: str, task: dict, updates: dic
         for repo_name in repos:
             try:
                 from delegate.paths import repo_path as _repo_path
-                git_cwd = str(_repo_path(hc_home, project, repo_name))
+                git_cwd = str(_repo_path(hc_home, team, repo_name))
                 result = subprocess.run(
                     ["git", "merge-base", "main", branch],
                     cwd=git_cwd,
@@ -424,7 +424,7 @@ def _validate_review_gate(hc_home: Path, team: str, task: dict) -> None:
     base_sha_dict: dict = task.get("base_sha", {})
 
     for repo_name in repos:
-        wt_path = task_worktree_dir(hc_home, project, repo_name, task_id)
+        wt_path = task_worktree_dir(hc_home, team, repo_name, task_id)
         if not wt_path.is_dir():
             continue  # Worktree might not exist (no-repo task)
 
@@ -490,7 +490,7 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_
         status: New status to transition to
         suppress_log: If True, skip logging the status change event (default: False)
     """
-    old_task = get_task(hc_home, project, task_id)
+    old_task = get_task(hc_home, team, task_id)
     current = old_task["status"]
 
     wf_name = old_task.get("workflow", "")
@@ -501,7 +501,7 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_
         # Workflow-driven validation
         try:
             from delegate.workflow import load_workflow_cached
-            wf = load_workflow_cached(hc_home, project, wf_name, wf_version)
+            wf = load_workflow_cached(hc_home, team, wf_name, wf_version)
             wf.validate_transition(current, status)
         except (FileNotFoundError, KeyError):
             # Workflow file missing — fall back to legacy validation
@@ -515,13 +515,13 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_
     if wf_name and wf_version:
         try:
             from delegate.workflow import load_workflow_cached
-            wf_def = load_workflow_cached(hc_home, project, wf_name, wf_version)
+            wf_def = load_workflow_cached(hc_home, team, wf_name, wf_version)
         except (FileNotFoundError, KeyError):
             wf_def = None
 
     if wf_def:
         from delegate.workflows.core import Context
-        ctx = Context(hc_home, project, old_task)
+        ctx = Context(hc_home, team, old_task)
 
         # 1. Exit hook on old stage
         if current in wf_def.stage_map:
@@ -550,11 +550,11 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_
 
         # Safety net: backfill branch/base_sha when entering in_review or in_approval
         if status in ("in_review", "in_approval"):
-            _backfill_branch_metadata(hc_home, project, old_task, updates)
+            _backfill_branch_metadata(hc_home, team, old_task, updates)
 
         # Review gate (legacy path — workflow uses enter() hook instead)
         if status == "in_review":
-            _validate_review_gate(hc_home, project, old_task)
+            _validate_review_gate(hc_home, team, old_task)
 
         # When entering in_approval, increment review_attempt and create a pending review
         if status == "in_approval":
@@ -562,13 +562,13 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_
             updates["review_attempt"] = new_attempt
             updates["approval_status"] = ""
 
-    task = update_task(hc_home, project, task_id, **updates)
+    task = update_task(hc_home, team, task_id, **updates)
 
     # Legacy: create review row after task is updated
     if not wf_def and status == "in_approval":
         from delegate.review import create_review
         try:
-            create_review(hc_home, project, task_id, task["review_attempt"])
+            create_review(hc_home, team, task_id, task["review_attempt"])
         except Exception:
             logging.getLogger(__name__).warning(
                 "Failed to create review row for %s attempt %d",
@@ -579,11 +579,11 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_
     if wf_def and status in wf_def.stage_map:
         try:
             from delegate.workflows.core import Context
-            ctx = Context(hc_home, project, task)
+            ctx = Context(hc_home, team, task)
             new_stage = wf_def.stage_map[status]()
             new_assignee = new_stage.assign(ctx)
             if new_assignee:
-                task = assign_task(hc_home, project, task_id, new_assignee, suppress_log=True)
+                task = assign_task(hc_home, team, task_id, new_assignee, suppress_log=True)
         except Exception as exc:
             logging.getLogger(__name__).warning(
                 "Assign hook failed for stage '%s' on %s: %s",
@@ -593,8 +593,8 @@ def change_status(hc_home: Path, team: str, task_id: int, status: str, suppress_
     if not suppress_log:
         new_status = status.replace("_", " ").title()
         from delegate.chat import log_event
-        log_event(hc_home, project, f"{format_task_id(task_id)} {old_status} \u2192 {new_status}", task_id=task_id)
-        _broadcast_update(task_id, project, {"status": status})
+        log_event(hc_home, team, f"{format_task_id(task_id)} {old_status} \u2192 {new_status}", task_id=task_id)
+        _broadcast_update(task_id, team, {"status": status})
 
     return task
 
@@ -632,23 +632,23 @@ def transition_task(hc_home: Path, team: str, task_id: int, new_status: str, new
         The updated task dict
     """
     # Get current task to capture old status for the combined message
-    old_task = get_task(hc_home, project, task_id)
+    old_task = get_task(hc_home, team, task_id)
     old_status = old_task["status"].replace("_", " ").title()
 
     # Perform both operations without logging
-    task = change_status(hc_home, project, task_id, new_status, suppress_log=True)
-    task = assign_task(hc_home, project, task_id, new_assignee, suppress_log=True)
+    task = change_status(hc_home, team, task_id, new_status, suppress_log=True)
+    task = assign_task(hc_home, team, task_id, new_assignee, suppress_log=True)
 
     # Emit a single combined log message
     new_status_title = new_status.replace("_", " ").title()
     from delegate.chat import log_event
     log_event(
         hc_home,
-        project,
+        team,
         f"{format_task_id(task_id)} {old_status} \u2192 {new_status_title}, assigned to {new_assignee.capitalize()}",
         task_id=task_id,
     )
-    _broadcast_update(task_id, project, {"status": new_status, "assignee": new_assignee})
+    _broadcast_update(task_id, team, {"status": new_status, "assignee": new_assignee})
 
     return task
 
@@ -665,7 +665,7 @@ def cancel_task(hc_home: Path, team: str, task_id: int) -> dict:
     the working directory — in-flight git processes may see errors but
     won't corrupt anything.
     """
-    task = get_task(hc_home, project, task_id)
+    task = get_task(hc_home, team, task_id)
 
     if task["status"] == "done":
         raise ValueError(
@@ -674,22 +674,22 @@ def cancel_task(hc_home: Path, team: str, task_id: int) -> dict:
 
     if task["status"] == "cancelled":
         # Idempotent: re-run cleanup only (agent may have recreated branches)
-        _cleanup_cancelled_task(hc_home, project, task)
+        _cleanup_cancelled_task(hc_home, team, task)
         return task
 
     # Transition to cancelled and clear assignee
-    updated = change_status(hc_home, project, task_id, "cancelled", suppress_log=True)
-    updated = assign_task(hc_home, project, task_id, "", suppress_log=True)
+    updated = change_status(hc_home, team, task_id, "cancelled", suppress_log=True)
+    updated = assign_task(hc_home, team, task_id, "", suppress_log=True)
 
     from delegate.chat import log_event
     log_event(
-        hc_home, project,
+        hc_home, team,
         f"{format_task_id(task_id)} cancelled",
         task_id=task_id,
     )
 
     # Best-effort cleanup of worktrees and branches
-    _cleanup_cancelled_task(hc_home, project, task)
+    _cleanup_cancelled_task(hc_home, team, task)
 
     return updated
 
@@ -707,12 +707,12 @@ def _cleanup_cancelled_task(hc_home: Path, team: str, task: dict) -> None:
     for repo_name in repos:
         try:
             from delegate.repo import get_repo_path, remove_task_worktree
-            repo_dir = get_repo_path(hc_home, project, repo_name)
+            repo_dir = get_repo_path(hc_home, team, repo_name)
             real_repo = str(repo_dir.resolve())
 
             # Remove agent worktree
             try:
-                remove_task_worktree(hc_home, project, repo_name, task["id"])
+                remove_task_worktree(hc_home, team, repo_name, task["id"])
             except Exception as exc:
                 _log.warning(
                     "Could not remove worktree for %s (%s): %s",
@@ -747,24 +747,24 @@ def _cleanup_cancelled_task(hc_home: Path, team: str, task: dict) -> None:
 
 def set_task_branch(hc_home: Path, team: str, task_id: int, branch_name: str) -> dict:
     """Set the branch name on a task."""
-    return update_task(hc_home, project, task_id, branch=branch_name)
+    return update_task(hc_home, team, task_id, branch=branch_name)
 
 
 
 def attach_file(hc_home: Path, team: str, task_id: int, file_path: str) -> dict:
     """Attach a file path to the task. Idempotent — duplicates are ignored."""
-    task = get_task(hc_home, project, task_id)
+    task = get_task(hc_home, team, task_id)
     attachments = list(task.get("attachments", []))
     if file_path not in attachments:
         attachments.append(file_path)
-    return update_task(hc_home, project, task_id, attachments=attachments)
+    return update_task(hc_home, team, task_id, attachments=attachments)
 
 
 def detach_file(hc_home: Path, team: str, task_id: int, file_path: str) -> dict:
     """Remove a file path from the task's attachments."""
-    task = get_task(hc_home, project, task_id)
+    task = get_task(hc_home, team, task_id)
     attachments = [a for a in task.get("attachments", []) if a != file_path]
-    return update_task(hc_home, project, task_id, attachments=attachments)
+    return update_task(hc_home, team, task_id, attachments=attachments)
 
 
 # ---------------------------------------------------------------------------
@@ -776,14 +776,14 @@ def add_comment(hc_home: Path, team: str, task_id: int, author: str, body: str) 
 
     Also logs a system event for the activity timeline.
     """
-    get_task(hc_home, project, task_id)  # Verify task exists
+    get_task(hc_home, team, task_id)  # Verify task exists
 
-    team_uuid = _team(hc_home, project)
-    conn = get_connection(hc_home, project)
+    team_uuid = _team(hc_home, team)
+    conn = get_connection(hc_home, team)
     try:
         cursor = conn.execute(
             "INSERT INTO task_comments (task_id, author, body, project, project_uuid) VALUES (?, ?, ?, ?, ?)",
-            (task_id, author, body, project, project_uuid),
+            (task_id, author, body, team, team_uuid),
         )
         conn.commit()
         comment_id = cursor.lastrowid
@@ -792,7 +792,7 @@ def add_comment(hc_home: Path, team: str, task_id: int, author: str, body: str) 
 
     from delegate.chat import log_event
     log_event(
-        hc_home, project,
+        hc_home, team,
         f"{author.capitalize()} commented on {format_task_id(task_id)}",
         task_id=task_id,
     )
@@ -805,7 +805,7 @@ def get_comments(hc_home: Path, team: str, task_id: int, limit: int = 50) -> lis
 
     Returns ``[{id, task_id, author, body, created_at}, ...]``.
     """
-    conn = get_connection(hc_home, project)
+    conn = get_connection(hc_home, team)
     try:
         rows = conn.execute(
             "SELECT id, task_id, author, body, created_at "
@@ -827,7 +827,7 @@ def get_task_diff(hc_home: Path, team: str, task_id: int) -> dict[str, str]:
     merge-base diff) for a precise diff showing only the agent's changes.
     Otherwise falls back to ``main...branch``.
     """
-    task = get_task(hc_home, project, task_id)
+    task = get_task(hc_home, team, task_id)
     branch = task.get("branch", "")
     if not branch:
         return {"_default": "(no branch set)"}
@@ -842,7 +842,7 @@ def get_task_diff(hc_home: Path, team: str, task_id: int) -> dict[str, str]:
     diffs: dict[str, str] = {}
     for repo_name in repos:
         try:
-            git_cwd = str(_repo_path(hc_home, project, repo_name))
+            git_cwd = str(_repo_path(hc_home, team, repo_name))
         except FileNotFoundError:
             diffs[repo_name] = f"(repo '{repo_name}' not found)"
             continue
@@ -901,7 +901,7 @@ def get_task_merge_preview(hc_home: Path, team: str, task_id: int) -> dict[str, 
     relative to the *current* merge-base of ``main`` and ``branch``.
     The result shows what the merge into current ``main`` would look like.
     """
-    task = get_task(hc_home, project, task_id)
+    task = get_task(hc_home, team, task_id)
     branch = task.get("branch", "")
     if not branch:
         return {"_default": "(no branch set)"}
@@ -916,7 +916,7 @@ def get_task_merge_preview(hc_home: Path, team: str, task_id: int) -> dict[str, 
     diffs: dict[str, str] = {}
     for repo_name in repos:
         try:
-            git_cwd = str(_repo_path(hc_home, project, repo_name))
+            git_cwd = str(_repo_path(hc_home, team, repo_name))
         except FileNotFoundError:
             diffs[repo_name] = f"(repo '{repo_name}' not found)"
             continue
@@ -964,7 +964,7 @@ def get_task_commit_diffs(
     Returns ``{repo_name: [{"sha": str, "message": str, "diff": str}, ...]}``.
     Commits are always discovered dynamically via ``git log base_sha..branch``.
     """
-    task = get_task(hc_home, project, task_id)
+    task = get_task(hc_home, team, task_id)
     repos: list[str] = task.get("repo", [])
     branch: str = task.get("branch", "")
     base_sha_dict: dict = task.get("base_sha", {})
@@ -978,7 +978,7 @@ def get_task_commit_diffs(
 
     for repo_name in repos:
         try:
-            git_cwd = str(_repo_path(hc_home, project, repo_name))
+            git_cwd = str(_repo_path(hc_home, team, repo_name))
         except FileNotFoundError:
             results[repo_name] = [{"sha": "", "message": "", "diff": f"(repo '{repo_name}' not found)"}]
             continue
@@ -1039,8 +1039,8 @@ def list_tasks(
 
     *tag* filters to tasks whose ``tags`` JSON array contains the given value.
     """
-    team_uuid = _team(hc_home, project)
-    conn = get_connection(hc_home, project)
+    team_uuid = _team(hc_home, team)
+    conn = get_connection(hc_home, team)
     try:
         query = "SELECT * FROM tasks WHERE project_uuid = ?"
         params: list = [team_uuid]

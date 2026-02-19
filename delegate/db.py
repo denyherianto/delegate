@@ -239,7 +239,7 @@ f"INSERT OR IGNORE INTO {ids_table} (uuid, name) VALUES (?, ?)",
     for msg_id, project, sender, recipient in messages_to_update:
         # Get team UUID
         team_uuid_row = conn.execute(
-            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (team,)
+            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (project,)
         ).fetchone()
         if not team_uuid_row:
             continue
@@ -301,15 +301,18 @@ f"INSERT OR IGNORE INTO {ids_table} (uuid, name) VALUES (?, ?)",
     """)
 
     # Tasks table
+    # Note: tasks.team column is NOT renamed (collision with existing tasks.project label
+    # column from V002). Use 'team' column unconditionally for tasks.
+    tasks_team_col = "team"
     tasks_to_update = conn.execute(
-        f"SELECT id, {proj_col}, dri, assignee FROM tasks WHERE {uuid_col} = ''"
+        f"SELECT id, {tasks_team_col}, dri, assignee FROM tasks WHERE {uuid_col} = ''"
     ).fetchall()
     for task_id, project, dri, assignee in tasks_to_update:
         team_uuid_row = conn.execute(
-            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (team,)
+            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (project,)
         ).fetchone()
         if not team_uuid_row:
-continue
+            continue
         team_uuid = team_uuid_row[0]
 
         # Resolve DRI (flexible)
@@ -371,7 +374,7 @@ continue
     ).fetchall()
     for comment_id, project, author in comments_to_update:
         team_uuid_row = conn.execute(
-            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (team,)
+            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (project,)
         ).fetchone()
         if not team_uuid_row:
             continue
@@ -406,7 +409,7 @@ continue
     ).fetchall()
     for review_id, project, reviewer in reviews_to_update:
         team_uuid_row = conn.execute(
-            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (team,)
+            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (project,)
         ).fetchone()
         if not team_uuid_row:
             continue
@@ -441,7 +444,7 @@ continue
     ).fetchall()
     for rc_id, project, author in review_comments_to_update:
         team_uuid_row = conn.execute(
-            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (team,)
+            f"SELECT uuid FROM {ids_table} WHERE name = ? AND deleted = 0", (project,)
         ).fetchone()
         if not team_uuid_row:
             continue
@@ -639,7 +642,7 @@ def get_connection(hc_home: Path, team: str = "") -> sqlite3.Connection:
 
     Note: team parameter is kept for backward compatibility but is no longer used.
     """
-    ensure_schema(hc_home, project)
+    ensure_schema(hc_home, team)
     path = global_db_path(hc_home)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row

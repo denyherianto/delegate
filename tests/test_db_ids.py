@@ -220,12 +220,12 @@ def test_lookup_member(temp_hc_home):
 
 
 def test_backfill_from_filesystem(temp_hc_home):
-    """Test backfill populates team_ids and member_ids from filesystem."""
-    # Create team directories manually
-    teams_dir = temp_hc_home / "teams"
-    teams_dir.mkdir(parents=True, exist_ok=True)
+    """Test backfill populates project_ids and member_ids from filesystem."""
+    # Create project directories manually (new naming: projects/)
+    projects_dir = temp_hc_home / "projects"
+    projects_dir.mkdir(parents=True, exist_ok=True)
 
-    team_dir = teams_dir / "test-team"
+    team_dir = projects_dir / "test-team"
     team_dir.mkdir()
 
     agents_dir = team_dir / "agents"
@@ -243,12 +243,12 @@ def test_backfill_from_filesystem(temp_hc_home):
     mdir.mkdir(parents=True, exist_ok=True)
     (mdir / "alice.yaml").write_text("name: alice\nkind: human\n")
 
-    # Insert team into teams table
+    # Insert team into projects table (new naming post-V018)
     conn = get_connection(temp_hc_home, "")
     try:
         team_uuid = "abc12300000000000000000000000000"  # Padded 6-char
         conn.execute(
-            "INSERT INTO teams (name, team_id) VALUES (?, ?)",
+            "INSERT INTO projects (name, project_id) VALUES (?, ?)",
             ("test-team", team_uuid)
         )
         conn.commit()
@@ -262,7 +262,7 @@ def test_backfill_from_filesystem(temp_hc_home):
         _backfill_uuid_tables(conn, temp_hc_home)
         conn.commit()
 
-        # Verify team_ids populated
+        # Verify project_ids populated
         team_uuid_resolved = resolve_team(conn, "test-team")
         assert team_uuid_resolved == team_uuid
 

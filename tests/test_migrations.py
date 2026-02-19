@@ -148,7 +148,7 @@ class TestEnsureSchema:
         assert "tasks" in tables
         assert "reviews" in tables
         assert "task_comments" in tables
-        assert "team_ids" in tables
+        assert "project_ids" in tables
         assert "member_ids" in tables
         conn.close()
 
@@ -203,7 +203,7 @@ class TestEnsureSchema:
         # Insert some data
         conn = get_connection(tmp_hc)
         conn.execute(
-            "INSERT INTO messages (sender, recipient, content, type, team, team_uuid) "
+            "INSERT INTO messages (sender, recipient, content, type, project, project_uuid) "
             "VALUES ('a', 'b', 'hello', 'chat', 'test', 'uuid1')"
         )
         conn.commit()

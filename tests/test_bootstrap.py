@@ -128,17 +128,19 @@ def test_db_schema_created(tmp_team):
     # V10 added result for magic commands support
     # V12 added team for multi-team support
     # V16 added team_uuid, sender_uuid, recipient_uuid for UUID translation
-    assert msg_columns == {"id", "timestamp", "sender", "recipient", "content", "type", "task_id", "delivered_at", "seen_at", "processed_at", "result", "team", "team_uuid", "sender_uuid", "recipient_uuid"}
+    # V18 renamed team->project, team_uuid->project_uuid
+    assert msg_columns == {"id", "timestamp", "sender", "recipient", "content", "type", "task_id", "delivered_at", "seen_at", "processed_at", "result", "project", "project_uuid", "sender_uuid", "recipient_uuid"}
 
     cursor = conn.execute("PRAGMA table_info(sessions)")
     sess_columns = {row[1] for row in cursor.fetchall()}
     # V12 added team for multi-team support
     # V16 added team_uuid, agent_uuid for UUID translation
+    # V18 renamed team->project, team_uuid->project_uuid
     assert sess_columns == {
         "id", "agent", "task_id", "started_at", "ended_at",
         "duration_seconds", "tokens_in", "tokens_out", "cost_usd",
-        "cache_read_tokens", "cache_write_tokens", "team",
-        "team_uuid", "agent_uuid",
+        "cache_read_tokens", "cache_write_tokens", "project",
+        "project_uuid", "agent_uuid",
     }
 
     conn.close()

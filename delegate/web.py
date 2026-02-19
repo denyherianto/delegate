@@ -210,7 +210,7 @@ def _agent_current_task(hc_home: Path, team: str, agent_name: str, ip_tasks: lis
     the tasks directory for every agent).
     """
     if ip_tasks is None:
-        ip_tasks = _list_tasks(hc_home, project, status="in_progress", assignee=agent_name)
+        ip_tasks = _list_tasks(hc_home, team, status="in_progress", assignee=agent_name)
     for t in ip_tasks:
         if t.get("assignee") == agent_name:
             return {"id": t["id"], "title": t["title"]}
@@ -219,7 +219,7 @@ def _agent_current_task(hc_home: Path, team: str, agent_name: str, ip_tasks: lis
 
 def _list_team_agents(hc_home: Path, team: str) -> list[dict]:
     """List AI agents for a team (excludes human members)."""
-    ad = _agents_dir(hc_home, project)
+    ad = _agents_dir(hc_home, team)
     agents = []
     if not ad.is_dir():
         return agents
@@ -230,7 +230,7 @@ def _list_team_agents(hc_home: Path, team: str) -> list[dict]:
 
     # Pre-load all in_progress tasks once (lightweight — avoids per-agent scans)
     try:
-        ip_tasks = _list_tasks(hc_home, project, status="in_progress")
+        ip_tasks = _list_tasks(hc_home, team, status="in_progress")
     except FileNotFoundError:
         ip_tasks = []
 
@@ -245,7 +245,7 @@ def _list_team_agents(hc_home: Path, team: str) -> list[dict]:
         # Also skip legacy "boss" role agents
         if state.get("role") == "boss":
             continue
-        unread = _count_unread(hc_home, project, d.name)
+        unread = _count_unread(hc_home, team, d.name)
         agents.append({
             "name": d.name,
             "role": state.get("role", "engineer"),
@@ -254,7 +254,7 @@ def _list_team_agents(hc_home: Path, team: str) -> list[dict]:
             "unread_inbox": unread,
             "team": team,
             "last_active_at": _agent_last_active_at(d),
-            "current_task": _agent_current_task(hc_home, project, d.name, ip_tasks),
+            "current_task": _agent_current_task(hc_home, team, d.name, ip_tasks),
         })
     return agents
 
@@ -344,10 +344,10 @@ def _build_greeting(
 
     # Gather task context
     try:
-        active = list_tasks(hc_home, project, status="in_progress")
-        review = list_tasks(hc_home, project, status="in_review")
-        approval = list_tasks(hc_home, project, status="in_approval")
-        failed = list_tasks(hc_home, project, status="merge_failed")
+        active = list_tasks(hc_home, team, status="in_progress")
+        review = list_tasks(hc_home, team, status="in_review")
+        approval = list_tasks(hc_home, team, status="in_approval")
+        failed = list_tasks(hc_home, team, status="merge_failed")
     except Exception:
         active = review = approval = failed = []
 
@@ -356,7 +356,7 @@ def _build_greeting(
     if last_seen and (now_utc - last_seen) < timedelta(hours=24):
         try:
             # Tasks completed since last_seen
-            all_tasks = list_tasks(hc_home, project, status="done")
+            all_tasks = list_tasks(hc_home, team, status="done")
             completed_since = [
                 t for t in all_tasks
                 if t.get("completed_at") and
@@ -366,7 +366,7 @@ def _build_greeting(
                 away_parts.append(f"{len(completed_since)} task{'s' if len(completed_since) != 1 else ''} completed")
 
             # Messages to human since last_seen
-            messages = read_inbox(hc_home, project, human, unread_only=False)
+            messages = read_inbox(hc_home, team, human, unread_only=False)
             new_messages = [
                 m for m in messages
                 if datetime.fromisoformat(m["created_at"].replace("Z", "+00:00")) > last_seen
@@ -413,11 +413,11 @@ def _notify_manager_sync(hc_home: Path, team: str, body: str) -> None:
     from delegate.mailbox import send as send_message
 
     try:
-        manager = get_member_by_role(hc_home, project, "manager")
+        manager = get_member_by_role(hc_home, team, "manager")
         if manager:
-            send_message(hc_home, project, "system", manager, body)
+            send_message(hc_home, team, "system", manager, body)
     except Exception:
-        logger.debug("Could not notify manager for team %s", project, exc_info=True)
+        logger.debug("Could not notify manager for team %s", team, exc_info=True)
 
 
 def _process_auto_stages(hc_home: Path, team: str) -> None:
@@ -435,7 +435,7 @@ def _process_auto_stages(hc_home: Path, team: str) -> None:
     from delegate.chat import log_event
 
     try:
-        all_tasks = list_tasks(hc_home, project)
+        all_tasks = list_tasks(hc_home, team)
     except Exception:
         return
 
@@ -446,7 +446,7 @@ def _process_auto_stages(hc_home: Path, team: str) -> None:
             continue
 
         try:
-            wf = load_workflow_cached(hc_home, project, wf_name, wf_version)
+            wf = load_workflow_cached(hc_home, team, wf_name, wf_version)
         except (FileNotFoundError, KeyError, ValueError):
             continue
 
@@ -462,14 +462,14 @@ def _process_auto_stages(hc_home: Path, team: str) -> None:
         task_id = task["id"]
         try:
             # Re-fetch to get latest state
-            fresh_task = get_task(hc_home, project, task_id)
-            ctx = Context(hc_home, project, fresh_task)
+            fresh_task = get_task(hc_home, team, task_id)
+            ctx = Context(hc_home, team, fresh_task)
             stage = stage_cls()
             next_stage_cls = stage.action(ctx)
 
             if next_stage_cls is not None and hasattr(next_stage_cls, '_key') and next_stage_cls._key:
                 # Transition to the next stage
-                change_status(hc_home, project, task_id, next_stage_cls._key)
+                change_status(hc_home, team, task_id, next_stage_cls._key)
                 logger.info(
                     "Auto-stage %s → %s for %s",
                     current, next_stage_cls._key, format_task_id(task_id),
@@ -477,7 +477,7 @@ def _process_auto_stages(hc_home: Path, team: str) -> None:
                 # Notify manager when a task reaches a terminal state
                 if wf.is_terminal(next_stage_cls._key):
                     _notify_manager_sync(
-                        hc_home, project,
+                        hc_home, team,
                         f"Task {format_task_id(task_id)} completed (status: {next_stage_cls._key}).",
                     )
         except ActionError as exc:
@@ -488,12 +488,12 @@ def _process_auto_stages(hc_home: Path, team: str) -> None:
             )
             if "error" in wf.stage_map:
                 try:
-                    change_status(hc_home, project, task_id, "error")
+                    change_status(hc_home, team, task_id, "error")
                 except Exception:
                     logger.exception("Failed to transition %s to error state", format_task_id(task_id))
             else:
                 log_event(
-                    hc_home, project,
+                    hc_home, team,
                     f"{format_task_id(task_id)} auto-action failed: {exc}",
                     task_id=task_id,
                 )
@@ -545,7 +545,7 @@ def _ensure_task_infra(
 
     for status in active_statuses:
         try:
-            tasks = _list_tasks(hc_home, project, status=status)
+            tasks = _list_tasks(hc_home, team, status=status)
         except Exception:
             continue
 
@@ -563,17 +563,17 @@ def _ensure_task_infra(
                 continue
 
             # --- Dependency gating: skip tasks with unresolved deps ---
-            if not _all_deps_resolved(hc_home, project, task):
+            if not _all_deps_resolved(hc_home, team, task):
                 logger.debug(
                     "Skipping worktree for %s/%s — dependencies not resolved",
-                    project, format_task_id(task_id),
+                    team, format_task_id(task_id),
                 )
                 continue
 
             # Check if ALL worktrees exist
             all_exist = True
             for repo_name in repos:
-                wt = get_task_worktree_path(hc_home, project, repo_name, task_id)
+                wt = get_task_worktree_path(hc_home, team, repo_name, task_id)
                 if not wt.is_dir():
                     all_exist = False
                     break
@@ -585,20 +585,20 @@ def _ensure_task_infra(
             # Create missing worktrees
             try:
                 for repo_name in repos:
-                    wt = get_task_worktree_path(hc_home, project, repo_name, task_id)
+                    wt = get_task_worktree_path(hc_home, team, repo_name, task_id)
                     if not wt.is_dir():
                         create_task_worktree(
-                            hc_home, project, repo_name, task_id, branch=branch,
+                            hc_home, team, repo_name, task_id, branch=branch,
                         )
                         logger.info(
                             "Daemon created worktree for %s/%s (%s)",
-                            project, format_task_id(task_id), repo_name,
+                            team, format_task_id(task_id), repo_name,
                         )
                 infra_ready.add(key)
             except Exception:
                 logger.exception(
                     "Failed to create worktree infra for %s/%s",
-                    project, format_task_id(task_id),
+                    team, format_task_id(task_id),
                 )
 
 
@@ -644,11 +644,11 @@ async def _daemon_loop(
     def _notify_manager(team: str, body: str) -> None:
         """Send a system notification to the team's manager (if any)."""
         try:
-            manager = get_member_by_role(hc_home, project, "manager")
+            manager = get_member_by_role(hc_home, team, "manager")
             if manager:
-                send_message(hc_home, project, "system", manager, body)
+                send_message(hc_home, team, "system", manager, body)
         except Exception:
-            logger.debug("Could not notify manager for team %s", project, exc_info=True)
+            logger.debug("Could not notify manager for team %s", team, exc_info=True)
 
     # --- Delayed startup notification ---
     async def _delayed_startup_notification() -> None:
@@ -659,7 +659,7 @@ async def _daemon_loop(
             for team in teams:
                 from delegate.task import list_tasks as _list_tasks_all
                 try:
-                    all_tasks = _list_tasks_all(hc_home, project)
+                    all_tasks = _list_tasks_all(hc_home, team)
                     active = [t for t in all_tasks if t.get("status") not in ("done", "cancelled")]
                     # Skip notification if no active tasks
                     if not active:
@@ -686,23 +686,23 @@ async def _daemon_loop(
         """Dispatch and run one turn, then remove from in_flight."""
         async with sem:
             try:
-                result = await run_turn(hc_home, project, agent, exchange=exchange)
+                result = await run_turn(hc_home, team, agent, exchange=exchange)
                 if result.error:
                     logger.warning(
                         "Turn error | agent=%s | team=%s | error=%s",
-                        agent, project, result.error,
+                        agent, team, result.error,
                     )
                 else:
                     total = result.tokens_in + result.tokens_out
                     logger.info(
                         "Turn complete | agent=%s | team=%s | tokens=%d | cost=$%.4f",
-                        agent, project, total, result.cost_usd,
+                        agent, team, total, result.cost_usd,
                     )
             except asyncio.CancelledError:
-                logger.info("Turn cancelled | agent=%s | team=%s", agent, project)
+                logger.info("Turn cancelled | agent=%s | team=%s", agent, team)
                 raise
             except Exception:
-                logger.exception("Uncaught error in turn | agent=%s | team=%s", agent, project)
+                logger.exception("Uncaught error in turn | agent=%s | team=%s", agent, team)
             finally:
                 in_flight.discard((team, agent))
 
@@ -735,17 +735,17 @@ async def _daemon_loop(
                 # to exist by the time an agent receives a turn.
                 try:
                     await asyncio.to_thread(
-                        _ensure_task_infra, hc_home, project, infra_ready,
+                        _ensure_task_infra, hc_home, team, infra_ready,
                     )
                 except Exception:
                     logger.exception(
-                        "Error ensuring task infra for team %s", project,
+                        "Error ensuring task infra for team %s", team,
                     )
 
                 # Find agents with unread messages and dispatch turns
-                ai_agents = set(list_ai_agents(hc_home, project))
+                ai_agents = set(list_ai_agents(hc_home, team))
                 needing_turn = [
-                    a for a in agents_with_unread(hc_home, project)
+                    a for a in agents_with_unread(hc_home, team)
                     if a in ai_agents
                 ]
                 for agent in needing_turn:
@@ -1086,12 +1086,12 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             ).fetchall()
             human_names = {m["name"] for m in get_human_members(hc_home)}
 
-            # Batch task counts in one query
+            # Batch task counts in one query (tasks.team column not renamed — see V018)
             task_counts: dict[str, int] = {}
             for r in conn.execute(
-                "SELECT project, COUNT(*) as cnt FROM tasks GROUP BY project"
+                "SELECT team, COUNT(*) as cnt FROM tasks GROUP BY team"
             ).fetchall():
-                task_counts[r["project"]] = r["cnt"]
+                task_counts[r["team"]] = r["cnt"]
 
             result = []
             for row in teams_rows:
@@ -1111,10 +1111,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 team_uuid = row["project_id"]
                 result.append({
                     "name": team_name,
-                    "team_id": project_uuid,
+                    "team_id": team_uuid,
                     "created_at": row["created_at"],
                     "agent_count": agent_count,
-                    "task_count": task_counts.get(project_uuid, task_counts.get(team_name, 0)),
+                    "task_count": task_counts.get(team_uuid, task_counts.get(team_name, 0)),
                     "human_count": human_count,
                 })
             return result
@@ -1186,7 +1186,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     def get_team_workflows(team: str):
         """List all registered workflows for a team."""
         from delegate.workflow import list_workflows as _list_wf
-        return _list_wf(hc_home, project)
+        return _list_wf(hc_home, team)
 
     @app.get("/teams/{team}/workflows/{name}")
     def get_team_workflow(team: str, name: str, version: int | None = None):
@@ -1194,12 +1194,12 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         from delegate.workflow import load_workflow, get_latest_version
 
         if version is None:
-            version = get_latest_version(hc_home, project, name)
+            version = get_latest_version(hc_home, team, name)
             if version is None:
                 raise HTTPException(404, f"Workflow '{name}' not found for team '{team}'")
 
         try:
-            wf = load_workflow(hc_home, project, name, version)
+            wf = load_workflow(hc_home, team, name, version)
         except (FileNotFoundError, ValueError) as exc:
             raise HTTPException(404, str(exc))
 
@@ -1224,7 +1224,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
     @app.get("/teams/{team}/tasks")
     def get_team_tasks(team: str, status: str | None = None, assignee: str | None = None):
-        return _list_tasks(hc_home, project, status=status, assignee=assignee)
+        return _list_tasks(hc_home, team, status=status, assignee=assignee)
 
     # --- Message endpoints (team-scoped) ---
 
@@ -1235,7 +1235,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             parts = [p.strip() for p in between.split(",")]
             if len(parts) == 2:
                 between_tuple = (parts[0], parts[1])
-        return _get_messages(hc_home, project, since=since, between=between_tuple, msg_type=type, limit=limit, before_id=before_id)
+        return _get_messages(hc_home, team, since=since, between=between_tuple, msg_type=type, limit=limit, before_id=before_id)
 
     class SendMessage(BaseModel):
         team: str | None = None
@@ -1246,14 +1246,14 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     def post_team_message(team: str, msg: SendMessage):
         """Human sends a message to any agent in the team."""
         human_name = get_default_human(hc_home)
-        team_agents = _list_team_agents(hc_home, project)
+        team_agents = _list_team_agents(hc_home, team)
         agent_names = {a["name"] for a in team_agents}
         if msg.recipient not in agent_names:
             raise HTTPException(
                 status_code=403,
                 detail=f"Recipient '{msg.recipient}' is not an agent in team '{team}'",
             )
-        _send(hc_home, project, human_name, msg.recipient, msg.content)
+        _send(hc_home, team, human_name, msg.recipient, msg.content)
         return {"status": "queued"}
 
     @app.post("/teams/{team}/greet")
@@ -1272,7 +1272,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         from delegate.repo import list_repos
 
         human_name = get_default_human(hc_home)
-        manager_name = get_member_by_role(hc_home, project, "manager")
+        manager_name = get_member_by_role(hc_home, team, "manager")
 
         if not manager_name:
             raise HTTPException(
@@ -1286,7 +1286,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         # If there are zero messages for this team, this is the very first
         # session.  Send the special onboarding welcome instead.
         try:
-            all_messages = _get_messages(hc_home, project, limit=1)
+            all_messages = _get_messages(hc_home, team, limit=1)
             is_first_run = len(all_messages) == 0
         except Exception:
             is_first_run = False
@@ -1294,20 +1294,20 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         if is_first_run:
             # Count AI agents (excluding manager)
             ai_agents = [
-                a for a in _list_team_agents(hc_home, project)
+                a for a in _list_team_agents(hc_home, team)
                 if a.get("role") != "manager"
             ]
-            has_repos = bool(list_repos(hc_home, project))
+            has_repos = bool(list_repos(hc_home, team))
 
             greeting = _build_first_run_greeting(
-                hc_home, project, manager_name, human_name,
+                hc_home, team, manager_name, human_name,
                 agent_count=len(ai_agents),
                 has_repos=has_repos,
             )
-            _send(hc_home, project, manager_name, human_name, greeting)
+            _send(hc_home, team, manager_name, human_name, greeting)
             logger.info(
                 "First-run welcome sent by %s to %s | team=%s | agents=%d | repos=%s",
-                manager_name, human_name, project,
+                manager_name, human_name, team,
                 len(ai_agents), has_repos,
             )
             return {"status": "sent"}
@@ -1316,7 +1316,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         # Check if manager sent a message to human in the last 15 minutes
         # If so, skip the greeting to avoid noise
         try:
-            recent_messages = read_inbox(hc_home, project, human_name, unread_only=False)
+            recent_messages = read_inbox(hc_home, team, human_name, unread_only=False)
             cutoff = now_utc - timedelta(minutes=15)
             recent_manager_msg = any(
                 m.sender == manager_name and
@@ -1326,7 +1326,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             if recent_manager_msg:
                 logger.info(
                     "Skipping greeting — manager %s sent message to %s in last 15 min | team=%s",
-                    manager_name, human_name, project,
+                    manager_name, human_name, team,
                 )
                 return {"status": "skipped"}
         except Exception:
@@ -1340,16 +1340,16 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             except Exception:
                 pass
 
-        greeting = _build_greeting(hc_home, project, manager_name, human_name, now_utc, last_seen_dt)
+        greeting = _build_greeting(hc_home, team, manager_name, human_name, now_utc, last_seen_dt)
         _send(
-            hc_home, project,
+            hc_home, team,
             manager_name,
             human_name,
             greeting,
         )
         logger.info(
             "Manager %s sent greeting to %s | team=%s | last_seen=%s",
-            manager_name, human_name, project, last_seen or "none",
+            manager_name, human_name, team, last_seen or "none",
         )
         return {"status": "sent"}
 
@@ -1398,7 +1398,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
         # Validate and store each file
         uploaded = []
-        uploads_dir = _team_dir(hc_home, project) / "uploads"
+        uploads_dir = _team_dir(hc_home, team) / "uploads"
         now = datetime.now(timezone.utc)
         year = now.strftime("%Y")
         month = now.strftime("%m")
@@ -1456,7 +1456,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         """
         from delegate.uploads import safe_path
 
-        uploads_dir = _team_dir(hc_home, project) / "uploads"
+        uploads_dir = _team_dir(hc_home, team) / "uploads"
         user_path = f"{year}/{month}/{filename}"
 
         # Validate path (prevent traversal)
@@ -1505,8 +1505,8 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     def get_cost_summary(team: str):
         """Return cost analytics: today, this week, and top tasks by cost."""
         from delegate.db import get_connection
-        t = _resolve_team(hc_home, project)
-        conn = get_connection(hc_home, project)
+        t = _resolve_team(hc_home, team)
+        conn = get_connection(hc_home, team)
         # Use local timezone for day/week boundaries so "today" and "this week"
         # reflect the user's local calendar day, not UTC.
         now_local = datetime.now().astimezone()
@@ -1556,7 +1556,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 SUM(s.cost_usd) as total_cost
             FROM sessions s
             LEFT JOIN tasks t ON s.task_id = t.id
-            WHERE s.task_id IS NOT NULL AND s.team_uuid = ?
+            WHERE s.task_id IS NOT NULL AND s.project_uuid = ?
             GROUP BY s.task_id
             ORDER BY total_cost DESC
             LIMIT 3
@@ -1688,7 +1688,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         """
         from delegate.paths import repos_dir
 
-        repos_path = repos_dir(hc_home, project)
+        repos_path = repos_dir(hc_home, team)
         if repos_path.exists():
             repo_links = sorted(repos_path.iterdir())
             if repo_links:
@@ -1720,7 +1720,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             resolved_cwd = req.cwd
         else:
             # Try to get first repo root
-            repos_path = repos_dir(hc_home, project)
+            repos_path = repos_dir(hc_home, team)
             if repos_path.exists():
                 repo_links = sorted(repos_path.iterdir())
                 if repo_links:
@@ -1799,12 +1799,12 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
         human_name = get_default_human(hc_home)
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-        t = _resolve_team(hc_home, project)
+        t = _resolve_team(hc_home, team)
 
-        conn = get_connection(hc_home, project)
+        conn = get_connection(hc_home, team)
         cursor = conn.execute(
             "INSERT INTO messages (sender, recipient, content, type, result, delivered_at, project, project_uuid) VALUES (?, ?, ?, 'command', ?, ?, ?, ?)",
-            (human_name, human_name, msg.command, json.dumps(msg.result), now, t, t)
+            (human_name, human_name, msg.command, json.dumps(msg.result), now, team, t)
         )
         conn.commit()
         msg_id = cursor.lastrowid
@@ -2712,14 +2712,14 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         """Human sends a message (legacy — uses msg.team field)."""
         team = msg.team or _first_team(hc_home)
         human_name = get_default_human(hc_home)
-        team_agents = _list_team_agents(hc_home, project)
+        team_agents = _list_team_agents(hc_home, team)
         agent_names = {a["name"] for a in team_agents}
         if msg.recipient not in agent_names:
             raise HTTPException(
                 status_code=403,
                 detail=f"Recipient '{msg.recipient}' is not an agent in team '{team}'",
             )
-        _send(hc_home, project, human_name, msg.recipient, msg.content)
+        _send(hc_home, team, human_name, msg.recipient, msg.content)
         return {"status": "queued"}
 
     # --- Agent endpoints (team-scoped) ---
@@ -2745,25 +2745,25 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     @app.get("/teams/{team}/agents")
     def get_agents(team: str):
         """List AI agents for a team (excludes human members)."""
-        return _list_team_agents(hc_home, project)
+        return _list_team_agents(hc_home, team)
 
     @app.get("/teams/{team}/agents/stats")
     def get_all_agent_stats(team: str):
         """Get aggregated stats for all agents in a team (single DB query)."""
-        agents_data = _list_team_agents(hc_home, project)
+        agents_data = _list_team_agents(hc_home, team)
         agent_names = [a["name"] for a in agents_data]
-        return _get_team_agent_stats(hc_home, project, agent_names)
+        return _get_team_agent_stats(hc_home, team, agent_names)
 
     @app.get("/teams/{team}/agents/{name}/stats")
     def get_agent_stats(team: str, name: str):
         """Get aggregated stats for a specific agent."""
-        return _get_agent_stats(hc_home, project, name)
+        return _get_agent_stats(hc_home, team, name)
 
     @app.get("/teams/{team}/agents/{name}/inbox")
     def get_agent_inbox(team: str, name: str):
         """Return all messages in the agent's inbox with lifecycle status."""
         from delegate.config import SYSTEM_USER
-        all_msgs = _read_inbox(hc_home, project, name, unread_only=False)
+        all_msgs = _read_inbox(hc_home, team, name, unread_only=False)
         result = [
             {
                 "id": m.id,
@@ -2784,7 +2784,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     @app.get("/teams/{team}/agents/{name}/outbox")
     def get_agent_outbox(team: str, name: str):
         """Return all messages sent by the agent with delivery status."""
-        all_msgs = _read_outbox(hc_home, project, name, pending_only=False)
+        all_msgs = _read_outbox(hc_home, team, name, pending_only=False)
         result = [
             {
                 "id": m.id,
@@ -2804,8 +2804,8 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     @app.get("/teams/{team}/agents/{name}/messages")
     def get_agent_messages(team: str, name: str):
         """Return unified inbox + outbox messages in chronological order."""
-        inbox_msgs = _read_inbox(hc_home, project, name, unread_only=False)
-        outbox_msgs = _read_outbox(hc_home, project, name, pending_only=False)
+        inbox_msgs = _read_inbox(hc_home, team, name, unread_only=False)
+        outbox_msgs = _read_outbox(hc_home, team, name, pending_only=False)
 
         # Convert inbox messages to unified format
         inbox_result = [
@@ -2847,7 +2847,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     @app.get("/teams/{team}/agents/{name}/logs")
     def get_agent_logs(team: str, name: str):
         """Return the agent's worklog entries."""
-        ad = _agent_dir(hc_home, project, name)
+        ad = _agent_dir(hc_home, team, name)
         if not ad.is_dir():
             raise HTTPException(status_code=404, detail=f"Agent '{name}' not found in team '{team}'")
 
@@ -2872,7 +2872,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     @app.get("/teams/{team}/agents/{name}/reflections")
     def get_agent_reflections(team: str, name: str):
         """Return the agent's reflections markdown."""
-        ad = _agent_dir(hc_home, project, name)
+        ad = _agent_dir(hc_home, team, name)
         if not ad.is_dir():
             raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
         path = ad / "notes" / "reflections.md"
@@ -2882,7 +2882,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     @app.get("/teams/{team}/agents/{name}/journal")
     def get_agent_journal(team: str, name: str):
         """Return the agent's task journals (one file per task)."""
-        ad = _agent_dir(hc_home, project, name)
+        ad = _agent_dir(hc_home, team, name)
         if not ad.is_dir():
             raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
         journals_dir = ad / "journals"
@@ -2989,7 +2989,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
     @app.get("/teams/{team}/files")
     def list_shared_files(team: str, path: str | None = None):
         """List files in the team's shared/ directory or a subdirectory."""
-        base = _shared_dir(hc_home, project)
+        base = _shared_dir(hc_home, team)
         if not base.is_dir():
             return {"files": []}
 
