@@ -131,3 +131,16 @@ class TestVersionEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["current"] == expected_version
+
+    def test_falls_back_to_unknown_when_both_metadata_and_pyproject_fail(self, client):
+        """When both importlib.metadata and pyproject.toml read fail, current is 'unknown'."""
+        from importlib.metadata import PackageNotFoundError
+
+        with patch("importlib.metadata.version", side_effect=PackageNotFoundError("delegate-ai")):
+            with patch("builtins.open", side_effect=OSError("no such file")):
+                with patch("urllib.request.urlopen", return_value=_make_pypi_response("1.0.0")):
+                    resp = client.get("/api/version")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["current"] == "unknown"
