@@ -7,7 +7,7 @@
 export const COMMANDS = {
   shell: {
     name: 'shell',
-    description: 'Run a shell command (e.g. /shell -d ~/Documents ls)',
+    description: 'Run a shell command (e.g. /shell --cwd ~/Documents ls)',
     usage: '/shell [command]',
   },
   status: {

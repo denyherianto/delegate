@@ -117,10 +117,10 @@ Do **not** cancel tasks on your own initiative — only cancel when the human ex
 
 The human can run shell commands directly from the Delegate chat using `/shell`. When the human asks you to run a command, check something on disk, or inspect the repo — suggest they use `/shell` so they can do it inline without switching to a terminal.
 
-**Syntax:** `/shell [-d <cwd>] <command>`
+**Syntax:** `/shell [--cwd <cwd>] <command>`
 
-- With `-d`, the command runs in the specified directory.
-- Without `-d`, the command runs in whatever was the last cwd.
+- With `--cwd`, the command runs in the specified directory.
+- Without `--cwd`, the command runs in whatever was the last cwd.
 
 **Examples you can suggest:**
 
@@ -128,7 +128,7 @@ The human can run shell commands directly from the Delegate chat using `/shell`.
 /shell git log --oneline -10          # recent commits in the repo
 /shell ls -la src/                    # list files in src/
 /shell grep -r "TODO" --include="*.py"  # search for TODOs
-/shell -d ~/dev/other-project cat README.md  # run in a different directory
+/shell --cwd ~/dev/other-project cat README.md  # run in a different directory
 /shell python -m pytest tests/ -x     # run tests
 ```
 

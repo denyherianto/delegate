@@ -29,9 +29,9 @@ import { DiffCommandBlock } from "./DiffCommandBlock.jsx";
 import { CostBlock } from "./CostBlock.jsx";
 import { parseCommand, filterCommands, COMMANDS } from "../commands.js";
 
-// ── Shell -d directory autocomplete dropdown ──
+// ── Shell --cwd directory autocomplete dropdown ──
 // Positioned above the chat input (like CommandAutocomplete).
-// Fetches suggestions for the partial path in the -d argument and renders a
+// Fetches suggestions for the partial path in the --cwd argument and renders a
 // selectable list. Parent updates the main input on selection.
 function ShellDirAutocomplete({ query, fetchSuggestions, onSelect }) {
   const [suggestions, setSuggestions] = useState([]);
@@ -434,16 +434,16 @@ export function ChatPanel() {
   // Keep ref in sync so the keydown handler always reads current values
   acRef.current = { visible: acVisible, commands: acCommands, index: acIndex };
 
-  // ── Shell -d path autocomplete ──
-  // Show FileAutocomplete when user is in /shell mode and has typed "-d <partial>"
-  // at the end of the input (i.e. the partial path is the last word after "-d ").
+  // ── Shell --cwd path autocomplete ──
+  // Show FileAutocomplete when user is in /shell mode and has typed "--cwd <partial>"
+  // at the end of the input (i.e. the partial path is the last word after "--cwd ").
   const shellDirMatch = useMemo(() => {
     if (!commandMode.value) return null;
     if (acIsTypingName) return null; // still typing command name
     if (!acParsed || acParsed.name !== "shell") return null;
-    // Match "-d " followed by the rest as the partial (can be empty string after "-d ")
+    // Match "--cwd " followed by the rest as the partial (can be empty string after "--cwd ")
     const args = acParsed.args || "";
-    const m = args.match(/-d\s+(\S*)$/);
+    const m = args.match(/--cwd\s+(\S*)$/);
     if (!m) return null;
     return m[1]; // the partial path (may be "")
   }, [commandMode.value, acIsTypingName, acParsed]);
@@ -453,14 +453,14 @@ export function ChatPanel() {
     return entries.map(e => e.path + (e.is_dir ? "/" : ""));
   }, []);
 
-  // Called when user selects a path from the shell -d autocomplete.
-  // Replaces the "-d <partial>" portion at the end of the input with "-d <selected>".
+  // Called when user selects a path from the shell --cwd autocomplete.
+  // Replaces the "--cwd <partial>" portion at the end of the input with "--cwd <selected>".
   const handleShellDirSelect = useCallback((selectedPath) => {
     const el = inputRef.current;
     if (!el) return;
     const current = el.textContent || "";
-    // Replace the "-d <partial>" at end of input with "-d <selectedPath>"
-    const updated = current.replace(/-d\s+\S*$/, `-d ${selectedPath}`);
+    // Replace the "--cwd <partial>" at end of input with "--cwd <selectedPath>"
+    const updated = current.replace(/--cwd\s+\S*$/, `--cwd ${selectedPath}`);
     el.textContent = updated;
     el.style.height = "auto";
     el.style.height = el.scrollHeight + "px";
@@ -474,7 +474,7 @@ export function ChatPanel() {
     el.focus();
     // Update controlled state so everything re-derives
     setInputVal(updated);
-    // Update CWD if path doesn't end with "/" (file selected — shouldn't happen for -d but be safe)
+    // Update CWD if path doesn't end with "/" (file selected — shouldn't happen for --cwd but be safe)
     // For directory selections, the path ends with "/" — strip it for the CWD
     const cwdPath = selectedPath.endsWith("/") ? selectedPath.slice(0, -1) : selectedPath;
     if (!selectedPath.endsWith("/")) {
@@ -906,8 +906,8 @@ export function ChatPanel() {
         if (!cmd.args) {
           result = { error: 'Usage: /shell [command]', exit_code: -1 };
         } else {
-          // Strip -d <path> from args since it's already captured in commandCwd
-          const shellArgs = cmd.args.replace(/-d\s+\S+/, '').trim();
+          // Strip --cwd <path> from args since it's already captured in commandCwd
+          const shellArgs = cmd.args.replace(/--cwd\s+\S+/, '').trim();
           result = await api.execShell(team, shellArgs, commandCwd.value || undefined);
         }
       } else if (cmd.name === 'status') {
@@ -1444,7 +1444,7 @@ export function ChatPanel() {
               onSelect={selectAutocomplete}
             />
           )}
-          {/* Shell -d path autocomplete — dropdown anchored above the input */}
+          {/* Shell --cwd path autocomplete — dropdown anchored above the input */}
           {shellDirMatch !== null && !acVisible && (
             <ShellDirAutocomplete
               query={shellDirMatch}
@@ -1468,10 +1468,10 @@ export function ChatPanel() {
               // Detect command mode
               commandMode.value = val.startsWith('/');
 
-              // Update CWD from parsed command if it has -d flag
+              // Update CWD from parsed command if it has --cwd flag
               const cmd = parseCommand(val);
-              if (cmd && cmd.name === 'shell' && cmd.args.includes('-d')) {
-                const match = cmd.args.match(/-d\s+(\S+)/);
+              if (cmd && cmd.name === 'shell' && cmd.args.includes('--cwd')) {
+                const match = cmd.args.match(/--cwd\s+(\S+)/);
                 if (match) {
                   commandCwd.value = match[1];
                   saveTeamCwd(team, match[1]);
