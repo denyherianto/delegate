@@ -148,7 +148,7 @@ export function NewProjectModal() {
                 value={agentCount}
                 onInput={(e) => {
                   const raw = e.target.value.replace(/[^0-9]/g, "");
-                  setAgentCount(raw === "" ? "" : Math.max(1, Math.min(8, parseInt(raw, 10))));
+                  setAgentCount(raw === "" ? "" : Math.max(1, parseInt(raw, 10)));
                 }}
                 onBlur={() => {
                   const n = parseInt(agentCount, 10);
@@ -157,7 +157,6 @@ export function NewProjectModal() {
                 disabled={submitting}
                 autocomplete="off"
               />
-              <span class="npm-hint">Worker agents (manager added automatically)</span>
             </div>
 
             <div class="npm-field npm-field-half">
