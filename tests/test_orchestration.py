@@ -165,10 +165,12 @@ class TestRunTurn:
         assert result.agent == "alice"
         assert result.team == TEAM
         assert result.error is None
-        assert result.tokens_in == 100
-        assert result.tokens_out == 50
-        assert result.cost_usd == 0.01
-        assert result.turns == 1
+        # The mock telephone never calls mailbox_send, so the nudge turn fires
+        # and adds a second round of tokens (100 + 100 = 200 in, 50 + 50 = 100 out).
+        assert result.tokens_in == 200
+        assert result.tokens_out == 100
+        assert result.cost_usd == 0.02
+        assert result.turns == 1  # nudge doesn't increment turn_num
 
         # Message should be marked as processed
         remaining = agents_with_unread(tmp_team, TEAM)
@@ -247,8 +249,10 @@ class TestRunTurn:
             run_turn(tmp_team, TEAM, "alice", exchange=TelephoneExchange())
         )
 
-        assert result.cache_read == 20
-        assert result.cache_write == 10
+        # The mock never calls mailbox_send, so the nudge fires (second turn).
+        # Cache tokens are doubled: main (20/10) + nudge (20/10).
+        assert result.cache_read == 40
+        assert result.cache_write == 20
 
     @patch("delegate.runtime.random.random", return_value=0.0)  # always reflect
     @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
@@ -261,12 +265,13 @@ class TestRunTurn:
         )
 
         assert result.turns == 2
-        # Tokens should be doubled (100 in + 100 in for reflection)
-        assert result.tokens_in == 200
-        assert result.tokens_out == 100
-        # Cache tokens should also be doubled
-        assert result.cache_read == 40
-        assert result.cache_write == 20
+        # The mock never calls mailbox_send, so the nudge fires before reflection.
+        # Three total rounds: main (100) + nudge (100) + reflection (100) = 300 in, 150 out.
+        assert result.tokens_in == 300
+        assert result.tokens_out == 150
+        # Cache tokens: 3 rounds * (20 read / 10 write each)
+        assert result.cache_read == 60
+        assert result.cache_write == 30
 
     @patch("delegate.runtime.random.random", return_value=1.0)
     @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)

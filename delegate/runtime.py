@@ -960,14 +960,19 @@ async def run_turn(
     nudge_msg = None
 
     if not sent_message:
+        msg_summary = "\n".join(
+            f"  [{m.sender} -> {m.recipient}]: {m.body[:200]}{'...' if len(m.body) > 200 else ''}"
+            for m in batch
+        )
         nudge_msg = (
             "SYSTEM: You completed a turn without sending any message (mailbox_send). "
-            "You were woken up because you received messages — if you did any work, "
-            "changed any status, or have information the sender doesn't know yet, "
-            "you MUST send a message now using mailbox_send. "
-            "The only exception is if the conversation has naturally concluded and "
-            "there is genuinely nothing left to communicate (don't send empty acks). "
-            "If that's the case, say so in your reasoning and end. Otherwise, send a message now."
+            "You received the following message(s) that you did not respond to:\n\n"
+            f"{msg_summary}\n\n"
+            "You MUST now either:\n"
+            "1. Take action (create a task, assign work, send a command) AND send a mailbox_send to report it.\n"
+            "2. Send a reply with new information or an explanation.\n"
+            "The ONLY valid exception: the conversation has naturally concluded and there is truly nothing "
+            "left to communicate. In that case, confirm that is the case in your reasoning and end."
         )
         alog.warning(
             "No mailbox_send detected (%d tool calls: %s). Sending nudge.",
