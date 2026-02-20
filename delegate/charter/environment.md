@@ -59,7 +59,13 @@ Forbidden patterns — if you catch yourself writing any of these, stop and fix 
 
 The correct pattern is always: `VENV_DIR="$WORKTREE_ROOT/.venv"` — the venv lives inside the worktree. If creating the venv fails, exit with a clear error — do NOT fall back to sharing another environment.
 
-**Network IS available.** You can run `pip install`, `uv sync`, `npm install`, etc. normally. Do not assume network is unavailable — it is not. Do not create `.pth` files, symlinks, or any other mechanism to borrow packages from outside the worktree.
+**Network is restricted.** The sandbox allows outbound connections only to curated package-manager registries and git forges (see `delegate network show`). The auto-generated `setup.sh` uses a 3-tier install strategy to minimise network dependence:
+
+1. **Copy from main repo** — for Python, copies `site-packages` from the main repo's `.venv`; for Node, copies `node_modules`. Instant, zero network.
+2. **Install from system cache** — runs the package manager in offline/cache-only mode (e.g. `uv pip install --offline`, `npm ci --prefer-offline`). Works when the user has previously installed the same packages.
+3. **Full network install** — standard `pip install` / `npm ci` / etc. Used in CI, first checkout, or cold machines.
+
+Each tier is tried in order; the first success short-circuits. Do not create `.pth` files, symlinks, or any other mechanism to borrow packages from outside the worktree — the copy in tier 1 is a full, independent copy into the worktree's own environment.
 
 ---
 
@@ -146,22 +152,24 @@ nix-shell "$REPO_ROOT/shell.nix" --run \
 Key rules:
 - **Check for `poetry.lock` first** — if present, use `poetry install` exclusively. Poetry manages its own venv; set `POETRY_VIRTUALENVS_IN_PROJECT=true` to keep it in the worktree.
 - **Check for `uv.lock` next** — always prefer `uv sync` over `uv pip install`. No separate `uv venv` needed.
-- **Use the global uv cache** — never pass `--no-cache`. The shared cache is a major speed advantage.
+- **Never pass `--no-cache`** — the daemon sets team-level cache directories via `settings.env` so all worktrees share a common cache.
 
 Anti-patterns — never write these:
 - `uv pip install -r requirements.txt` when `uv.lock` exists — use `uv sync`
 - `uv pip install --no-cache` or `uv sync --no-cache` — disables shared cache
 - `pip install -r requirements.txt` when uv is available — always prefer uv
 
-#### Python setup.sh
+#### Python setup.sh (3-tier strategy)
 
 ```bash
 #!/usr/bin/env bash
 set -e
 # Created by delegate. Edit as needed.
+_cp_tree() { cp -Rc "$@" 2>/dev/null || cp -r --reflink=auto "$@" 2>/dev/null || cp -r "$@"; }
 
 WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="$WORKTREE_ROOT/.venv"
+MAIN_VENV="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)/.." && pwd)/.venv"
 
 # Re-entrance guard
 [[ -n "$_DELEGATE_SETUP_DONE" ]] && { source "$VENV_DIR/bin/activate"; return 0 2>/dev/null || exit 0; }
@@ -170,15 +178,44 @@ _DELEGATE_SETUP_DONE=1
 if ! "$VENV_DIR/bin/python" -c "import pytest" 2>/dev/null; then
   rm -rf "$VENV_DIR"
   cd "$WORKTREE_ROOT"
-  if command -v uv >/dev/null 2>&1; then
-    uv sync --group dev --quiet      # adapt per decision table
-  else
-    python3 -m venv "$VENV_DIR"
-    "$VENV_DIR/bin/pip" install ".[dev]" --quiet
+  python3 -m venv "$VENV_DIR"
+  _installed=0
+
+  # Strategy 1: copy site-packages from the main repo venv (no network)
+  if [ "$_installed" -eq 0 ] && [ -d "$MAIN_VENV" ]; then
+    MAIN_SITE="$(ls -d "$MAIN_VENV"/lib/python*/site-packages 2>/dev/null | head -1)"
+    WORKTREE_SITE="$(ls -d "$VENV_DIR"/lib/python*/site-packages 2>/dev/null | head -1)"
+    if [ -n "$MAIN_SITE" ] && [ -d "$MAIN_SITE" ]; then
+      _cp_tree "$MAIN_SITE/." "$WORKTREE_SITE/"
+      _installed=1
+    fi
+  fi
+
+  # Strategy 2: install from system cache (no network)
+  if [ "$_installed" -eq 0 ]; then
+    _SYS_UV_CACHE="${HOME}/.cache/uv"
+    _SYS_PIP_CACHE="${HOME}/.cache/pip"
+    if command -v uv >/dev/null 2>&1 && [ -d "$_SYS_UV_CACHE" ]; then
+      uv pip install --python "$VENV_DIR/bin/python" ".[dev]" --cache-dir "$_SYS_UV_CACHE" --offline --quiet 2>/dev/null && _installed=1 || true
+    fi
+    if [ "$_installed" -eq 0 ] && [ -d "$_SYS_PIP_CACHE" ]; then
+      "$VENV_DIR/bin/pip" install ".[dev]" --cache-dir "$_SYS_PIP_CACHE" --no-index --quiet 2>/dev/null && _installed=1 || true
+    fi
+  fi
+
+  # Strategy 3: full install (needs network — CI, first checkout)
+  if [ "$_installed" -eq 0 ]; then
+    if command -v uv >/dev/null 2>&1; then
+      uv pip install --python "$VENV_DIR/bin/python" ".[dev]" --quiet 2>/dev/null && _installed=1 || true
+    fi
+    if [ "$_installed" -eq 0 ]; then
+      "$VENV_DIR/bin/pip" install ".[dev]" --quiet 2>/dev/null && _installed=1 || true
+    fi
   fi
 fi
 
 source "$VENV_DIR/bin/activate"
+export PYTHONPATH="$WORKTREE_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 ```
 
 ---
@@ -198,22 +235,36 @@ Key rules:
 - Export PATH: `export PATH="$WORKTREE_ROOT/node_modules/.bin:$PATH"`.
 - Never use `npm install -g`.
 
-#### Node setup.sh
+#### Node setup.sh (3-tier strategy)
 
 ```bash
 #!/usr/bin/env bash
 set -e
 # Created by delegate. Edit as needed.
+_cp_tree() { cp -Rc "$@" 2>/dev/null || cp -r --reflink=auto "$@" 2>/dev/null || cp -r "$@"; }
 
 WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$WORKTREE_ROOT"
 
 # Re-entrance guard
-[[ -n "$_DELEGATE_SETUP_DONE" ]] && { export PATH="$WORKTREE_ROOT/node_modules/.bin:$PATH"; return 0 2>/dev/null || exit 0; }
+[[ -n "$_DELEGATE_SETUP_DONE" ]] && { export PATH="$WORKTREE_ROOT/node_modules/.bin:$PATH"; return 0 2>/dev/null || true; }
 _DELEGATE_SETUP_DONE=1
 
+MAIN_REPO="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)/.." && pwd)"
+cd "$WORKTREE_ROOT"
 if [ ! -d node_modules ]; then
-  npm ci --silent      # adapt for pnpm/yarn if lockfile present
+  _nm_installed=0
+  # Strategy 1: copy node_modules from main repo (no network)
+  if [ -d "$MAIN_REPO/node_modules" ]; then
+    _cp_tree "$MAIN_REPO/node_modules" node_modules && _nm_installed=1
+  fi
+  # Strategy 2: install from system cache (no network)
+  if [ "$_nm_installed" -eq 0 ]; then
+    npm ci --prefer-offline --silent 2>/dev/null && _nm_installed=1 || true
+  fi
+  # Strategy 3: full install (needs network)
+  if [ "$_nm_installed" -eq 0 ]; then
+    npm ci --silent 2>/dev/null || true      # adapt for pnpm/yarn
+  fi
 fi
 
 export PATH="$WORKTREE_ROOT/node_modules/.bin:$PATH"

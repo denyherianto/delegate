@@ -627,8 +627,17 @@ def _create_telephone(
     mcp_servers = {"delegate": mcp_server} if mcp_server is not None else None
 
     # Network allowlist — read from protected/network.yaml
-    from delegate.network import get_allowed_domains
+    from delegate.network import get_allowed_domains, build_cache_env
     allowed_domains = get_allowed_domains(hc_home)
+
+    # Team-level shared package-manager cache.
+    # Lives at ``teams/<uuid>/.pkg-cache/`` — writable by all agents in
+    # the team (inside add_dirs) and shared so that downloads aren't
+    # repeated per-worktree.  The env vars are injected via
+    # Claude Code's ``settings.env`` so they apply to every bash command.
+    cache_root = team_dir(hc_home, team) / ".pkg-cache"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    settings_env = build_cache_env(str(cache_root))
 
     return Telephone(
         preamble=preamble,
@@ -642,6 +651,7 @@ def _create_telephone(
         sandbox_enabled=True,
         mcp_servers=mcp_servers,
         allowed_domains=allowed_domains,
+        settings_env=settings_env,
     )
 
 

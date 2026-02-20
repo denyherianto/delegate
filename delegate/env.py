@@ -130,11 +130,13 @@ class _Component:
         rel_path: str,       # "." for root, "frontend" for subdir
         setup_snippet: str,  # bash lines to install deps (self-contained)
         test_cmd: str,       # bash command to run tests
+        install_src: str = "",  # Python: pip install target (e.g. '".[dev]"')
     ):
         self.name = name
         self.rel_path = rel_path
         self.setup_snippet = setup_snippet
         self.test_cmd = test_cmd
+        self.install_src = install_src
 
     @property
     def is_root(self) -> bool:
@@ -286,19 +288,53 @@ def _detect_at(directory: Path, rel_path: str = ".") -> _Component | None:
             rel_path=rel_path,
             setup_snippet=snippet,
             test_cmd=f'(cd {dir_expr} && python -m pytest tests/ -x -q)' if not is_root else 'python -m pytest tests/ -x -q',
+            install_src=install_src,
         )
 
     # ── Node ──
     if _has_file(directory, "package.json"):
         install_cmd = _node_install_cmd(directory)
+        # Pick the best available premerge check: test > build > nothing.
+        # A build check catches syntax/type/import errors even without tests.
         test_script = _package_json_has_script(directory, "test")
-        test_cmd = f'(cd {dir_expr} && npm test)' if not is_root else "npm test"
+        build_script = _package_json_has_script(directory, "build")
+        if test_script:
+            test_cmd = f'(cd {dir_expr} && npm test)' if not is_root else "npm test"
+        elif build_script:
+            test_cmd = f'(cd {dir_expr} && npm run build)' if not is_root else "npm run build"
+        else:
+            test_cmd = ""
+
+        # Determine the system cache flag for offline fallback
+        if _has_file(directory, "pnpm-lock.yaml"):
+            cache_flag = ""  # pnpm store is separate; no simple --cache flag
+            offline_cmd = "pnpm install --frozen-lockfile --offline --silent 2>/dev/null"
+        elif _has_file(directory, "yarn.lock"):
+            cache_flag = ""
+            offline_cmd = "yarn install --frozen-lockfile --offline --silent 2>/dev/null"
+        else:
+            # npm supports --cache
+            cache_flag = ""
+            offline_cmd = 'npm ci --prefer-offline --silent 2>/dev/null'
 
         if is_root:
             snippet = (
+                'MAIN_REPO="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)/.." && pwd)"\n'
                 'cd "$WORKTREE_ROOT"\n'
                 'if [ ! -d node_modules ]; then\n'
-                f'  {install_cmd}\n'
+                '  _nm_installed=0\n'
+                '  # Strategy 1: copy node_modules from main repo (no network)\n'
+                '  if [ -d "$MAIN_REPO/node_modules" ]; then\n'
+                '    _cp_tree "$MAIN_REPO/node_modules" node_modules && _nm_installed=1\n'
+                '  fi\n'
+                '  # Strategy 2: install from system cache (no network)\n'
+                '  if [ "$_nm_installed" -eq 0 ]; then\n'
+                f'    {offline_cmd} && _nm_installed=1 || true\n'
+                '  fi\n'
+                '  # Strategy 3: full install (needs network)\n'
+                '  if [ "$_nm_installed" -eq 0 ]; then\n'
+                f'    {install_cmd} 2>/dev/null || true\n'
+                '  fi\n'
                 'fi\n'
                 '\n'
                 'export PATH="$WORKTREE_ROOT/node_modules/.bin:$PATH"'
@@ -306,13 +342,20 @@ def _detect_at(directory: Path, rel_path: str = ".") -> _Component | None:
         else:
             snippet = (
                 f'# {rel_path}/ deps (node)\n'
+                f'MAIN_REPO="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)/.." && pwd)"\n'
                 f'if [ ! -d "$WORKTREE_ROOT/{rel_path}/node_modules" ]; then\n'
-                f'  (cd {dir_expr} && {install_cmd})\n'
+                f'  _nm_installed=0\n'
+                f'  if [ -d "$MAIN_REPO/{rel_path}/node_modules" ]; then\n'
+                f'    _cp_tree "$MAIN_REPO/{rel_path}/node_modules" "$WORKTREE_ROOT/{rel_path}/node_modules" && _nm_installed=1\n'
+                f'  fi\n'
+                f'  if [ "$_nm_installed" -eq 0 ]; then\n'
+                f'    (cd {dir_expr} && {offline_cmd}) && _nm_installed=1 || true\n'
+                f'  fi\n'
+                f'  if [ "$_nm_installed" -eq 0 ]; then\n'
+                f'    (cd {dir_expr} && {install_cmd}) 2>/dev/null || true\n'
+                f'  fi\n'
                 f'fi'
             )
-
-        if not test_script:
-            test_cmd = ""  # no test script → skip in premerge
 
         return _Component(
             name="node",
@@ -323,10 +366,22 @@ def _detect_at(directory: Path, rel_path: str = ".") -> _Component | None:
 
     # ── Rust ──
     if _has_file(directory, "Cargo.toml"):
+        # Pre-seed CARGO_HOME from the system cache if the team cache is empty.
+        # CARGO_HOME is redirected to the team .pkg-cache/ by settings.env —
+        # we just need to populate it on first use.
+        cache_seed = (
+            '# Pre-seed Cargo cache from system cache (read-only, no network)\n'
+            '_SYS_CARGO="${HOME}/.cargo"\n'
+            'if [ -d "$_SYS_CARGO/registry" ] && [ -n "$CARGO_HOME" ] && [ ! -d "$CARGO_HOME/registry" ]; then\n'
+            '  mkdir -p "$CARGO_HOME"\n'
+            '  _cp_tree "$_SYS_CARGO/registry" "$CARGO_HOME/registry" 2>/dev/null || true\n'
+            '  _cp_tree "$_SYS_CARGO/git" "$CARGO_HOME/git" 2>/dev/null || true\n'
+            'fi'
+        )
         if is_root:
-            snippet = 'cd "$WORKTREE_ROOT"\ncargo build --quiet'
+            snippet = f'{cache_seed}\ncd "$WORKTREE_ROOT"\ncargo build --quiet'
         else:
-            snippet = f'# {rel_path}/ deps (rust)\n(cd {dir_expr} && cargo build --quiet)'
+            snippet = f'# {rel_path}/ deps (rust)\n{cache_seed}\n(cd {dir_expr} && cargo build --quiet)'
         return _Component(
             name="rust",
             rel_path=rel_path,
@@ -336,10 +391,20 @@ def _detect_at(directory: Path, rel_path: str = ".") -> _Component | None:
 
     # ── Go ──
     if _has_file(directory, "go.mod"):
+        # Pre-seed GOMODCACHE from the system module cache if the team cache
+        # is empty.  GOMODCACHE is redirected by settings.env.
+        cache_seed = (
+            '# Pre-seed Go module cache from system cache (read-only, no network)\n'
+            '_SYS_GOMOD="${HOME}/go/pkg/mod"\n'
+            'if [ -d "$_SYS_GOMOD" ] && [ -n "$GOMODCACHE" ] && [ ! -d "$GOMODCACHE/cache" ]; then\n'
+            '  mkdir -p "$GOMODCACHE"\n'
+            '  _cp_tree "$_SYS_GOMOD/." "$GOMODCACHE/" 2>/dev/null || true\n'
+            'fi'
+        )
         if is_root:
-            snippet = 'cd "$WORKTREE_ROOT"\ngo mod tidy'
+            snippet = f'{cache_seed}\ncd "$WORKTREE_ROOT"\ngo mod tidy'
         else:
-            snippet = f'# {rel_path}/ deps (go)\n(cd {dir_expr} && go mod tidy)'
+            snippet = f'# {rel_path}/ deps (go)\n{cache_seed}\n(cd {dir_expr} && go mod tidy)'
         return _Component(
             name="go",
             rel_path=rel_path,
@@ -352,16 +417,28 @@ def _detect_at(directory: Path, rel_path: str = ".") -> _Component | None:
         if is_root:
             snippet = (
                 'export BUNDLE_PATH="$WORKTREE_ROOT/vendor/bundle"\n'
+                'MAIN_REPO="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)/.." && pwd)"\n'
                 'cd "$WORKTREE_ROOT"\n'
                 'if [ ! -d vendor/bundle ]; then\n'
-                '  bundle install --path vendor/bundle --quiet\n'
+                '  # Strategy 1: copy from main repo (no network)\n'
+                '  if [ -d "$MAIN_REPO/vendor/bundle" ]; then\n'
+                '    _cp_tree "$MAIN_REPO/vendor/bundle" vendor/bundle\n'
+                '  else\n'
+                '    # Strategy 2: install (needs network)\n'
+                '    bundle install --path vendor/bundle --quiet 2>/dev/null || true\n'
+                '  fi\n'
                 'fi'
             )
         else:
             snippet = (
                 f'# {rel_path}/ deps (ruby)\n'
-                f'if [ ! -d {dir_expr}/vendor/bundle ]; then\n'
-                f'  (cd {dir_expr} && BUNDLE_PATH=vendor/bundle bundle install --quiet)\n'
+                f'MAIN_REPO="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)/.." && pwd)"\n'
+                f'if [ ! -d "$WORKTREE_ROOT/{rel_path}/vendor/bundle" ]; then\n'
+                f'  if [ -d "$MAIN_REPO/{rel_path}/vendor/bundle" ]; then\n'
+                f'    _cp_tree "$MAIN_REPO/{rel_path}/vendor/bundle" "$WORKTREE_ROOT/{rel_path}/vendor/bundle"\n'
+                f'  else\n'
+                f'    (cd {dir_expr} && BUNDLE_PATH=vendor/bundle bundle install --quiet) 2>/dev/null || true\n'
+                f'  fi\n'
                 f'fi'
             )
         return _Component(
@@ -592,6 +669,13 @@ set -e
 # Created by delegate. Edit as needed.
 """
 
+# Bash helper injected into generated scripts that need to copy
+# directories.  Tries APFS clone (macOS) or reflink (Linux btrfs/XFS)
+# first — both are instant and copy-on-write.  Falls back to regular cp.
+_CP_TREE_FN = """\
+_cp_tree() { cp -Rc "$@" 2>/dev/null || cp -r --reflink=auto "$@" 2>/dev/null || cp -r "$@"; }
+"""
+
 
 def _has_root_python(components: list[_Component]) -> bool:
     return any(c.is_root and c.is_python for c in components)
@@ -630,7 +714,7 @@ def _generate_nix_setup(components: list[_Component], nix_file: str) -> str:
 
     install_chain = " && ".join(root_cmds) if root_cmds else "true"
 
-    lines = [_HEADER.rstrip(), ""]
+    lines = [_HEADER.rstrip(), _CP_TREE_FN.rstrip(), ""]
     lines.append('WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"')
     lines.append('GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)"')
     lines.append('REPO_ROOT="$(cd "$GIT_COMMON/.." && pwd)"')
@@ -655,20 +739,21 @@ def _generate_nix_setup(components: list[_Component], nix_file: str) -> str:
 def _generate_python_root_setup(components: list[_Component], root_python: _Component) -> str:
     """Generate setup.sh with Python venv at root + other components appended.
 
-    Produces a 3-tier install strategy:
-      1. Try ``uv pip install`` (fast, if available)
-      2. Fall back to ``pip install`` (always available)
-      3. If both fail (no network) — copy site-packages from the main repo's
-         venv.  Worktrees always have a git common dir pointing to the original
-         repo, so we can reliably locate its ``.venv``.
-    """
-    # Indent the root Python snippet inside the `if` block
-    indented = "\n".join(
-        f"  {line}" if line.strip() else line
-        for line in root_python.setup_snippet.splitlines()
-    )
+    Produces a 3-tier install strategy optimised for sandboxed agents
+    (network is usually blocked by the Claude Code proxy):
 
-    lines = [_HEADER.rstrip(), ""]
+      1. **Copy site-packages** from the main repo's venv (instant, no
+         network, always available inside a git-worktree).
+      2. **Install from system cache** — run ``uv pip install --offline``
+         or ``pip install --no-index`` against the user's system-level
+         cache (``~/.cache/uv``, ``~/.cache/pip``).  No network needed.
+      3. **Full install** via ``uv pip install`` / ``pip install`` with
+         network (CI, first checkout, cold machine).
+
+    Worktrees always have a git common dir pointing to the original
+    repo, so we can reliably locate its ``.venv``.
+    """
+    lines = [_HEADER.rstrip(), _CP_TREE_FN.rstrip(), ""]
     lines.append('WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"')
     lines.append('VENV_DIR="$WORKTREE_ROOT/.venv"')
     lines.append('MAIN_VENV="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)/.." && pwd)/.venv"')
@@ -679,21 +764,78 @@ def _generate_python_root_setup(components: list[_Component], root_python: _Comp
     lines.append("")
     lines.append('if ! "$VENV_DIR/bin/python" -c "import pytest" 2>/dev/null; then')
     lines.append("  rm -rf \"$VENV_DIR\"")
-    lines.append(indented)
+    lines.append('  cd "$WORKTREE_ROOT"')
+    lines.append('  python3 -m venv "$VENV_DIR"')
+    lines.append('  _installed=0')
     lines.append("")
-    lines.append("  # Network unavailable — copy site-packages from the main repo venv")
+    lines.append("  # ── Strategy 1: copy site-packages from the main repo venv (no network) ──")
     lines.append('  if [ "$_installed" -eq 0 ] && [ -d "$MAIN_VENV" ]; then')
-    lines.append('    echo "Network install failed — copying site-packages from $MAIN_VENV" >&2')
     lines.append('    MAIN_SITE="$(ls -d "$MAIN_VENV"/lib/python*/site-packages 2>/dev/null | head -1)"')
     lines.append('    WORKTREE_SITE="$(ls -d "$VENV_DIR"/lib/python*/site-packages 2>/dev/null | head -1)"')
     lines.append('    if [ -n "$MAIN_SITE" ] && [ -d "$MAIN_SITE" ]; then')
-    lines.append('      cp -r "$MAIN_SITE/." "$WORKTREE_SITE/"')
-    lines.append('      chmod -R u+w "$VENV_DIR"')
+    lines.append('      _cp_tree "$MAIN_SITE/." "$WORKTREE_SITE/"')
+    lines.append("      _installed=1")
     lines.append("    fi")
+    lines.append("  fi")
+    lines.append("")
+    # Build strategy 2 (system cache, offline) and strategy 3 (network)
+    # commands based on the Python variant.
+    if root_python.name == "python-uv-lock":
+        # uv sync reads from uv.lock — --offline uses cached wheels only
+        # Extract the sync flags from the original snippet (e.g. "--group dev")
+        sync_line = [l.strip() for l in root_python.setup_snippet.splitlines()
+                     if l.strip().startswith("uv sync")]
+        sync_cmd = sync_line[0] if sync_line else "uv sync --quiet"
+        s2_lines = [
+            f'    {sync_cmd.replace("--quiet", "--offline --quiet")} 2>/dev/null && _installed=1 || true',
+        ]
+        s3_lines = [
+            f'    {sync_cmd} 2>/dev/null && _installed=1 || true',
+        ]
+    elif root_python.name == "python-poetry":
+        s2_lines = [
+            '    export POETRY_VIRTUALENVS_IN_PROJECT=true',
+            '    poetry install --no-interaction --quiet 2>/dev/null && _installed=1 || true',
+        ]
+        s3_lines = [
+            '    export POETRY_VIRTUALENVS_IN_PROJECT=true',
+            '    poetry install --no-interaction --quiet 2>/dev/null && _installed=1 || true',
+        ]
+    else:
+        # Generic python — uv pip install / pip install
+        install_src = root_python.install_src or '"."'
+        s2_lines = [
+            '    _SYS_UV_CACHE="${HOME}/.cache/uv"',
+            '    _SYS_PIP_CACHE="${HOME}/.cache/pip"',
+            '    if command -v uv >/dev/null 2>&1 && [ -d "$_SYS_UV_CACHE" ]; then',
+            f'      uv pip install --python "$VENV_DIR/bin/python" {install_src} --cache-dir "$_SYS_UV_CACHE" --offline --quiet 2>/dev/null && _installed=1 || true',
+            '    fi',
+            '    if [ "$_installed" -eq 0 ] && [ -d "$_SYS_PIP_CACHE" ]; then',
+            f'      "$VENV_DIR/bin/pip" install {install_src} --cache-dir "$_SYS_PIP_CACHE" --no-index --quiet 2>/dev/null && _installed=1 || true',
+            '    fi',
+        ]
+        s3_lines = [
+            '    if command -v uv >/dev/null 2>&1; then',
+            f'      uv pip install --python "$VENV_DIR/bin/python" {install_src} --quiet 2>/dev/null && _installed=1 || true',
+            '    fi',
+            '    if [ "$_installed" -eq 0 ]; then',
+            f'      "$VENV_DIR/bin/pip" install {install_src} --quiet 2>/dev/null && _installed=1 || true',
+            '    fi',
+        ]
+
+    lines.append("  # ── Strategy 2: install from system cache (no network) ──")
+    lines.append('  if [ "$_installed" -eq 0 ]; then')
+    lines.extend(s2_lines)
+    lines.append("  fi")
+    lines.append("")
+    lines.append("  # ── Strategy 3: full install (needs network — CI, first checkout) ──")
+    lines.append('  if [ "$_installed" -eq 0 ]; then')
+    lines.extend(s3_lines)
     lines.append("  fi")
     lines.append("fi")
     lines.append("")
     lines.append('source "$VENV_DIR/bin/activate"')
+    lines.append('export PYTHONPATH="$WORKTREE_ROOT${PYTHONPATH:+:$PYTHONPATH}"')
 
     # Other components (subdirs or root non-Python — unlikely but possible)
     others = [c for c in components if c is not root_python]
@@ -723,7 +865,7 @@ def _generate_generic_setup(components: list[_Component]) -> str:
     else:
         guard = '[[ -n "$_DELEGATE_SETUP_DONE" ]] && return 0 2>/dev/null || true'
 
-    lines = [_HEADER.rstrip(), ""]
+    lines = [_HEADER.rstrip(), _CP_TREE_FN.rstrip(), ""]
     lines.append('WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"')
     lines.append("")
     lines.append("# Re-entrance guard")

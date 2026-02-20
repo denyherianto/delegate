@@ -961,17 +961,16 @@ def network() -> None:
 @click.pass_context
 def network_show(ctx: click.Context) -> None:
     """Show the current network allowlist."""
-    from delegate.network import get_allowed_domains, is_unrestricted
+    from delegate.network import get_allowed_domains, DEFAULT_DOMAINS
 
     hc_home = _get_home(ctx)
     domains = get_allowed_domains(hc_home)
 
-    if is_unrestricted(domains):
-        click.echo("Network allowlist: * (unrestricted)")
-    else:
-        click.echo("Network allowlist:")
-        for d in sorted(domains):
-            click.echo(f"  - {d}")
+    is_default = set(domains) == set(DEFAULT_DOMAINS)
+    header = "Network allowlist (default):" if is_default else "Network allowlist:"
+    click.echo(header)
+    for d in sorted(domains):
+        click.echo(f"  - {d}")
 
 
 @network.command("allow")

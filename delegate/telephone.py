@@ -60,6 +60,7 @@ Usage::
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -330,6 +331,7 @@ class Telephone:
         sandbox_enabled: bool = False,
         mcp_servers: dict[str, Any] | None = None,
         allowed_domains: list[str] | None = None,
+        settings_env: dict[str, str] | None = None,
     ):
         # Stable identity
         self.id: str = uuid.uuid4().hex
@@ -347,6 +349,7 @@ class Telephone:
         self.sandbox_enabled = sandbox_enabled
         self.mcp_servers: dict[str, Any] = dict(mcp_servers or {})
         self.allowed_domains: list[str] = list(allowed_domains or ["*"])
+        self.settings_env: dict[str, str] = dict(settings_env or {})
 
         # Permission configuration
         self._allowed_write_paths: list[Path] | None = (
@@ -675,16 +678,31 @@ class Telephone:
                 "autoAllowBashIfSandboxed": True,
                 "allowUnsandboxedCommands": False,
             }
-            # Network restriction: when the allowlist is not wildcard ("*"),
-            # we set network config to restrict network access.  The SDK's
-            # SandboxNetworkConfig uses proxy-based filtering; full domain
-            # filtering requires a proxy.  For now, we disable general
-            # network binding when specific domains are configured.
-            if self.allowed_domains and "*" not in self.allowed_domains:
+            # Network domain allowlist for the sandbox proxy.
+            #
+            # Claude Code routes ALL outbound network from sandboxed bash
+            # commands through a local HTTP proxy.  The proxy checks each
+            # connection against ``sandbox.network.allowedDomains`` and
+            # returns 403 for anything not listed.
+            #
+            # Without this key the proxy blocks *everything* — including
+            # pip, npm, curl, etc.  We always pass the domain list so
+            # that agents can reach package registries, git forges, etc.
+            #
+            # The list comes from ``delegate network allow/disallow``
+            # and defaults to common package-manager & git-forge domains.
+            if self.allowed_domains:
                 sandbox_config["network"] = {
-                    "allowLocalBinding": False,
+                    "allowedDomains": list(self.allowed_domains),
                 }
             kw["sandbox"] = sandbox_config
+
+        # Environment variables for every bash command.
+        # Passed via Claude Code's ``settings.env`` — applies automatically
+        # to every bash invocation (no ``source`` needed).  Used to redirect
+        # package-manager caches to a writable, team-shared directory.
+        if self.settings_env:
+            kw["settings"] = json.dumps({"env": self.settings_env})
 
         # In-process MCP servers (run in daemon process, outside sandbox)
         if self.mcp_servers:

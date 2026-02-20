@@ -88,7 +88,7 @@ Meanwhile, you can send more tasks — Delegate will prioritize, assign, and mul
 
 **Real git, real branches.** Each agent works in isolated [git worktrees](https://git-scm.com/docs/git-worktree). Branches are named `delegate/<team>/T0001`. No magic file systems — you can `git log` any branch anytime.
 
-**Isolated environments per task.** Every worktree gets its own environment — Python venvs, Node modules, Rust targets — so agents never step on each other. Delegate auto-detects your project's tooling (pyproject.toml, package.json, Cargo.toml, shell.nix, etc.) and generates `.delegate/setup.sh` and `.delegate/premerge.sh` scripts that reproduce the environment and run tests before merge. These are committed to the repo — edit them if the defaults don't fit.
+**Isolated environments per task.** Every worktree gets its own environment — Python venvs, Node modules, Rust targets — so agents never step on each other. Delegate auto-detects your project's tooling (pyproject.toml, package.json, Cargo.toml, shell.nix, etc.) and generates `.delegate/setup.sh` and `.delegate/premerge.sh` scripts that reproduce the environment and run tests before merge. Generated scripts use a 3-tier install strategy — copy from the main repo, install from system cache, then fall back to network — so setup is fast even when network access is restricted. These are committed to the repo — edit them if the defaults don't fit.
 
 **Customizable workflows.** Define your own task lifecycle in Python:
 
@@ -182,13 +182,13 @@ Even if the model crafts a bash command that bypasses the tool-level guards, the
 
 **4. Network domain allowlist**
 
-Agents' network access is controlled via a domain allowlist stored in `protected/network.yaml` (outside the sandbox, so agents can't tamper with it). By default, all domains are allowed (`*`). When restricted to specific domains, the sandbox blocks outbound connections to anything not on the list.
+Agents' network access is controlled via a domain allowlist stored in `protected/network.yaml` (outside the sandbox, so agents can't tamper with it). By default, common package-manager registries and git forges are allowed (PyPI, npm, crates.io, Go proxy, RubyGems, GitHub, GitLab, Bitbucket). The sandbox proxy blocks outbound connections to anything not on the list.
 
 ```bash
 delegate network show                    # View current allowlist
-delegate network allow api.github.com    # Add a domain
+delegate network allow api.example.com   # Add a domain
 delegate network disallow example.com    # Remove a domain
-delegate network reset                   # Reset to wildcard (allow all)
+delegate network reset                   # Restore curated defaults
 ```
 
 **5. In-process MCP tools (protected data access)**
@@ -231,7 +231,7 @@ delegate workflow add myteam ./my-workflow.py     # Register custom workflow
 delegate network show                             # View network allowlist
 delegate network allow api.github.com             # Allow a domain
 delegate network disallow example.com             # Remove a domain
-delegate network reset                            # Reset to allow all
+delegate network reset                            # Restore curated defaults
 ```
 
 ### Set Auto Approval
