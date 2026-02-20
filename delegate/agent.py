@@ -593,10 +593,13 @@ def build_user_message(
                 "\n- Your branch is local-only and will be merged by the merge worker when approved."
             )
             parts.append(
-                "\n## Environment reminder\n"
-                "At the start of this task: check for `.delegate/setup.sh` in your worktree root. "
-                "If present, source it (`. .delegate/setup.sh`) before running any commands. "
-                "If absent, create it following the Environment Setup charter section."
+                "\n## Environment setup — MANDATORY FIRST STEP\n"
+                "Before writing ANY code or running ANY command, you MUST:\n"
+                "1. Run: `ls .delegate/setup.sh 2>/dev/null && echo EXISTS || echo MISSING`\n"
+                "2. If EXISTS: source it — `. .delegate/setup.sh`\n"
+                "3. If MISSING: create `.delegate/setup.sh` and `.delegate/premerge.sh` "
+                "following the Environment Setup charter section, commit them, THEN source setup.sh.\n"
+                "Do NOT skip this step. Do NOT proceed to any coding work until the environment is active."
             )
 
         # Task activity — status/assignee transitions, comments, events

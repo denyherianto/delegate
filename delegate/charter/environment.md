@@ -2,16 +2,18 @@
 
 Every repo worktree may need an environment activated before you can run code or tests. Your job is to detect, create, and use the right setup for each repo.
 
-## Step 1: Check for .delegate/setup.sh
+## Step 1: Check for .delegate/setup.sh — MANDATORY
 
-At the start of every task, check whether `.delegate/setup.sh` exists in the worktree root:
+This is your FIRST action on every task, before writing any code or running any command. No exceptions.
 
 ```
-ls .delegate/setup.sh 2>/dev/null && echo exists || echo missing
+ls .delegate/setup.sh 2>/dev/null && echo EXISTS || echo MISSING
 ```
 
-- **If it exists**: source it before doing anything else: `. .delegate/setup.sh`
-- **If it does not exist**: create it (see below), commit it, then source it
+- **If EXISTS**: source it before doing anything else: `. .delegate/setup.sh`
+- **If MISSING**: you MUST create both `.delegate/setup.sh` AND `.delegate/premerge.sh` (see templates below), commit them (`git add .delegate/ && git commit -m "chore: add delegate env scripts"`), then source setup.sh.
+
+Do NOT skip this step. Do NOT start coding without an active environment. If you find yourself writing application code before running this check, stop and do it first.
 
 ## Step 2: Creating .delegate/setup.sh (if missing)
 
