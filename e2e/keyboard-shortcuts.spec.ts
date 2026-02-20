@@ -12,7 +12,6 @@ import { test, expect } from "@playwright/test";
  *   - r : Focus chat input
  *   - / : Search messages
  *   - ? : Toggle help overlay
- *   - Shift+M : Toggle Mission Control
  *   - Esc : Close panels / blur input
  *
  * Also verifies:

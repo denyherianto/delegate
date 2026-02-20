@@ -12,7 +12,6 @@ export function HelpOverlay() {
     { key: "a", description: "Go to Agents" },
     { key: "s", description: "Toggle sidebar" },
     { key: "n", description: "Toggle notifications" },
-    { key: "Shift+M", description: "Toggle Mission Control" },
     { key: isMac ? "Cmd+K" : "Ctrl+K", description: "Switch project" },
     { key: isMac ? "Cmd+1-9" : "Ctrl+1-9", description: "Switch to project 1-9 chat" },
   ];

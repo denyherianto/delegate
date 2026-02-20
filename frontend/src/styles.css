@@ -920,7 +920,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--text-normal, var(--text-primary));
+  color: var(--text-secondary);
 }
 .mc-task-row-line2 {
   display: flex;
@@ -3547,24 +3547,24 @@ select option:hover {
 }
 
 .help-overlay-column {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 16px;
+  align-items: center;
 }
 
 .help-column-title {
+  grid-column: 1 / -1;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin: 0 0 4px 0;
+  margin: 0 0 2px 0;
 }
 
 .help-shortcut-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+  display: contents;
 }
 
 .help-shortcut-key {
@@ -3578,13 +3578,15 @@ select option:hover {
   font-size: 13px;
   color: var(--text-heading);
   text-align: center;
-  flex-shrink: 0;
+  justify-self: start;
   box-shadow: 0 1px 2px rgba(0,0,0,0.2);
 }
 
 .help-shortcut-desc {
   font-size: 14px;
   color: var(--text-primary);
+  justify-self: start;
+  text-align: left;
 }
 
 /* ================================================================
