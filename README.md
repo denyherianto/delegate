@@ -36,11 +36,12 @@ and opens the console in your browser. Tell Delegate what to build — it plans 
 
 > **Note:** Delegate currently works with **local git repositories** — agents commit directly to branches on your machine. Support for remote repositories (GitHub, GitLab), external tools (Slack, Linear), and CI/CD integrations is coming soon.
 
-<!-- TODO: Replace with an actual screenshot or demo GIF
+<!-- To update: drag the mp4 into a GitHub issue comment, copy the URL, paste below -->
 <p align="center">
-  <img src="docs/screenshot.png" alt="Delegate UI" width="800">
+  <video src="https://github.com/user-attachments/assets/5d2f5a8f-8bae-45b7-85c9-53ccb1a47fa3" width="800" autoplay loop muted playsinline>
+    Your browser does not support the video tag.
+  </video>
 </p>
--->
 
 ### How is this different from other AI coding tools?
 

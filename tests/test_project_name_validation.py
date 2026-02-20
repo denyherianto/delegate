@@ -160,6 +160,7 @@ class TestAPIProjectNameValidation:
         """POST /projects with a valid slug passes name validation."""
         repo_dir = tmp_path / "repo"
         repo_dir.mkdir()
+        (repo_dir / ".git").mkdir()  # Must look like a git repo
 
         with patch("delegate.repo.register_repo"), \
              patch("delegate.activity.broadcast_teams_refresh"):
@@ -176,6 +177,7 @@ class TestAPIProjectNameValidation:
         """POST /projects with underscore name passes name validation."""
         repo_dir = tmp_path / "repo2"
         repo_dir.mkdir()
+        (repo_dir / ".git").mkdir()  # Must look like a git repo
 
         with patch("delegate.repo.register_repo"), \
              patch("delegate.activity.broadcast_teams_refresh"):

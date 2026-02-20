@@ -1644,6 +1644,71 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
     # --- Project (team) creation from UI ---
 
+    def _rollback_project(home: Path, team_name: str) -> None:
+        """Best-effort cleanup of a partially created project.
+
+        Removes the team directory, DB rows, project_map entry, and
+        protected metadata that ``bootstrap()`` may have created.
+        Called when project creation fails after bootstrap to avoid
+        leaving orphaned state.
+        """
+        import shutil
+        from delegate.db import get_connection as _gc
+        from delegate.paths import (
+            team_dir as _td,
+            protected_team_dir as _ptd,
+            unregister_team_path,
+        )
+
+        # Remove team working directory
+        td = _td(home, team_name)
+        if td.is_dir():
+            shutil.rmtree(td, ignore_errors=True)
+
+        # Remove protected metadata
+        try:
+            ptd = _ptd(home, team_name)
+            if ptd.is_dir():
+                shutil.rmtree(ptd, ignore_errors=True)
+        except Exception:
+            pass
+
+        # Remove from project_map.json
+        try:
+            unregister_team_path(home, team_name)
+        except Exception:
+            pass
+
+        # Remove DB rows (look up UUID before deleting the row)
+        try:
+            conn = _gc(home)
+            try:
+                row = conn.execute(
+                    "SELECT project_id FROM projects WHERE name = ?", (team_name,)
+                ).fetchone()
+                team_uuid = row["project_id"] if row else None
+                conn.execute("DELETE FROM projects WHERE name = ?", (team_name,))
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            team_uuid = None
+
+        # Soft-delete db_ids entries
+        if team_uuid:
+            try:
+                from delegate.db_ids import soft_delete_team
+                conn = _gc(home)
+                try:
+                    soft_delete_team(conn, team_uuid)
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception:
+                pass
+
+        logger.info("Rolled back partially created project '%s'", team_name)
+
     class CreateProjectRequest(BaseModel):
         name: str
         repo_path: str
@@ -1657,6 +1722,9 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         Bootstraps the team, registers the repo, and installs the default
         workflow.  Broadcasts a ``teams_refresh`` SSE event so all open
         tabs update their sidebar immediately.
+
+        All validation is performed upfront before any side effects.  If
+        a later step fails, partial state is rolled back (best-effort).
         """
         from delegate.bootstrap import bootstrap, validate_project_name
         from delegate.repo import register_repo
@@ -1664,21 +1732,35 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
         name = req.name.strip()
         repo_path = str(Path(req.repo_path).expanduser())
+        resolved_repo = Path(repo_path).resolve()
 
-        # Validate name
+        # ── Phase 1: Validate everything BEFORE creating anything ──
+
+        # 1a. Name format
         try:
             validate_project_name(name)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        if not Path(repo_path).is_dir():
+
+        # 1b. Repo path exists
+        if not resolved_repo.is_dir():
             raise HTTPException(status_code=400, detail=f"Repository path does not exist: {req.repo_path}")
 
-        # Check for duplicate
+        # 1c. Repo is a git repository
+        if not (resolved_repo / ".git").exists():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Not a git repository (no .git directory): {req.repo_path}",
+            )
+
+        # 1d. No duplicate project name
         from delegate.db import get_connection
         conn = get_connection(hc_home)
         existing = conn.execute("SELECT 1 FROM projects WHERE name = ?", (name,)).fetchone()
         if existing:
             raise HTTPException(status_code=409, detail=f"Project '{name}' already exists")
+
+        # ── Phase 2: Create (with rollback on failure) ──
 
         # Generate agent names using friendly name pool
         exclude = {"delegate"}
@@ -1686,7 +1768,7 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         if human:
             exclude.add(human)
         generated = pick_names(req.agent_count, exclude=exclude)
-        agent_list = [(name, "engineer") for name in generated]
+        agent_list = [(n, "engineer") for n in generated]
 
         # Bootstrap
         models_dict = {"*": req.model} if req.model in ("opus", "sonnet") else None
@@ -1695,52 +1777,58 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
         except (ValueError, FileExistsError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
-        # Register repo
+        # From here on, if anything fails we must clean up the bootstrapped team.
         try:
+            # Register repo
             register_repo(hc_home, name, repo_path)
-        except (FileNotFoundError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=f"Failed to register repo: {exc}")
 
-        # Register default workflow
-        try:
-            from delegate.workflow import register_workflow, get_latest_version
-            builtin = Path(__file__).parent / "workflows" / "default.py"
-            if builtin.is_file() and get_latest_version(hc_home, name, "default") is None:
-                register_workflow(hc_home, name, builtin)
-        except Exception:
-            logger.warning("Could not register default workflow for project '%s'", name, exc_info=True)
+            # Register default workflow (non-critical)
+            try:
+                from delegate.workflow import register_workflow, get_latest_version
+                builtin = Path(__file__).parent / "workflows" / "default.py"
+                if builtin.is_file() and get_latest_version(hc_home, name, "default") is None:
+                    register_workflow(hc_home, name, builtin)
+            except Exception:
+                logger.warning("Could not register default workflow for project '%s'", name, exc_info=True)
 
-        # ── Send first-run welcome greeting ──
-        # Must happen before broadcast_teams_refresh / return so the welcome
-        # is the very first message in the DB.  This prevents the race where
-        # a fast-typing user sends a task before the frontend's async
-        # greetTeam() call fires.
-        try:
-            from delegate.bootstrap import get_member_by_role
-            from delegate.repo import list_repos as _list_repos_fn
+            # Send first-run welcome greeting (non-critical)
+            try:
+                from delegate.bootstrap import get_member_by_role
+                from delegate.repo import list_repos as _list_repos_fn
 
-            manager_name = get_member_by_role(hc_home, name, "manager")
-            human_name = get_default_human(hc_home)
-            if manager_name and human_name:
-                ai_agents = [
-                    a for a in _list_team_agents(hc_home, name)
-                    if a.get("role") != "manager"
-                ]
-                greeting = _build_first_run_greeting(
-                    hc_home, name, manager_name, human_name,
-                    agent_count=len(ai_agents),
-                    has_repos=bool(_list_repos_fn(hc_home, name)),
+                manager_name = get_member_by_role(hc_home, name, "manager")
+                human_name = get_default_human(hc_home)
+                if manager_name and human_name:
+                    ai_agents = [
+                        a for a in _list_team_agents(hc_home, name)
+                        if a.get("role") != "manager"
+                    ]
+                    greeting = _build_first_run_greeting(
+                        hc_home, name, manager_name, human_name,
+                        agent_count=len(ai_agents),
+                        has_repos=bool(_list_repos_fn(hc_home, name)),
+                    )
+                    _send(hc_home, name, manager_name, human_name, greeting)
+                    logger.info(
+                        "First-run welcome sent during project creation | team=%s",
+                        name,
+                    )
+            except Exception:
+                logger.warning(
+                    "Could not send first-run greeting for project '%s'",
+                    name, exc_info=True,
                 )
-                _send(hc_home, name, manager_name, human_name, greeting)
-                logger.info(
-                    "First-run welcome sent during project creation | team=%s",
-                    name,
-                )
-        except Exception:
+        except Exception as exc:
+            # Rollback: remove the partially created project
             logger.warning(
-                "Could not send first-run greeting for project '%s'",
-                name, exc_info=True,
+                "Project creation failed after bootstrap — rolling back '%s': %s",
+                name, exc,
             )
+            _rollback_project(hc_home, name)
+            detail = str(exc)
+            if isinstance(exc, (FileNotFoundError, ValueError)):
+                raise HTTPException(status_code=400, detail=f"Failed to register repo: {detail}")
+            raise HTTPException(status_code=500, detail=f"Project creation failed: {detail}")
 
         # Notify all SSE clients to refresh their team list
         broadcast_teams_refresh()
