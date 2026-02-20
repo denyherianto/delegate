@@ -257,8 +257,10 @@ function TaskRow({ task, active }) {
       </div>
       <div class="mc-task-row-line2">
         <span class="mc-task-assignee">{task.assignee ? cap(task.assignee) : "—"}</span>
-        <span class={"badge badge-" + task.status}>{fmtStatus(task.status)}</span>
-        {age && <span class="live-timer mc-timer">{age}</span>}
+        <span class="mc-task-meta-right">
+          <span class={"badge badge-" + task.status}>{fmtStatus(task.status)}</span>
+          {age && <span class="live-timer mc-timer">{age}</span>}
+        </span>
       </div>
     </div>
   );

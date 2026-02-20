@@ -184,6 +184,37 @@ def broadcast_rate_limit(agent: str, team: str) -> None:
     _push_to_subscribers(payload)
 
 
+def broadcast_msg_status(
+    team: str,
+    msg_ids: list[int],
+    field: str,
+    timestamp: str,
+) -> None:
+    """Broadcast message status changes to SSE clients.
+
+    Called from ``runtime.py`` after ``mark_seen_batch`` or
+    ``mark_processed_batch``.  The payload carries just the message IDs
+    and the updated field so the frontend can patch in-place without
+    re-fetching.
+
+    Args:
+        team: Team the messages belong to.
+        msg_ids: List of message IDs whose status changed.
+        field: ``"seen_at"`` or ``"processed_at"``.
+        timestamp: ISO timestamp that was written to the DB.
+    """
+    if not msg_ids:
+        return
+    _push_to_subscribers({
+        "type": "msg_status",
+        "team": team,
+        "msg_ids": msg_ids,
+        "field": field,
+        "value": timestamp,
+        "timestamp": timestamp,
+    })
+
+
 def broadcast_task_update(task_id: int, team: str, changes: dict[str, Any]) -> None:
     """Broadcast a task mutation to all SSE clients.
 

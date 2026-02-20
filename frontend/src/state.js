@@ -282,6 +282,11 @@ export function addToHistory(team, command) {
   saveTeamHistory(team, history);
 }
 
+// ── Message status live updates (SSE) ──
+// Bumped counter + latest batch; ChatPanel watches this to patch seen_at/processed_at in-place.
+// Shape: { seq, msg_ids, field, value }
+export const msgStatusUpdate = signal(null);
+
 // ── Agent activity (live tool usage from SSE) ──
 // { agentName: { tool, detail, timestamp } } — last activity per agent
 export const agentLastActivity = signal({});

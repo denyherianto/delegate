@@ -925,10 +925,16 @@ body {
 .mc-task-row-line2 {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 3px;
+  justify-content: space-between;
+  margin-top: 2px;
   padding-left: 14px; /* align under title, past the dot */
   font-size: 11px;
+}
+.mc-task-meta-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 /* Agent row timer is pushed to the right */
@@ -953,8 +959,20 @@ body {
   white-space: nowrap;
 }
 .mc-task-assignee {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
+}
+/* Compact badge inside task rows */
+.mc-task-row-line2 .badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  gap: 4px;
+}
+.mc-task-row-line2 .badge::before {
+  width: 5px;
+  height: 5px;
 }
 
 

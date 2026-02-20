@@ -15,6 +15,7 @@ import {
   allTeamsAgents, allTeamsTurnState,
   agentThinking,
   applyBootstrapId, lsKey,
+  msgStatusUpdate,
 } from "./state.js";
 import * as api from "./api.js";
 import { cap, prettyName } from "./utils.js";
@@ -720,6 +721,20 @@ function App() {
               showActionToast({ title, body, taskId: tid, type: "success" });
             }
           }
+        }
+        return;
+      }
+
+      // ── msg_status (seen / processed) ──
+      if (entry.type === "msg_status") {
+        if (isCurrent) {
+          // Bump the signal so ChatPanel can patch its local msgs
+          msgStatusUpdate.value = {
+            seq: (msgStatusUpdate.value?.seq || 0) + 1,
+            msg_ids: entry.msg_ids,
+            field: entry.field,
+            value: entry.value,
+          };
         }
         return;
       }

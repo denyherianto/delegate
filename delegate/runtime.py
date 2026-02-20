@@ -60,7 +60,7 @@ from delegate.mailbox import (
 from delegate.prompt import Prompt
 from delegate.telephone import Telephone, TelephoneUsage
 from delegate.task import format_task_id
-from delegate.activity import broadcast as broadcast_activity, broadcast_thinking, mark_thinking_tool_break, clear_thinking_buffer, broadcast_turn_event, broadcast_rate_limit
+from delegate.activity import broadcast as broadcast_activity, broadcast_thinking, mark_thinking_tool_break, clear_thinking_buffer, broadcast_turn_event, broadcast_rate_limit, broadcast_msg_status
 from delegate.paths import team_dir
 
 logger = logging.getLogger(__name__)
@@ -794,8 +794,11 @@ async def run_turn(
         )
         msg_ids = [m.id for m in batch if m.id is not None]
         if msg_ids:
+            ts_now = datetime.now(timezone.utc).isoformat()
             mark_seen_batch(hc_home, team, msg_ids)
             mark_processed_batch(hc_home, team, msg_ids)
+            broadcast_msg_status(team, msg_ids, "seen_at", ts_now)
+            broadcast_msg_status(team, msg_ids, "processed_at", ts_now)
         log_caller.reset(_prev_caller)
         return result
 
@@ -807,7 +810,9 @@ async def run_turn(
     # --- Mark selected messages as seen ---
     seen_ids = [m.id for m in batch if m.id is not None]
     if seen_ids:
+        seen_ts = datetime.now(timezone.utc).isoformat()
         mark_seen_batch(hc_home, team, seen_ids)
+        broadcast_msg_status(team, seen_ids, "seen_at", seen_ts)
 
     for inbox_msg in batch:
         alog.message_received(inbox_msg.sender, len(inbox_msg.body))
@@ -1161,4 +1166,6 @@ def _mark_batch_processed(hc_home: Path, team: str, batch: list[Message]) -> Non
     """Mark all messages in the batch as processed."""
     ids = [m.id for m in batch if m.id is not None]
     if ids:
+        processed_ts = datetime.now(timezone.utc).isoformat()
         mark_processed_batch(hc_home, team, ids)
+        broadcast_msg_status(team, ids, "processed_at", processed_ts)

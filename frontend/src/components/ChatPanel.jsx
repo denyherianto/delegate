@@ -8,6 +8,7 @@ import {
   loadTeamCwd, saveTeamCwd, loadTeamHistory, addToHistory,
   uploadingFiles,
   lsKey,
+  msgStatusUpdate,
 } from "../state.js";
 import * as api from "../api.js";
 import {
@@ -736,6 +737,23 @@ export function ChatPanel() {
       }
     };
   }, [team]);
+
+  // Live-patch seen_at/processed_at from SSE msg_status events
+  const statusSeq = msgStatusUpdate.value?.seq;
+  useEffect(() => {
+    const upd = msgStatusUpdate.value;
+    if (!upd) return;
+    const ids = new Set(upd.msg_ids);
+    setMsgs(prev => {
+      let changed = false;
+      const next = prev.map(m => {
+        if (!ids.has(m.id) || m[upd.field]) return m;
+        changed = true;
+        return { ...m, [upd.field]: upd.value };
+      });
+      return changed ? next : prev;
+    });
+  }, [statusSeq]);
 
   // Auto-select recipient when agents load
   useEffect(() => {
