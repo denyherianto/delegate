@@ -11,7 +11,7 @@ export function NewProjectModal() {
   const isOpen = projectModalOpen.value;
   const [name, setName] = useState("");
   const [repoPath, setRepoPath] = useState("");
-  const [agentCount, setAgentCount] = useState(2);
+  const [agentCount, setAgentCount] = useState(5);
   const [model, setModel] = useState("sonnet");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -26,7 +26,7 @@ export function NewProjectModal() {
       // Reset form
       setName("");
       setRepoPath("");
-      setAgentCount(2);
+      setAgentCount(5);
       setModel("sonnet");
       setError("");
       setSubmitting(false);
@@ -154,11 +154,12 @@ export function NewProjectModal() {
                 }}
                 onBlur={() => {
                   const n = parseInt(agentCount, 10);
-                  if (!n || n < 1) setAgentCount(2);
+                  if (!n || n < 1) setAgentCount(5);
                 }}
                 disabled={submitting}
                 autocomplete="off"
               />
+              <span class="npm-field-hint">You can always add more agents later.</span>
             </div>
 
             <div class="npm-field npm-field-half">
