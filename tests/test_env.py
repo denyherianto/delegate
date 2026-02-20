@@ -34,14 +34,12 @@ def _make_repo(tmp_path: Path, files: dict[str, str] | None = None) -> Path:
 def _init_git_repo(path: Path) -> None:
     """Initialise a bare git repo so write_env_scripts can commit."""
     subprocess.run(["git", "init"], cwd=str(path), capture_output=True, check=True)
+    # Set repo-local identity so commits work on CI where no global config exists.
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True)
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "init"],
         cwd=str(path), capture_output=True, check=True,
-        env={
-            **__import__("os").environ,
-            "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "t@t",
-            "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@t",
-        },
     )
 
 
