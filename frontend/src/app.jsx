@@ -402,11 +402,14 @@ function App() {
       _syncSignalsNow(t);
       fetchWorkflows(t);
 
-      // Send welcome greeting if first visit or after meaningful absence
+      // Send return-from-away greeting if the user hasn't been greeted
+      // recently.  First-run welcomes are sent server-side during project
+      // creation, so we only greet here when lastGreetedTime is known (i.e.
+      // the user has visited before) and enough time has passed.
       const now = Date.now();
       const lastGreeted = getLastGreeted(t);
       const lastGreetedTime = lastGreeted ? new Date(lastGreeted).getTime() : null;
-      const shouldGreet = !lastGreetedTime || (now - lastGreetedTime) >= GREETING_THRESHOLD;
+      const shouldGreet = lastGreetedTime && (now - lastGreetedTime) >= GREETING_THRESHOLD;
       if (shouldGreet) {
         (async () => {
           try {
@@ -450,11 +453,13 @@ function App() {
         _pt.managerName[t] = mgr?.name ?? null;
         _onManagerNameResolved(t, _pt.managerName[t]);
 
-        // Send welcome greeting if this is first visit or after meaningful absence
+        // Send return-from-away greeting if enough time has passed.
+        // First-run welcomes are sent server-side during project creation,
+        // so we only greet when lastGreetedTime is known and stale.
         const now = Date.now();
         const lastGreeted = getLastGreeted(t);
         const lastGreetedTime = lastGreeted ? new Date(lastGreeted).getTime() : null;
-        const shouldGreet = !lastGreetedTime || (now - lastGreetedTime) >= GREETING_THRESHOLD;
+        const shouldGreet = lastGreetedTime && (now - lastGreetedTime) >= GREETING_THRESHOLD;
 
         if (shouldGreet) {
           try {

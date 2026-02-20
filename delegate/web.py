@@ -1313,9 +1313,10 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
 
         now_utc = datetime.now(timezone.utc)
 
-        # ── First-run detection ──
-        # If there are zero messages for this team, this is the very first
-        # session.  Send the special onboarding welcome instead.
+        # ── First-run detection (legacy fallback) ──
+        # For projects created via the UI, the first-run welcome is sent
+        # during POST /projects.  This path is a fallback for CLI-bootstrapped
+        # teams or old installs where no welcome was sent at creation time.
         try:
             all_messages = _get_messages(hc_home, team, limit=1)
             is_first_run = len(all_messages) == 0
@@ -1708,6 +1709,38 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
                 register_workflow(hc_home, name, builtin)
         except Exception:
             logger.warning("Could not register default workflow for project '%s'", name, exc_info=True)
+
+        # ── Send first-run welcome greeting ──
+        # Must happen before broadcast_teams_refresh / return so the welcome
+        # is the very first message in the DB.  This prevents the race where
+        # a fast-typing user sends a task before the frontend's async
+        # greetTeam() call fires.
+        try:
+            from delegate.bootstrap import get_member_by_role
+            from delegate.repo import list_repos as _list_repos_fn
+
+            manager_name = get_member_by_role(hc_home, name, "manager")
+            human_name = get_default_human(hc_home)
+            if manager_name and human_name:
+                ai_agents = [
+                    a for a in _list_team_agents(hc_home, name)
+                    if a.get("role") != "manager"
+                ]
+                greeting = _build_first_run_greeting(
+                    hc_home, name, manager_name, human_name,
+                    agent_count=len(ai_agents),
+                    has_repos=bool(_list_repos_fn(hc_home, name)),
+                )
+                _send(hc_home, name, manager_name, human_name, greeting)
+                logger.info(
+                    "First-run welcome sent during project creation | team=%s",
+                    name,
+                )
+        except Exception:
+            logger.warning(
+                "Could not send first-run greeting for project '%s'",
+                name, exc_info=True,
+            )
 
         # Notify all SSE clients to refresh their team list
         broadcast_teams_refresh()

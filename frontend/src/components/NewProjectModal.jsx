@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "preact/hooks";
-import { projectModalOpen, teams, navigate } from "../state.js";
+import { projectModalOpen, teams, navigate, updateLastGreeted } from "../state.js";
 import * as api from "../api.js";
 import { FileAutocomplete } from "./FileAutocomplete.jsx";
 
@@ -78,6 +78,10 @@ export function NewProjectModal() {
       // Refresh teams list
       const updatedTeams = await api.fetchTeams();
       teams.value = updatedTeams;
+      // Seed the lastGreeted timestamp so the team-switch greeting
+      // logic knows the welcome was already handled (server sends
+      // the first-run welcome during project creation).
+      updateLastGreeted(result.name);
       // Navigate to the new project's chat
       navigate(result.name, "chat");
       close();
