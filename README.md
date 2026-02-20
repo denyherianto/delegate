@@ -27,7 +27,7 @@ Spin up a team per project — a backend API, a mobile app, a data pipeline — 
 > On macOS: `brew install python@3.13` · On Ubuntu: `sudo apt install python3.12` · Or download from [python.org](https://www.python.org/downloads/).
 
 ```bash
-pip install delegate-ai
+pip install -U delegate-ai
 delegate start # needs claude code login or ANTHROPIC_API_KEY in ENV
 ```
 
