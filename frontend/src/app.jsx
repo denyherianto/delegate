@@ -150,6 +150,28 @@ function App() {
         }
       }
 
+      // Modifier-key combos (Cmd+K, Cmd+1-9) must fire even when an
+      // input is focused — they are global navigation shortcuts.
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        teamSwitcherOpen.value = !teamSwitcherOpen.value;
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key >= "1" && e.key <= "9") {
+        const idx = parseInt(e.key) - 1;
+        const teamArr = teams.value || [];
+        if (idx < teamArr.length) {
+          e.preventDefault();
+          const teamName = typeof teamArr[idx] === "object" ? teamArr[idx].name : teamArr[idx];
+          navigate(teamName, "chat");
+          setTimeout(() => {
+            const chatInput = document.querySelector(".chat-input");
+            if (chatInput) chatInput.focus();
+          }, 80);
+        }
+        return;
+      }
+
       if (isInputFocused()) return;
       // r focuses chat input (when on Chat tab)
       if (e.key === "r" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && !isHelpOpen() && panelStack.value.length === 0) {
@@ -191,26 +213,6 @@ function App() {
         return;
       }
       if (e.key === "?") { helpOverlayOpen.value = !helpOverlayOpen.value; return; }
-      // Cmd+1 through Cmd+9: switch to Nth project
-      if ((e.metaKey || e.ctrlKey) && e.key >= "1" && e.key <= "9") {
-        const idx = parseInt(e.key) - 1;
-        const teamArr = teams.value || [];
-        if (idx < teamArr.length) {
-          e.preventDefault();
-          const teamName = typeof teamArr[idx] === "object" ? teamArr[idx].name : teamArr[idx];
-          navigate(teamName, "chat");
-          setTimeout(() => {
-            const chatInput = document.querySelector(".chat-input");
-            if (chatInput) chatInput.focus();
-          }, 80);
-        }
-        return;
-      }
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        teamSwitcherOpen.value = !teamSwitcherOpen.value;
-        return;
-      }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);

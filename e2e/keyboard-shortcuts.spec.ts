@@ -62,18 +62,24 @@ test.describe("Keyboard shortcuts", () => {
     // Wait for page to be ready (keyboard handler registered in useEffect)
     await expect(page.locator(".chat-log")).toBeVisible({ timeout: 5_000 });
     await blurActiveElement(page);
+    await waitForEffects(page);
 
     // Sidebar should start expanded
     const sidebar = page.locator(".sb");
     await expect(sidebar).not.toHaveClass(/sb-collapsed/);
 
     // Press 's' to collapse
+    await blurActiveElement(page);
     await page.keyboard.press("s");
-    await expect(sidebar).toHaveClass(/sb-collapsed/);
+    await expect(sidebar).toHaveClass(/sb-collapsed/, { timeout: 3_000 });
+
+    // Ensure nothing re-focused before the second toggle
+    await waitForEffects(page);
+    await blurActiveElement(page);
 
     // Press 's' again to expand
     await page.keyboard.press("s");
-    await expect(sidebar).not.toHaveClass(/sb-collapsed/);
+    await expect(sidebar).not.toHaveClass(/sb-collapsed/, { timeout: 3_000 });
   });
 
   test("? toggles help overlay", async ({ page }) => {

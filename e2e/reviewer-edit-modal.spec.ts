@@ -150,8 +150,8 @@ test.describe("ReviewerEditModal (via Edit button)", () => {
     // Click "Open file..." button
     await modal.locator(".rem-tab-open").click();
 
-    // Input should appear
-    const input = modal.locator(".rem-open-file-input");
+    // Input should appear (FileAutocomplete renders .file-ac-input)
+    const input = modal.locator(".file-ac-input");
     await expect(input).toBeVisible({ timeout: 1_000 });
 
     // Type a path and press Enter
@@ -174,7 +174,7 @@ test.describe("ReviewerEditModal (via Edit button)", () => {
     await expect(modal).toBeVisible({ timeout: 3_000 });
 
     await modal.locator(".rem-tab-open").click();
-    const input = modal.locator(".rem-open-file-input");
+    const input = modal.locator(".file-ac-input");
     await expect(input).toBeVisible();
 
     await input.fill("src/missing.py");
