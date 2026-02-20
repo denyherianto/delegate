@@ -562,6 +562,7 @@ def _ensure_task_infra(
     from delegate.repo import create_task_worktree
     from delegate.repo import get_task_worktree_path
     from delegate.task import _all_deps_resolved
+    from delegate.env import write_env_scripts
 
     # Active statuses that need worktrees
     active_statuses = ("todo", "in_progress")
@@ -617,6 +618,19 @@ def _ensure_task_infra(
                             "Daemon created worktree for %s/%s (%s)",
                             team, format_task_id(task_id), repo_name,
                         )
+                        # Generate .delegate/setup.sh & premerge.sh if missing
+                        try:
+                            if write_env_scripts(wt):
+                                logger.info(
+                                    "Generated env scripts for %s/%s (%s)",
+                                    team, format_task_id(task_id), repo_name,
+                                )
+                        except Exception:
+                            logger.warning(
+                                "Failed to generate env scripts for %s/%s",
+                                team, format_task_id(task_id),
+                                exc_info=True,
+                            )
                 infra_ready.add(key)
             except Exception:
                 logger.exception(
