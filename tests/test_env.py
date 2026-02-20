@@ -10,6 +10,7 @@ from delegate.env import (
     _detect_all,
     _detect_at,
     _parse_envrc,
+    _pyproject_has_dev_deps,
     generate_env_scripts,
     write_env_scripts,
 )
@@ -259,11 +260,14 @@ class TestGenerateScripts:
         assert "uv sync --group dev" in setup
         assert "uv venv" not in setup
 
-    def test_python_no_lock_has_uv_fallback(self, tmp_path):
+    def test_python_no_lock_has_uv_and_pip_fallback(self, tmp_path):
         repo = _make_repo(tmp_path, {"pyproject.toml": "[project]\n"})
         setup, _ = generate_env_scripts(repo)
-        assert "uv venv" in setup
+        # Always creates venv with python3, then tries uv/pip
         assert "python3 -m venv" in setup
+        assert "uv pip install" in setup
+        assert '"$VENV_DIR/bin/pip" install' in setup
+        assert "_installed=0" in setup
 
     def test_premerge_sources_setup(self, tmp_path):
         repo = _make_repo(tmp_path, {"pyproject.toml": "[project]\n"})
@@ -308,6 +312,97 @@ class TestGenerateScripts:
         setup, premerge = generate_env_scripts(repo)
         assert setup.endswith("\n")
         assert premerge.endswith("\n")
+
+    def test_python_uses_python_m_pytest(self, tmp_path):
+        """All Python stacks should use 'python -m pytest' not bare 'pytest'."""
+        repo = _make_repo(tmp_path, {"pyproject.toml": "[project]\n"})
+        _, premerge = generate_env_scripts(repo)
+        assert "python -m pytest" in premerge
+
+    def test_python_network_fallback(self, tmp_path):
+        """setup.sh should include a site-packages copy fallback for no-network."""
+        repo = _make_repo(tmp_path, {"pyproject.toml": "[project]\n"})
+        setup, _ = generate_env_scripts(repo)
+        assert "MAIN_VENV" in setup
+        assert "site-packages" in setup
+        assert "cp -r" in setup
+
+    def test_pyproject_no_dev_extra_uses_requirements_txt(self, tmp_path):
+        """pyproject.toml without dev extras + requirements.txt → use requirements.txt."""
+        repo = _make_repo(tmp_path, {
+            "pyproject.toml": "[project]\nname = \"myapp\"\n",
+            "requirements.txt": "flask\npytest\n",
+        })
+        setup, _ = generate_env_scripts(repo)
+        assert "requirements.txt" in setup
+        assert '".[dev]"' not in setup
+
+    def test_pyproject_with_dev_extra_uses_dot_dev(self, tmp_path):
+        """pyproject.toml with dev extras → pip install '.[dev]'."""
+        repo = _make_repo(tmp_path, {
+            "pyproject.toml": (
+                "[project]\nname = \"myapp\"\n\n"
+                "[project.optional-dependencies]\n"
+                "dev = [\"pytest\", \"black\"]\n"
+            ),
+        })
+        setup, _ = generate_env_scripts(repo)
+        assert '".[dev]"' in setup
+
+    def test_pyproject_plain_no_requirements_uses_dot(self, tmp_path):
+        """pyproject.toml without dev extras and no requirements.txt → pip install '.'."""
+        repo = _make_repo(tmp_path, {
+            "pyproject.toml": "[project]\nname = \"myapp\"\n",
+        })
+        setup, _ = generate_env_scripts(repo)
+        assert '"."' in setup
+        assert '".[dev]"' not in setup
+        assert "requirements.txt" not in setup
+
+
+# ---------------------------------------------------------------------------
+# _pyproject_has_dev_deps
+# ---------------------------------------------------------------------------
+
+class TestPyprojectHasDevDeps:
+    """Test the pyproject.toml dev-dependency detection helper."""
+
+    def test_with_optional_dependencies_dev(self, tmp_path):
+        repo = _make_repo(tmp_path, {
+            "pyproject.toml": (
+                "[project]\nname=\"x\"\n\n"
+                "[project.optional-dependencies]\n"
+                "dev = [\"pytest\"]\n"
+            ),
+        })
+        assert _pyproject_has_dev_deps(repo) is True
+
+    def test_with_dependency_groups(self, tmp_path):
+        repo = _make_repo(tmp_path, {
+            "pyproject.toml": "[dependency-groups]\ndev = [\"pytest\"]\n",
+        })
+        assert _pyproject_has_dev_deps(repo) is True
+
+    def test_without_dev_deps(self, tmp_path):
+        repo = _make_repo(tmp_path, {
+            "pyproject.toml": "[project]\nname=\"x\"\n",
+        })
+        assert _pyproject_has_dev_deps(repo) is False
+
+    def test_no_pyproject(self, tmp_path):
+        repo = _make_repo(tmp_path)
+        assert _pyproject_has_dev_deps(repo) is False
+
+    def test_optional_deps_without_dev_key(self, tmp_path):
+        """optional-dependencies exists but no 'dev' key."""
+        repo = _make_repo(tmp_path, {
+            "pyproject.toml": (
+                "[project]\nname=\"x\"\n\n"
+                "[project.optional-dependencies]\n"
+                "test = [\"pytest\"]\n"
+            ),
+        })
+        assert _pyproject_has_dev_deps(repo) is False
 
 
 # ---------------------------------------------------------------------------

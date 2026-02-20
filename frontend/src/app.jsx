@@ -748,6 +748,36 @@ function App() {
       if (isCurrent) _syncSignals(team);
     };
 
+    // Recover turn state on SSE (re)connect — fills _pt.turnState
+    // with whatever turns are currently active server-side.
+    const recoverTurnState = () => {
+      api.fetchActiveTurns().then(turns => {
+        if (!Array.isArray(turns) || turns.length === 0) return;
+        for (const t of turns) {
+          const team = t.team;
+          if (!team) continue;
+          if (!_pt.turnState[team]) _pt.turnState[team] = {};
+          _pt.turnState[team][t.agent] = {
+            inTurn: true,
+            taskId: t.task_id ?? null,
+            sender: t.sender ?? "",
+            startedAt: t.timestamp ?? new Date().toISOString(),
+          };
+
+          // Set manager context if applicable
+          const mgrName = _pt.managerName[team];
+          if (mgrName && mgrName === t.agent) {
+            _pt.managerCtx[team] = t;
+            if (team === currentTeam.value) {
+              managerTurnContext.value = t;
+            }
+          }
+
+          if (team === currentTeam.value) _syncSignals(team);
+        }
+      }).catch(() => {});
+    };
+
     // Try SharedWorker first (shares 1 SSE connection across all tabs)
     let cleanup;
     if (typeof SharedWorker !== "undefined") {
@@ -755,6 +785,8 @@ function App() {
         const worker = new SharedWorker("/static/sse-worker.js", { name: "delegate-sse" });
         worker.port.onmessage = (evt) => {
           if (evt.data.type === "sse") handleSSE(evt.data.data);
+          // Recover turn state on (re)connect
+          if (evt.data.type === "status" && evt.data.connected) recoverTurnState();
         };
         worker.port.start();
         worker.port.postMessage({ type: "init" });
@@ -770,6 +802,7 @@ function App() {
       es.onmessage = (evt) => {
         try { handleSSE(JSON.parse(evt.data)); } catch (_) {}
       };
+      es.onopen = () => recoverTurnState();
       es.onerror = () => {};
       cleanup = () => es.close();
     }

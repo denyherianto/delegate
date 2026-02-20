@@ -3079,6 +3079,19 @@ def create_app(hc_home: Path | None = None) -> FastAPI:
             },
         )
 
+    # --- Active turns snapshot (for SSE reconnect recovery) ---
+
+    @app.get("/turns/active")
+    def active_turns():
+        """Return a snapshot of all currently active agent turns.
+
+        The frontend calls this on SSE connect/reconnect to recover turn
+        state that may have been missed while the connection was down.
+        Each entry mirrors a ``turn_started`` SSE event payload.
+        """
+        from delegate.activity import get_active_turns
+        return get_active_turns()
+
     # --- Shared files endpoints ---
 
     MAX_FILE_SIZE = 1_000_000  # 1 MB truncation limit

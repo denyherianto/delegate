@@ -257,6 +257,25 @@ def broadcast_teams_refresh() -> None:
     _push_to_subscribers(payload)
 
 
+# ---------------------------------------------------------------------------
+# Active turns registry — queryable snapshot of who is currently working
+# ---------------------------------------------------------------------------
+
+# (team, agent) -> { agent, team, task_id, sender, timestamp }
+_active_turns: dict[tuple[str, str], dict[str, Any]] = {}
+
+
+def get_active_turns(team: str | None = None) -> list[dict[str, Any]]:
+    """Return a list of currently active turns.
+
+    If *team* is given, only turns for that team are returned.
+    Each entry mirrors the ``turn_started`` SSE payload.
+    """
+    if team is None:
+        return list(_active_turns.values())
+    return [t for t in _active_turns.values() if t.get("team") == team]
+
+
 def broadcast_turn_event(
     event_type: str,
     agent: str,
@@ -267,8 +286,10 @@ def broadcast_turn_event(
 ) -> None:
     """Broadcast a turn lifecycle event (turn_started or turn_ended) to all SSE clients.
 
-    These are ephemeral signals (not stored in the ring buffer) that indicate when
-    an agent begins or ends processing a batch of messages.
+    Also maintains the in-memory ``_active_turns`` registry so that
+    ``get_active_turns()`` always reflects who is currently in a turn.
+    This allows the ``/turns/active`` REST endpoint to return the current
+    state for clients that missed SSE events (e.g. on reconnect).
 
     Args:
         event_type: 'turn_started' or 'turn_ended'
@@ -277,12 +298,27 @@ def broadcast_turn_event(
         task_id: Optional task ID the turn is associated with
         sender: Optional sender name (relevant when task_id is None)
     """
+    key = (team, agent)
+    ts = datetime.now(timezone.utc).isoformat()
+
+    if event_type == "turn_started":
+        _active_turns[key] = {
+            "type": "turn_started",
+            "agent": agent,
+            "team": team,
+            "task_id": task_id,
+            "sender": sender,
+            "timestamp": ts,
+        }
+    elif event_type == "turn_ended":
+        _active_turns.pop(key, None)
+
     payload = {
         'type': event_type,
         'agent': agent,
         'team': team,
         'task_id': task_id,
         'sender': sender,
-        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'timestamp': ts,
     }
     _push_to_subscribers(payload)

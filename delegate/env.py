@@ -50,6 +50,40 @@ def _pyproject_has_section(root: Path, section: str) -> bool:
         return False
 
 
+def _pyproject_has_dev_deps(root: Path) -> bool:
+    """Check if pyproject.toml defines dev dependencies (extras or dependency-groups).
+
+    Returns True if pyproject.toml contains:
+    - ``[project.optional-dependencies]`` with a ``dev`` key, OR
+    - ``[dependency-groups]`` (PEP 735)
+
+    When False, ``pip install ".[dev]"`` would fail, so callers should
+    fall back to ``requirements.txt`` or plain ``"."``.
+    """
+    pp = root / "pyproject.toml"
+    if not pp.is_file():
+        return False
+    try:
+        content = pp.read_text()
+        # PEP 735 dependency-groups — any group counts
+        if "[dependency-groups]" in content:
+            return True
+        # [project.optional-dependencies] with a dev = [...] key
+        if "[project.optional-dependencies]" in content:
+            # Look for a line starting with 'dev' after the section header
+            in_section = False
+            for line in content.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("["):
+                    in_section = stripped == "[project.optional-dependencies]"
+                    continue
+                if in_section and (stripped.startswith("dev ") or stripped.startswith("dev=")):
+                    return True
+        return False
+    except Exception:
+        return False
+
+
 def _package_json_has_script(root: Path, script: str) -> str | None:
     """Return the script command if package.json has a matching script, else None."""
     pj = root / "package.json"
@@ -183,7 +217,7 @@ def _detect_at(directory: Path, rel_path: str = ".") -> _Component | None:
             name="python-poetry",
             rel_path=rel_path,
             setup_snippet=snippet,
-            test_cmd=f'(cd {dir_expr} && poetry run pytest tests/ -x -q)' if not is_root else 'pytest tests/ -x -q',
+            test_cmd=f'(cd {dir_expr} && poetry run python -m pytest tests/ -x -q)' if not is_root else 'python -m pytest tests/ -x -q',
         )
 
     # ── Python: uv with lockfile ──
@@ -207,25 +241,35 @@ def _detect_at(directory: Path, rel_path: str = ".") -> _Component | None:
             name="python-uv-lock",
             rel_path=rel_path,
             setup_snippet=snippet,
-            test_cmd=f'(cd {dir_expr} && pytest tests/ -x -q)' if not is_root else 'pytest tests/ -x -q',
+            test_cmd=f'(cd {dir_expr} && python -m pytest tests/ -x -q)' if not is_root else 'python -m pytest tests/ -x -q',
         )
 
     # ── Python: pyproject.toml or requirements.txt (no lockfile) ──
     if _has_file(directory, "pyproject.toml") or _has_file(directory, "requirements.txt"):
-        if _has_file(directory, "pyproject.toml"):
+        has_pyproject = _has_file(directory, "pyproject.toml")
+        has_requirements = _has_file(directory, "requirements.txt")
+
+        # Determine what to install:
+        #   - If pyproject.toml has dev deps → ".[dev]"
+        #   - Elif requirements.txt exists → -r requirements.txt
+        #   - Elif pyproject.toml exists (no dev extra) → "."
+        if has_pyproject and _pyproject_has_dev_deps(directory):
             install_src = '".[dev]"'
-        else:
+        elif has_requirements:
             install_src = '-r requirements.txt'
+        else:
+            install_src = '"."'
 
         if is_root:
             snippet = (
                 'cd "$WORKTREE_ROOT"\n'
+                'python3 -m venv "$VENV_DIR"\n'
+                '_installed=0\n'
                 'if command -v uv >/dev/null 2>&1; then\n'
-                '  uv venv "$VENV_DIR" --quiet\n'
-                f'  uv pip install --python "$VENV_DIR/bin/python" -e {install_src} --quiet\n'
-                'else\n'
-                '  python3 -m venv "$VENV_DIR"\n'
-                f'  "$VENV_DIR/bin/pip" install {install_src} --quiet\n'
+                f'  uv pip install --python "$VENV_DIR/bin/python" {install_src} --quiet 2>/dev/null && _installed=1 || true\n'
+                'fi\n'
+                'if [ "$_installed" -eq 0 ]; then\n'
+                f'  "$VENV_DIR/bin/pip" install {install_src} --quiet 2>/dev/null && _installed=1 || true\n'
                 'fi'
             )
         else:
@@ -241,7 +285,7 @@ def _detect_at(directory: Path, rel_path: str = ".") -> _Component | None:
             name="python",
             rel_path=rel_path,
             setup_snippet=snippet,
-            test_cmd=f'(cd {dir_expr} && pytest tests/ -x -q)' if not is_root else 'pytest tests/ -x -q',
+            test_cmd=f'(cd {dir_expr} && python -m pytest tests/ -x -q)' if not is_root else 'python -m pytest tests/ -x -q',
         )
 
     # ── Node ──
@@ -342,18 +386,31 @@ def _detect_at(directory: Path, rel_path: str = ".") -> _Component | None:
             name="python-poetry",
             rel_path=rel_path,
             setup_snippet=snippet,
-            test_cmd=f'(cd {dir_expr} && poetry run pytest tests/ -x -q)' if not is_root else 'pytest tests/ -x -q',
+            test_cmd=f'(cd {dir_expr} && poetry run python -m pytest tests/ -x -q)' if not is_root else 'python -m pytest tests/ -x -q',
         )
     if "python" in hints:
+        # .envrc hinted Python — determine install source
+        has_pyproject = _has_file(directory, "pyproject.toml")
+        has_requirements = _has_file(directory, "requirements.txt")
+        if has_pyproject and _pyproject_has_dev_deps(directory):
+            envrc_install_src = '".[dev]"'
+        elif has_requirements:
+            envrc_install_src = '-r requirements.txt'
+        elif has_pyproject:
+            envrc_install_src = '"."'
+        else:
+            envrc_install_src = '"."'
+
         if is_root:
             snippet = (
                 'cd "$WORKTREE_ROOT"\n'
+                'python3 -m venv "$VENV_DIR"\n'
+                '_installed=0\n'
                 'if command -v uv >/dev/null 2>&1; then\n'
-                '  uv venv "$VENV_DIR" --quiet\n'
-                '  uv pip install --python "$VENV_DIR/bin/python" -e ".[dev]" --quiet\n'
-                'else\n'
-                '  python3 -m venv "$VENV_DIR"\n'
-                '  "$VENV_DIR/bin/pip" install ".[dev]" --quiet\n'
+                f'  uv pip install --python "$VENV_DIR/bin/python" {envrc_install_src} --quiet 2>/dev/null && _installed=1 || true\n'
+                'fi\n'
+                'if [ "$_installed" -eq 0 ]; then\n'
+                f'  "$VENV_DIR/bin/pip" install {envrc_install_src} --quiet 2>/dev/null && _installed=1 || true\n'
                 'fi'
             )
         else:
@@ -361,14 +418,14 @@ def _detect_at(directory: Path, rel_path: str = ".") -> _Component | None:
             snippet = (
                 f'# {rel_path}/ deps (python, from .envrc)\n'
                 f'if [ ! -d {venv} ]; then\n'
-                f'  (cd {dir_expr} && python3 -m venv .venv && .venv/bin/pip install ".[dev]" --quiet)\n'
+                f'  (cd {dir_expr} && python3 -m venv .venv && .venv/bin/pip install {envrc_install_src} --quiet)\n'
                 f'fi'
             )
         return _Component(
             name="python",
             rel_path=rel_path,
             setup_snippet=snippet,
-            test_cmd=f'(cd {dir_expr} && pytest tests/ -x -q)' if not is_root else 'pytest tests/ -x -q',
+            test_cmd=f'(cd {dir_expr} && python -m pytest tests/ -x -q)' if not is_root else 'python -m pytest tests/ -x -q',
         )
     if "node" in hints:
         install_cmd = _node_install_cmd(directory)
@@ -596,7 +653,15 @@ def _generate_nix_setup(components: list[_Component], nix_file: str) -> str:
 
 
 def _generate_python_root_setup(components: list[_Component], root_python: _Component) -> str:
-    """Generate setup.sh with Python venv at root + other components appended."""
+    """Generate setup.sh with Python venv at root + other components appended.
+
+    Produces a 3-tier install strategy:
+      1. Try ``uv pip install`` (fast, if available)
+      2. Fall back to ``pip install`` (always available)
+      3. If both fail (no network) — copy site-packages from the main repo's
+         venv.  Worktrees always have a git common dir pointing to the original
+         repo, so we can reliably locate its ``.venv``.
+    """
     # Indent the root Python snippet inside the `if` block
     indented = "\n".join(
         f"  {line}" if line.strip() else line
@@ -606,6 +671,7 @@ def _generate_python_root_setup(components: list[_Component], root_python: _Comp
     lines = [_HEADER.rstrip(), ""]
     lines.append('WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"')
     lines.append('VENV_DIR="$WORKTREE_ROOT/.venv"')
+    lines.append('MAIN_VENV="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)/.." && pwd)/.venv"')
     lines.append("")
     lines.append("# Re-entrance guard")
     lines.append('[[ -n "$_DELEGATE_SETUP_DONE" ]] && { source "$VENV_DIR/bin/activate"; return 0 2>/dev/null || exit 0; }')
@@ -614,6 +680,17 @@ def _generate_python_root_setup(components: list[_Component], root_python: _Comp
     lines.append('if ! "$VENV_DIR/bin/python" -c "import pytest" 2>/dev/null; then')
     lines.append("  rm -rf \"$VENV_DIR\"")
     lines.append(indented)
+    lines.append("")
+    lines.append("  # Network unavailable — copy site-packages from the main repo venv")
+    lines.append('  if [ "$_installed" -eq 0 ] && [ -d "$MAIN_VENV" ]; then')
+    lines.append('    echo "Network install failed — copying site-packages from $MAIN_VENV" >&2')
+    lines.append('    MAIN_SITE="$(ls -d "$MAIN_VENV"/lib/python*/site-packages 2>/dev/null | head -1)"')
+    lines.append('    WORKTREE_SITE="$(ls -d "$VENV_DIR"/lib/python*/site-packages 2>/dev/null | head -1)"')
+    lines.append('    if [ -n "$MAIN_SITE" ] && [ -d "$MAIN_SITE" ]; then')
+    lines.append('      cp -r "$MAIN_SITE/." "$WORKTREE_SITE/"')
+    lines.append('      chmod -R u+w "$VENV_DIR"')
+    lines.append("    fi")
+    lines.append("  fi")
     lines.append("fi")
     lines.append("")
     lines.append('source "$VENV_DIR/bin/activate"')
