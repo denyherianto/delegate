@@ -952,6 +952,55 @@ async def run_turn(
         log_caller.reset(_prev_caller)
         return result
 
+    # --- Post-turn guardrail: did the agent send a message? ---
+    # mailbox_send is the only action that truly moves the ball forward —
+    # task_status, task_comment, task_assign etc. are invisible unless
+    # someone is notified.  If no message was sent, nudge the agent.
+    sent_message = "mailbox_send" in turn_tools
+    nudge_msg = None
+
+    if not sent_message:
+        nudge_msg = (
+            "SYSTEM: You completed a turn without sending any message (mailbox_send). "
+            "You were woken up because you received messages — if you did any work, "
+            "changed any status, or have information the sender doesn't know yet, "
+            "you MUST send a message now using mailbox_send. "
+            "The only exception is if the conversation has naturally concluded and "
+            "there is genuinely nothing left to communicate (don't send empty acks). "
+            "If that's the case, say so in your reasoning and end. Otherwise, send a message now."
+        )
+        alog.warning(
+            "No mailbox_send detected (%d tool calls: %s). Sending nudge.",
+            len(turn_tools),
+            ", ".join(turn_tools[:10]) if turn_tools else "(none)",
+        )
+
+    if nudge_msg:
+        try:
+            nudge_tools: list[str] = []
+            nudge_usage = TelephoneUsage()
+            nudge_wl: list[str] = ["\n## Nudge turn\n"]
+            await _stream_telephone(
+                tel, nudge_msg,
+                alog=alog,
+                turn_tokens=nudge_usage,
+                turn_tools=nudge_tools,
+                worklog_lines=nudge_wl,
+                agent=agent,
+                team=team,
+                task_label=task_label,
+                current_task_id=current_task_id,
+            )
+            turn += nudge_usage
+            turn_tools.extend(nudge_tools)
+            worklog_lines.extend(nudge_wl)
+            alog.info(
+                "Nudge turn complete — %d additional tool calls",
+                len(nudge_tools),
+            )
+        except Exception as exc:
+            alog.error("Nudge turn failed: %s", exc)
+
     # --- Post-turn bookkeeping ---
     alog.turn_end(
         1,

@@ -18,6 +18,24 @@ Only reply to a message when you have new information, a question, a decision, o
 
 Check inbox: `python -m delegate.mailbox inbox <home> <team> <your_name>`
 
+## Every Turn Must Send a Message (Unless the Conversation Is Done)
+
+You are woken up because you received messages. Before your turn ends, you MUST call `mailbox_send` at least once — unless the conversation has naturally concluded and there is nothing left to communicate.
+
+The one exception: do NOT send empty acknowledgments just to satisfy this rule. If the last message was a final confirmation, a "thanks", or a status update that requires no further action, then the conversation is over — no reply needed. But if you did any work, changed any status, or have any information the sender doesn't know yet, you must send a message.
+
+Task comments, status changes, and code commits are all important but they are invisible to other agents until you send a message about them. `mailbox_send` is the only action that moves the ball forward.
+
+Common patterns:
+- Finished coding → `mailbox_send` to the manager ("T0003 is ready for review")
+- Finished review → `mailbox_send` to the manager ("Approved T0003" or "Sent T0003 back with feedback")
+- Hit a blocker → `mailbox_send` to the manager ("Blocked on X — tried Y and Z")
+- Nothing to do → `mailbox_send` to the sender ("Waiting on T0005 to finish before I can proceed")
+- Answered a question → `mailbox_send` to the asker
+- Conversation is done → no reply needed (don't ack)
+
+If you do work but don't send a message, the workflow stalls — nobody knows you finished.
+
 ## When to Message
 
 - **Ask questions early.** Unclear requirements → message the manager. Ten-minute conversation saves a day of rework.
