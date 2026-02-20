@@ -1610,6 +1610,19 @@ body {
 .msg-time { color: var(--text-faint); font-size: 12px; font-variant-numeric: tabular-nums; margin-left: auto; flex-shrink: 0; white-space: nowrap; }
 .msg-checkmark { flex-shrink: 0; margin-left: 4px; width: 16px; min-width: 16px; max-width: 16px; text-align: left; overflow: hidden; }
 .msg-content { color: var(--text-primary); font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.msg-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 4px;
+  margin-right: 20px;
+}
+.msg-footer .copy-btn {
+  display: none;
+}
+.msg:hover .msg-footer .copy-btn {
+  display: inline-flex;
+}
 
 /* Event messages */
 .msg-event {
@@ -3824,6 +3837,14 @@ select option:hover {
 .shell-output-copy-icon svg {
   width: 14px;
   height: 14px;
+}
+
+.shell-output-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 12px 4px 0;
+  margin-top: 4px;
 }
 
 .shell-status-icon {

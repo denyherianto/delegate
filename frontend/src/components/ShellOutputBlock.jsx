@@ -73,28 +73,6 @@ export function ShellOutputBlock({ result, onErrorState }) {
 
   return (
     <div class="shell-output-block">
-      <div class="shell-output-toolbar">
-        {hasOutput && (
-          <button class="shell-output-copy-icon" onClick={handleCopy} title="Copy output">
-            <ClipboardIcon />
-          </button>
-        )}
-        {!hasOutput && (
-          exit_code === 0
-            ? <span class="shell-status-icon shell-status-ok">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="2 8 6 12 14 4" />
-                </svg>
-              </span>
-            : <span class="shell-status-icon shell-status-fail">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="3" y1="3" x2="13" y2="13" />
-                  <line x1="13" y1="3" x2="3" y2="13" />
-                </svg>
-                <span class="shell-status-exit">exited {exit_code}</span>
-              </span>
-        )}
-      </div>
       {hasOutput && (
         <div class="shell-output-body" ref={contentRef}>
           <pre class="shell-output-stdout">{displayContent}</pre>
@@ -129,6 +107,29 @@ export function ShellOutputBlock({ result, onErrorState }) {
               )}
             </div>
           )}
+          <div class="shell-output-footer">
+            <button class="shell-output-copy-icon" onClick={handleCopy} title="Copy output">
+              <ClipboardIcon />
+            </button>
+          </div>
+        </div>
+      )}
+      {!hasOutput && (
+        <div class="shell-output-toolbar">
+          {exit_code === 0
+            ? <span class="shell-status-icon shell-status-ok">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="2 8 6 12 14 4" />
+                </svg>
+              </span>
+            : <span class="shell-status-icon shell-status-fail">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="3" y1="3" x2="13" y2="13" />
+                  <line x1="13" y1="3" x2="3" y2="13" />
+                </svg>
+                <span class="shell-status-exit">exited {exit_code}</span>
+              </span>
+          }
         </div>
       )}
     </div>

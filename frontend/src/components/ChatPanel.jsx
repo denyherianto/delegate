@@ -1407,6 +1407,9 @@ export function ChatPanel() {
                   <span class="msg-checkmark" dangerouslySetInnerHTML={{ __html: msgStatusIcon(m) }} />
                 </div>
                 <MemoizedMessageContent content={m.content} team={team} isBoss={isDelegate} />
+                <div class="msg-footer">
+                  <CopyBtn text={m.content} />
+                </div>
               </div>
             </div>
           );
