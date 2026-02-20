@@ -511,7 +511,8 @@ class TestRepoChangeReplacement:
 
     @patch("delegate.runtime.random.random", return_value=1.0)
     @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
-    def test_telephone_replaced_when_repos_change(self, _mock_create, _mock_rng, tmp_team):
+    @patch("delegate.network.get_allowed_domains", return_value=["*"])
+    def test_telephone_replaced_when_repos_change(self, _mock_domains, _mock_create, _mock_rng, tmp_team):
         """If a new repo is registered mid-session, Telephone should be replaced."""
         from delegate.repo import register_repo
 
@@ -542,7 +543,8 @@ class TestRepoChangeReplacement:
 
     @patch("delegate.runtime.random.random", return_value=1.0)
     @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
-    def test_telephone_not_replaced_when_repos_same(self, _mock_create, _mock_rng, tmp_team):
+    @patch("delegate.network.get_allowed_domains", return_value=["*"])
+    def test_telephone_not_replaced_when_repos_same(self, _mock_domains, _mock_create, _mock_rng, tmp_team):
         """If repo list hasn't changed, Telephone should be reused."""
         exchange = TelephoneExchange()
 
