@@ -38,7 +38,9 @@ Forbidden patterns — if you catch yourself writing any of these, stop and fix 
 - `source "$REPO_ROOT/.venv/bin/activate"` — activating a shared venv
 - "reuse the pre-existing venv" / "shared across worktrees" — this reasoning is always wrong
 
-The correct pattern is always: `VENV_DIR="$WORKTREE_ROOT/.venv"` — the venv lives inside the worktree. If creating the venv fails (e.g. no network), exit with a clear error — do NOT fall back to sharing another environment.
+The correct pattern is always: `VENV_DIR="$WORKTREE_ROOT/.venv"` — the venv lives inside the worktree. If creating the venv fails, exit with a clear error — do NOT fall back to sharing another environment.
+
+**Network IS available.** You can run `pip install`, `uv sync`, `npm install`, etc. normally. Do not assume network is unavailable — it is not. Do not create `.pth` files, symlinks, or any other mechanism to borrow packages from outside the worktree.
 
 ---
 
