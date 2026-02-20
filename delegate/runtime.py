@@ -997,37 +997,6 @@ async def run_turn(
             ", ".join(turn_tools[:10]) if turn_tools else "(none)",
         )
 
-    # --- Post-turn guardrail: ack-only manager turns ---
-    # The manager sometimes sends an acknowledgment message but then ends
-    # its turn without doing any substantive work (creating tasks, running
-    # commands, reading files, etc.).  Detect this and nudge the agent to
-    # continue.
-    _SUBSTANTIVE_TOOLS = frozenset({
-        "task_create", "task_assign", "task_status", "task_comment",
-        "Bash", "Edit", "Write", "Read", "MultiEdit", "Grep", "Glob",
-        "BatchEdit",
-    })
-    if sent_message and not nudge_msg and role == "manager":
-        substantive = [t for t in turn_tools if t in _SUBSTANTIVE_TOOLS]
-        if not substantive:
-            nudge_msg = (
-                "SYSTEM: You sent an acknowledgment message but did not perform any "
-                "substantive work (e.g., create a task, assign work, run a command, "
-                "read files). You MUST now either:\n"
-                "1. Take action (create a task, assign work, run a command) AND "
-                "send a mailbox_send to report it.\n"
-                "2. Investigate the request (read files, run commands) and then "
-                "send a substantive reply.\n"
-                "The ONLY valid exception: the conversation has naturally concluded "
-                "and there is truly nothing left to do. In that case, confirm that "
-                "is the case in your reasoning and end."
-            )
-            alog.warning(
-                "Manager sent ack-only message (%d tool calls: %s). Sending nudge.",
-                len(turn_tools),
-                ", ".join(turn_tools[:10]) if turn_tools else "(none)",
-            )
-
     if nudge_msg:
         try:
             nudge_tools: list[str] = []

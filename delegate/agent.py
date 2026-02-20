@@ -738,7 +738,9 @@ def _extract_tool_calls_rich(msg: Any) -> list[dict]:
     for block in msg.content:
         if not hasattr(block, "name"):
             continue
-        name = block.name
+        raw_name = block.name
+        # Strip MCP namespace prefix so "mcp__delegate__mailbox_send" -> "mailbox_send"
+        name = raw_name.split("__")[-1] if raw_name.startswith("mcp__") else raw_name
         inp = getattr(block, "input", {}) or {}
         if name == "Bash":
             summary = inp.get("command", "")
