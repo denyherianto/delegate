@@ -59,13 +59,13 @@ Forbidden patterns — if you catch yourself writing any of these, stop and fix 
 
 The correct pattern is always: `VENV_DIR="$WORKTREE_ROOT/.venv"` — the venv lives inside the worktree. If creating the venv fails, exit with a clear error — do NOT fall back to sharing another environment.
 
-**Network is restricted.** The sandbox allows outbound connections only to curated package-manager registries and git forges (see `delegate network show`). The auto-generated `setup.sh` uses a 3-tier install strategy to minimise network dependence:
+**Network is restricted.** The sandbox allows outbound connections only to curated package-manager registries and git forges (see `delegate network show`). The auto-generated `setup.sh` uses a 3-layer additive install strategy to minimise network dependence:
 
-1. **Copy from main repo** — for Python, copies `site-packages` from the main repo's `.venv`; for Node, copies `node_modules`. Instant, zero network.
-2. **Install from system cache** — runs the package manager in offline/cache-only mode (e.g. `uv pip install --offline`, `npm ci --prefer-offline`). Works when the user has previously installed the same packages.
-3. **Full network install** — standard `pip install` / `npm ci` / etc. Used in CI, first checkout, or cold machines.
+1. **Copy from main repo** — for Python, copies `site-packages` from the main repo's `.venv` (only when Python major.minor versions match); for Node, copies `node_modules`. Instant, zero network. This is a bulk bootstrap — gets most packages in place.
+2. **Install from system cache** — runs the package manager in offline/cache-only mode (e.g. `uv pip install --offline`, `npm install --prefer-offline`). Catches any packages the copy missed (new dependencies, version bumps).
+3. **Full network install** — standard `pip install` / `npm install` / etc. Used in CI, first checkout, or when cache is cold.
 
-Each tier is tried in order; the first success short-circuits. Do not create `.pth` files, symlinks, or any other mechanism to borrow packages from outside the worktree — the copy in tier 1 is a full, independent copy into the worktree's own environment.
+All three layers run unconditionally on every source — each is idempotent (a no-op when everything is already present). This means changes to `requirements.txt` or `package.json` are picked up automatically without manual intervention. Do not create `.pth` files, symlinks, or any other mechanism to borrow packages from outside the worktree — the copy in layer 1 is a full, independent copy into the worktree's own environment.
 
 ---
 
@@ -79,12 +79,17 @@ When `shell.nix` or `flake.nix` is present (or `.envrc` contains `use nix`/`use 
 
 #### Finding the repo root from a linked worktree
 
-Worktrees are linked git directories. `git rev-parse --show-toplevel` returns the worktree path, not the main repo root. The generated scripts use:
+Worktrees are linked git directories. `git rev-parse --show-toplevel` returns the worktree path, not the main repo root. The generated scripts use a portable `_SELF` reference (works in bash and zsh), then derive paths from it:
 
 ```bash
-WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)"
-REPO_ROOT="$(cd "$GIT_COMMON/.." && pwd)"
+# Portable script self-reference
+if [ -n "${BASH_VERSION:-}" ]; then _SELF="${BASH_SOURCE[0]}"
+elif [ -n "${ZSH_VERSION:-}" ]; then eval '_SELF="${(%):-%x}"'
+else _SELF="$0"; fi
+
+WORKTREE_ROOT="$(cd "$(dirname "$_SELF")/.." && pwd)"
+GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir 2>&1)" || true
+REPO_ROOT="$(cd "$GIT_COMMON/.." 2>/dev/null && pwd)"
 ```
 
 `REPO_ROOT` is where `shell.nix`/`flake.nix` live. Use `REPO_ROOT` ONLY for locating nix files — never use it to share environments.
@@ -96,13 +101,14 @@ REPO_ROOT="$(cd "$GIT_COMMON/.." && pwd)"
 set -e
 # Created by delegate. Edit as needed.
 
-WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)"
-REPO_ROOT="$(cd "$GIT_COMMON/.." && pwd)"
+# Resolve the path of THIS script (portable across bash/zsh)
+if [ -n "${BASH_VERSION:-}" ]; then _SELF="${BASH_SOURCE[0]}"
+elif [ -n "${ZSH_VERSION:-}" ]; then eval '_SELF="${(%):-%x}"'
+else _SELF="$0"; fi
 
-# Re-entrance guard
-[[ -n "$_DELEGATE_SETUP_DONE" ]] && return 0 2>/dev/null || true
-_DELEGATE_SETUP_DONE=1
+WORKTREE_ROOT="$(cd "$(dirname "$_SELF")/.." && pwd)"
+GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir 2>&1)" || true
+REPO_ROOT="$(cd "$GIT_COMMON/.." 2>/dev/null && pwd)"
 
 if [ -f "$REPO_ROOT/flake.nix" ] && command -v nix >/dev/null 2>&1; then
   nix develop "$REPO_ROOT" --command bash -c \
@@ -125,10 +131,14 @@ For nix repos, premerge.sh is **self-contained** — it runs install + test insi
 set -e
 # Created by delegate. Edit as needed.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -n "${BASH_VERSION:-}" ]; then _SELF="${BASH_SOURCE[0]}"
+elif [ -n "${ZSH_VERSION:-}" ]; then eval '_SELF="${(%):-%x}"'
+else _SELF="$0"; fi
+
+SCRIPT_DIR="$(cd "$(dirname "$_SELF")" && pwd)"
 WORKTREE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)"
-REPO_ROOT="$(cd "$GIT_COMMON/.." && pwd)"
+GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir 2>&1)" || true
+REPO_ROOT="$(cd "$GIT_COMMON/.." 2>/dev/null && pwd)"
 
 nix-shell "$REPO_ROOT/shell.nix" --run \
   "bash -c 'cd $WORKTREE_ROOT && <install command> && <test command>'"
@@ -159,59 +169,61 @@ Anti-patterns — never write these:
 - `uv pip install --no-cache` or `uv sync --no-cache` — disables shared cache
 - `pip install -r requirements.txt` when uv is available — always prefer uv
 
-#### Python setup.sh (3-tier strategy)
+#### Python setup.sh (3-layer additive strategy)
+
+All three layers run unconditionally — each is idempotent and a no-op when its packages are already present.
 
 ```bash
 #!/usr/bin/env bash
 set -e
 # Created by delegate. Edit as needed.
+
+# Copy directory tree using copy-on-write when available (macOS APFS / Linux btrfs)
 _cp_tree() { cp -Rc "$@" 2>/dev/null || cp -r --reflink=auto "$@" 2>/dev/null || cp -r "$@"; }
 
-WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Resolve the path of THIS script (portable across bash/zsh)
+if [ -n "${BASH_VERSION:-}" ]; then _SELF="${BASH_SOURCE[0]}"
+elif [ -n "${ZSH_VERSION:-}" ]; then eval '_SELF="${(%):-%x}"'
+else _SELF="$0"; fi
+
+WORKTREE_ROOT="$(cd "$(dirname "$_SELF")/.." && pwd)"
 VENV_DIR="$WORKTREE_ROOT/.venv"
-MAIN_VENV="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)/.." && pwd)/.venv"
+_GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir 2>&1)" || true
+MAIN_VENV="$(cd "$_GIT_COMMON/.." 2>/dev/null && pwd)/.venv"
 
-# Re-entrance guard
-[[ -n "$_DELEGATE_SETUP_DONE" ]] && { source "$VENV_DIR/bin/activate"; return 0 2>/dev/null || exit 0; }
-_DELEGATE_SETUP_DONE=1
-
-if ! "$VENV_DIR/bin/python" -c "import pytest" 2>/dev/null; then
+# Ensure venv exists and is healthy
+if [ ! -d "$VENV_DIR" ] || ! "$VENV_DIR/bin/python" --version >/dev/null 2>&1; then
   rm -rf "$VENV_DIR"
-  cd "$WORKTREE_ROOT"
   python3 -m venv "$VENV_DIR"
-  _installed=0
+fi
+cd "$WORKTREE_ROOT"
 
-  # Strategy 1: copy site-packages from the main repo venv (no network)
-  if [ "$_installed" -eq 0 ] && [ -d "$MAIN_VENV" ]; then
-    MAIN_SITE="$(ls -d "$MAIN_VENV"/lib/python*/site-packages 2>/dev/null | head -1)"
-    WORKTREE_SITE="$(ls -d "$VENV_DIR"/lib/python*/site-packages 2>/dev/null | head -1)"
-    if [ -n "$MAIN_SITE" ] && [ -d "$MAIN_SITE" ]; then
-      _cp_tree "$MAIN_SITE/." "$WORKTREE_SITE/"
-      _installed=1
-    fi
+# ── Layer 1: bootstrap from main repo venv (fast, offline) ──
+# Only copy when Python major.minor versions match (ABI compatibility)
+if [ -d "$MAIN_VENV" ]; then
+  MAIN_SITE="$(ls -d "$MAIN_VENV"/lib/python*/site-packages 2>/dev/null | head -1)"
+  WORKTREE_SITE="$(ls -d "$VENV_DIR"/lib/python*/site-packages 2>/dev/null | head -1)"
+  MAIN_PYVER="$(basename "$(dirname "$MAIN_SITE")" 2>/dev/null)"
+  WORKTREE_PYVER="$(basename "$(dirname "$WORKTREE_SITE")" 2>/dev/null)"
+  if [ -n "$MAIN_SITE" ] && [ -d "$MAIN_SITE" ] && [ -n "$WORKTREE_SITE" ] && [ "$MAIN_PYVER" = "$WORKTREE_PYVER" ]; then
+    _cp_tree "$MAIN_SITE/." "$WORKTREE_SITE/"
   fi
+fi
 
-  # Strategy 2: install from system cache (no network)
-  if [ "$_installed" -eq 0 ]; then
-    _SYS_UV_CACHE="${HOME}/.cache/uv"
-    _SYS_PIP_CACHE="${HOME}/.cache/pip"
-    if command -v uv >/dev/null 2>&1 && [ -d "$_SYS_UV_CACHE" ]; then
-      uv pip install --python "$VENV_DIR/bin/python" ".[dev]" --cache-dir "$_SYS_UV_CACHE" --offline --quiet 2>/dev/null && _installed=1 || true
-    fi
-    if [ "$_installed" -eq 0 ] && [ -d "$_SYS_PIP_CACHE" ]; then
-      "$VENV_DIR/bin/pip" install ".[dev]" --cache-dir "$_SYS_PIP_CACHE" --no-index --quiet 2>/dev/null && _installed=1 || true
-    fi
-  fi
+# ── Layer 2: install from system cache (offline, no network) ──
+_SYS_UV_CACHE="${HOME}/.cache/uv"
+_SYS_PIP_CACHE="${HOME}/.cache/pip"
+if command -v uv >/dev/null 2>&1; then
+  UV_CACHE_DIR="${_SYS_UV_CACHE}" uv pip install --python "$VENV_DIR/bin/python" ".[dev]" --offline --quiet 2>/dev/null || true
+else
+  PIP_CACHE_DIR="${_SYS_PIP_CACHE}" "$VENV_DIR/bin/pip" install ".[dev]" --no-index --quiet 2>/dev/null || true
+fi
 
-  # Strategy 3: full install (needs network — CI, first checkout)
-  if [ "$_installed" -eq 0 ]; then
-    if command -v uv >/dev/null 2>&1; then
-      uv pip install --python "$VENV_DIR/bin/python" ".[dev]" --quiet 2>/dev/null && _installed=1 || true
-    fi
-    if [ "$_installed" -eq 0 ]; then
-      "$VENV_DIR/bin/pip" install ".[dev]" --quiet 2>/dev/null && _installed=1 || true
-    fi
-  fi
+# ── Layer 3: install with network (catches any remaining gaps) ──
+if command -v uv >/dev/null 2>&1; then
+  uv pip install --python "$VENV_DIR/bin/python" ".[dev]" --quiet 2>/dev/null || true
+else
+  "$VENV_DIR/bin/pip" install ".[dev]" --quiet 2>/dev/null || true
 fi
 
 source "$VENV_DIR/bin/activate"
@@ -235,37 +247,35 @@ Key rules:
 - Export PATH: `export PATH="$WORKTREE_ROOT/node_modules/.bin:$PATH"`.
 - Never use `npm install -g`.
 
-#### Node setup.sh (3-tier strategy)
+#### Node setup.sh (3-layer additive strategy)
+
+All three layers run unconditionally — `npm install` is idempotent (skips already-installed packages).
 
 ```bash
 #!/usr/bin/env bash
 set -e
 # Created by delegate. Edit as needed.
+
+# Copy directory tree using copy-on-write when available (macOS APFS / Linux btrfs)
 _cp_tree() { cp -Rc "$@" 2>/dev/null || cp -r --reflink=auto "$@" 2>/dev/null || cp -r "$@"; }
 
-WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Resolve the path of THIS script (portable across bash/zsh)
+if [ -n "${BASH_VERSION:-}" ]; then _SELF="${BASH_SOURCE[0]}"
+elif [ -n "${ZSH_VERSION:-}" ]; then eval '_SELF="${(%):-%x}"'
+else _SELF="$0"; fi
 
-# Re-entrance guard
-[[ -n "$_DELEGATE_SETUP_DONE" ]] && { export PATH="$WORKTREE_ROOT/node_modules/.bin:$PATH"; return 0 2>/dev/null || true; }
-_DELEGATE_SETUP_DONE=1
-
-MAIN_REPO="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)/.." && pwd)"
+WORKTREE_ROOT="$(cd "$(dirname "$_SELF")/.." && pwd)"
+MAIN_REPO="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir 2>&1)/.." 2>/dev/null && pwd)"
 cd "$WORKTREE_ROOT"
-if [ ! -d node_modules ]; then
-  _nm_installed=0
-  # Strategy 1: copy node_modules from main repo (no network)
-  if [ -d "$MAIN_REPO/node_modules" ]; then
-    _cp_tree "$MAIN_REPO/node_modules" node_modules && _nm_installed=1
-  fi
-  # Strategy 2: install from system cache (no network)
-  if [ "$_nm_installed" -eq 0 ]; then
-    npm ci --prefer-offline --silent 2>/dev/null && _nm_installed=1 || true
-  fi
-  # Strategy 3: full install (needs network)
-  if [ "$_nm_installed" -eq 0 ]; then
-    npm ci --silent 2>/dev/null || true      # adapt for pnpm/yarn
-  fi
+
+# Layer 1: copy node_modules from main repo (fast bootstrap)
+if [ ! -d node_modules ] && [ -d "$MAIN_REPO/node_modules" ]; then
+  _cp_tree "$MAIN_REPO/node_modules" node_modules
 fi
+# Layer 2: install from cache (offline, catches deltas)
+npm install --prefer-offline --silent 2>/dev/null || true
+# Layer 3: install with network (catches anything missing)
+npm ci --silent 2>/dev/null || true      # adapt for pnpm/yarn
 
 export PATH="$WORKTREE_ROOT/node_modules/.bin:$PATH"
 ```
@@ -277,10 +287,11 @@ export PATH="$WORKTREE_ROOT/node_modules/.bin:$PATH"
 ```bash
 #!/usr/bin/env bash
 set -e
-WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -n "${BASH_VERSION:-}" ]; then _SELF="${BASH_SOURCE[0]}"
+elif [ -n "${ZSH_VERSION:-}" ]; then eval '_SELF="${(%):-%x}"'
+else _SELF="$0"; fi
+WORKTREE_ROOT="$(cd "$(dirname "$_SELF")/.." && pwd)"
 cd "$WORKTREE_ROOT"
-[[ -n "$_DELEGATE_SETUP_DONE" ]] && return 0 2>/dev/null || true
-_DELEGATE_SETUP_DONE=1
 cargo build --quiet
 ```
 
@@ -293,10 +304,11 @@ Premerge: `cargo test`.
 ```bash
 #!/usr/bin/env bash
 set -e
-WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -n "${BASH_VERSION:-}" ]; then _SELF="${BASH_SOURCE[0]}"
+elif [ -n "${ZSH_VERSION:-}" ]; then eval '_SELF="${(%):-%x}"'
+else _SELF="$0"; fi
+WORKTREE_ROOT="$(cd "$(dirname "$_SELF")/.." && pwd)"
 cd "$WORKTREE_ROOT"
-[[ -n "$_DELEGATE_SETUP_DONE" ]] && return 0 2>/dev/null || true
-_DELEGATE_SETUP_DONE=1
 go mod tidy
 ```
 
@@ -309,14 +321,13 @@ Premerge: `go test ./...`.
 ```bash
 #!/usr/bin/env bash
 set -e
-WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -n "${BASH_VERSION:-}" ]; then _SELF="${BASH_SOURCE[0]}"
+elif [ -n "${ZSH_VERSION:-}" ]; then eval '_SELF="${(%):-%x}"'
+else _SELF="$0"; fi
+WORKTREE_ROOT="$(cd "$(dirname "$_SELF")/.." && pwd)"
 cd "$WORKTREE_ROOT"
 export BUNDLE_PATH="$WORKTREE_ROOT/vendor/bundle"
-[[ -n "$_DELEGATE_SETUP_DONE" ]] && return 0 2>/dev/null || true
-_DELEGATE_SETUP_DONE=1
-if [ ! -d vendor/bundle ]; then
-  bundle install --path vendor/bundle --quiet
-fi
+bundle install --path vendor/bundle --quiet
 ```
 
 Premerge: `bundle exec rspec` or `bundle exec rake test`.
@@ -325,7 +336,7 @@ Premerge: `bundle exec rspec` or `bundle exec rake test`.
 
 ### premerge.sh (non-Nix stacks)
 
-The premerge pattern is the same regardless of stack — source setup.sh (the re-entrance guard makes this cheap), then run tests:
+The premerge pattern is the same regardless of stack — source setup.sh (each layer is idempotent, so re-sourcing is safe and fast), then run tests:
 
 > **Nix repos**: use the self-contained Nix premerge.sh template above — do NOT source setup.sh.
 
@@ -334,7 +345,11 @@ The premerge pattern is the same regardless of stack — source setup.sh (the re
 set -e
 # Created by delegate. Edit as needed.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -n "${BASH_VERSION:-}" ]; then _SELF="${BASH_SOURCE[0]}"
+elif [ -n "${ZSH_VERSION:-}" ]; then eval '_SELF="${(%):-%x}"'
+else _SELF="$0"; fi
+
+SCRIPT_DIR="$(cd "$(dirname "$_SELF")" && pwd)"
 WORKTREE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/setup.sh"
 cd "$WORKTREE_ROOT"

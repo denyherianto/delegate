@@ -305,56 +305,41 @@ def _detect_at(directory: Path, rel_path: str = ".") -> _Component | None:
         else:
             test_cmd = ""
 
-        # Determine the system cache flag for offline fallback
+        # Determine offline install command
         if _has_file(directory, "pnpm-lock.yaml"):
-            cache_flag = ""  # pnpm store is separate; no simple --cache flag
             offline_cmd = "pnpm install --frozen-lockfile --offline --silent 2>/dev/null"
         elif _has_file(directory, "yarn.lock"):
-            cache_flag = ""
             offline_cmd = "yarn install --frozen-lockfile --offline --silent 2>/dev/null"
         else:
-            # npm supports --cache
-            cache_flag = ""
-            offline_cmd = 'npm ci --prefer-offline --silent 2>/dev/null'
+            offline_cmd = "npm install --prefer-offline --silent 2>/dev/null"
 
         if is_root:
             snippet = (
-                'MAIN_REPO="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)/.." && pwd)"\n'
+                'MAIN_REPO="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir 2>&1)/.." 2>/dev/null && pwd)"\n'
                 'cd "$WORKTREE_ROOT"\n'
-                'if [ ! -d node_modules ]; then\n'
-                '  _nm_installed=0\n'
-                '  # Strategy 1: copy node_modules from main repo (no network)\n'
-                '  if [ -d "$MAIN_REPO/node_modules" ]; then\n'
-                '    _cp_tree "$MAIN_REPO/node_modules" node_modules && _nm_installed=1\n'
-                '  fi\n'
-                '  # Strategy 2: install from system cache (no network)\n'
-                '  if [ "$_nm_installed" -eq 0 ]; then\n'
-                f'    {offline_cmd} && _nm_installed=1 || true\n'
-                '  fi\n'
-                '  # Strategy 3: full install (needs network)\n'
-                '  if [ "$_nm_installed" -eq 0 ]; then\n'
-                f'    {install_cmd} 2>/dev/null || true\n'
-                '  fi\n'
+                '# Layer 1: copy node_modules from main repo (fast bootstrap)\n'
+                'if [ ! -d node_modules ] && [ -d "$MAIN_REPO/node_modules" ]; then\n'
+                '  _cp_tree "$MAIN_REPO/node_modules" node_modules\n'
                 'fi\n'
+                '# Layer 2: install from cache (offline, catches deltas)\n'
+                f'{offline_cmd} || true\n'
+                '# Layer 3: install with network (catches anything missing)\n'
+                f'{install_cmd} 2>/dev/null || true\n'
                 '\n'
                 'export PATH="$WORKTREE_ROOT/node_modules/.bin:$PATH"'
             )
         else:
             snippet = (
                 f'# {rel_path}/ deps (node)\n'
-                f'MAIN_REPO="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)/.." && pwd)"\n'
-                f'if [ ! -d "$WORKTREE_ROOT/{rel_path}/node_modules" ]; then\n'
-                f'  _nm_installed=0\n'
-                f'  if [ -d "$MAIN_REPO/{rel_path}/node_modules" ]; then\n'
-                f'    _cp_tree "$MAIN_REPO/{rel_path}/node_modules" "$WORKTREE_ROOT/{rel_path}/node_modules" && _nm_installed=1\n'
-                f'  fi\n'
-                f'  if [ "$_nm_installed" -eq 0 ]; then\n'
-                f'    (cd {dir_expr} && {offline_cmd}) && _nm_installed=1 || true\n'
-                f'  fi\n'
-                f'  if [ "$_nm_installed" -eq 0 ]; then\n'
-                f'    (cd {dir_expr} && {install_cmd}) 2>/dev/null || true\n'
-                f'  fi\n'
-                f'fi'
+                f'MAIN_REPO="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir 2>&1)/.." 2>/dev/null && pwd)"\n'
+                f'# Layer 1: copy node_modules from main repo (fast bootstrap)\n'
+                f'if [ ! -d "$WORKTREE_ROOT/{rel_path}/node_modules" ] && [ -d "$MAIN_REPO/{rel_path}/node_modules" ]; then\n'
+                f'  _cp_tree "$MAIN_REPO/{rel_path}/node_modules" "$WORKTREE_ROOT/{rel_path}/node_modules"\n'
+                f'fi\n'
+                f'# Layer 2: install from cache (offline, catches deltas)\n'
+                f'(cd {dir_expr} && {offline_cmd}) || true\n'
+                f'# Layer 3: install with network (catches anything missing)\n'
+                f'(cd {dir_expr} && {install_cmd}) 2>/dev/null || true'
             )
 
         return _Component(
@@ -509,17 +494,13 @@ def _detect_at(directory: Path, rel_path: str = ".") -> _Component | None:
         if is_root:
             snippet = (
                 'cd "$WORKTREE_ROOT"\n'
-                f'if [ ! -d node_modules ]; then\n'
-                f'  {install_cmd}\n'
-                f'fi\n\n'
+                f'{install_cmd} 2>/dev/null || true\n'
                 f'export PATH="$WORKTREE_ROOT/node_modules/.bin:$PATH"'
             )
         else:
             snippet = (
                 f'# {rel_path}/ deps (node, from .envrc)\n'
-                f'if [ ! -d "$WORKTREE_ROOT/{rel_path}/node_modules" ]; then\n'
-                f'  (cd {dir_expr} && {install_cmd})\n'
-                f'fi'
+                f'(cd {dir_expr} && {install_cmd}) 2>/dev/null || true'
             )
         return _Component(
             name="node",
@@ -669,12 +650,23 @@ set -e
 # Created by delegate. Edit as needed.
 """
 
-# Bash helper injected into generated scripts that need to copy
-# directories.  Tries APFS clone (macOS) or reflink (Linux btrfs/XFS)
-# first — both are instant and copy-on-write.  Falls back to regular cp.
 _CP_TREE_FN = """\
+# Copy directory tree using copy-on-write when available:
+#   macOS (APFS) → cp -Rc (clonefile),  Linux (btrfs/XFS) → cp --reflink=auto
+# Falls back to regular cp -r on other filesystems.
 _cp_tree() { cp -Rc "$@" 2>/dev/null || cp -r --reflink=auto "$@" 2>/dev/null || cp -r "$@"; }
 """
+
+_SELF_REF = """\
+# Resolve the path of THIS script, portable across bash, zsh, and others.
+# Needed because $0 behaves differently when the script is sourced vs executed.
+if [ -n "${BASH_VERSION:-}" ]; then
+  _SELF="${BASH_SOURCE[0]}"
+elif [ -n "${ZSH_VERSION:-}" ]; then
+  eval '_SELF="${(%):-%x}"'   # zsh-only syntax, hidden from bash parser via eval
+else
+  _SELF="$0"                  # best-effort fallback
+fi"""
 
 
 def _has_root_python(components: list[_Component]) -> bool:
@@ -715,13 +707,10 @@ def _generate_nix_setup(components: list[_Component], nix_file: str) -> str:
     install_chain = " && ".join(root_cmds) if root_cmds else "true"
 
     lines = [_HEADER.rstrip(), _CP_TREE_FN.rstrip(), ""]
-    lines.append('WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"')
-    lines.append('GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)"')
-    lines.append('REPO_ROOT="$(cd "$GIT_COMMON/.." && pwd)"')
-    lines.append("")
-    lines.append("# Re-entrance guard")
-    lines.append('[[ -n "$_DELEGATE_SETUP_DONE" ]] && return 0 2>/dev/null || true')
-    lines.append("_DELEGATE_SETUP_DONE=1")
+    lines.append(_SELF_REF)
+    lines.append('WORKTREE_ROOT="$(cd "$(dirname "$_SELF")/.." && pwd)"')
+    lines.append('GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir 2>&1)" || true')
+    lines.append('REPO_ROOT="$(cd "$GIT_COMMON/.." 2>/dev/null && pwd)"')
     lines.append("")
     lines.append(f'{nix_run} \\')
     lines.append(f'  "bash -c \'cd $WORKTREE_ROOT && {install_chain}\'"')
@@ -739,100 +728,88 @@ def _generate_nix_setup(components: list[_Component], nix_file: str) -> str:
 def _generate_python_root_setup(components: list[_Component], root_python: _Component) -> str:
     """Generate setup.sh with Python venv at root + other components appended.
 
-    Produces a 3-tier install strategy optimised for sandboxed agents
-    (network is usually blocked by the Claude Code proxy):
+    All three install layers run unconditionally — each is idempotent and
+    a no-op when everything it would install is already present:
 
-      1. **Copy site-packages** from the main repo's venv (instant, no
-         network, always available inside a git-worktree).
-      2. **Install from system cache** — run ``uv pip install --offline``
-         or ``pip install --no-index`` against the user's system-level
-         cache (``~/.cache/uv``, ``~/.cache/pip``).  No network needed.
+      1. **Copy site-packages** from the main repo's venv — instant bulk
+         bootstrap (only when Python major.minor matches).
+      2. **Install from system cache** (offline) — ``uv pip install --offline``
+         or ``pip install --no-index`` against ``~/.cache/uv`` / ``~/.cache/pip``.
+         Catches any packages the copy missed.
       3. **Full install** via ``uv pip install`` / ``pip install`` with
-         network (CI, first checkout, cold machine).
+         network — catches anything missing from cache (CI, new deps).
 
-    Worktrees always have a git common dir pointing to the original
-    repo, so we can reliably locate its ``.venv``.
+    Because layers are additive, changes to requirements.txt are
+    picked up on the next source without manual intervention.
     """
     lines = [_HEADER.rstrip(), _CP_TREE_FN.rstrip(), ""]
-    lines.append('WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"')
+
+    lines.append(_SELF_REF)
+    lines.append('WORKTREE_ROOT="$(cd "$(dirname "$_SELF")/.." && pwd)"')
     lines.append('VENV_DIR="$WORKTREE_ROOT/.venv"')
-    lines.append('MAIN_VENV="$(cd "$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)/.." && pwd)/.venv"')
+    # Guard git command with || true to prevent set -e from killing the script
+    lines.append('_GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir 2>&1)" || true')
+    lines.append('MAIN_VENV="$(cd "$_GIT_COMMON/.." 2>/dev/null && pwd)/.venv"')
     lines.append("")
-    lines.append("# Re-entrance guard")
-    lines.append('[[ -n "$_DELEGATE_SETUP_DONE" ]] && { source "$VENV_DIR/bin/activate"; return 0 2>/dev/null || exit 0; }')
-    lines.append("_DELEGATE_SETUP_DONE=1")
-    lines.append("")
-    lines.append('if ! "$VENV_DIR/bin/python" -c "import pytest" 2>/dev/null; then')
-    lines.append("  rm -rf \"$VENV_DIR\"")
-    lines.append('  cd "$WORKTREE_ROOT"')
+
+    # ── Ensure venv exists and is healthy ──
+    lines.append("# Ensure venv exists and is healthy")
+    lines.append('if [ ! -d "$VENV_DIR" ] || ! "$VENV_DIR/bin/python" --version >/dev/null 2>&1; then')
+    lines.append('  rm -rf "$VENV_DIR"')
     lines.append('  python3 -m venv "$VENV_DIR"')
-    lines.append('  _installed=0')
+    lines.append("fi")
+    lines.append('cd "$WORKTREE_ROOT"')
     lines.append("")
-    lines.append("  # ── Strategy 1: copy site-packages from the main repo venv (no network) ──")
-    lines.append('  if [ "$_installed" -eq 0 ] && [ -d "$MAIN_VENV" ]; then')
-    lines.append('    MAIN_SITE="$(ls -d "$MAIN_VENV"/lib/python*/site-packages 2>/dev/null | head -1)"')
-    lines.append('    WORKTREE_SITE="$(ls -d "$VENV_DIR"/lib/python*/site-packages 2>/dev/null | head -1)"')
-    lines.append('    if [ -n "$MAIN_SITE" ] && [ -d "$MAIN_SITE" ]; then')
-    lines.append('      _cp_tree "$MAIN_SITE/." "$WORKTREE_SITE/"')
-    lines.append("      _installed=1")
-    lines.append("    fi")
+
+    # ── Layer 1: copy site-packages from main repo (instant bootstrap) ──
+    lines.append("# ── Layer 1: bootstrap from main repo venv (fast, offline) ──")
+    lines.append("# Only copy when Python major.minor versions match (ABI compatibility)")
+    lines.append('if [ -d "$MAIN_VENV" ]; then')
+    lines.append('  MAIN_SITE="$(ls -d "$MAIN_VENV"/lib/python*/site-packages 2>/dev/null | head -1)"')
+    lines.append('  WORKTREE_SITE="$(ls -d "$VENV_DIR"/lib/python*/site-packages 2>/dev/null | head -1)"')
+    lines.append('  MAIN_PYVER="$(basename "$(dirname "$MAIN_SITE")" 2>/dev/null)"')
+    lines.append('  WORKTREE_PYVER="$(basename "$(dirname "$WORKTREE_SITE")" 2>/dev/null)"')
+    lines.append('  if [ -n "$MAIN_SITE" ] && [ -d "$MAIN_SITE" ] && [ -n "$WORKTREE_SITE" ] && [ "$MAIN_PYVER" = "$WORKTREE_PYVER" ]; then')
+    lines.append('    _cp_tree "$MAIN_SITE/." "$WORKTREE_SITE/"')
     lines.append("  fi")
+    lines.append("fi")
     lines.append("")
-    # Build strategy 2 (system cache, offline) and strategy 3 (network)
-    # commands based on the Python variant.
+
+    # ── Layers 2 & 3: package-manager install (idempotent, catches deltas) ──
     if root_python.name == "python-uv-lock":
-        # uv sync reads from uv.lock — --offline uses cached wheels only
-        # Extract the sync flags from the original snippet (e.g. "--group dev")
         sync_line = [l.strip() for l in root_python.setup_snippet.splitlines()
                      if l.strip().startswith("uv sync")]
         sync_cmd = sync_line[0] if sync_line else "uv sync --quiet"
-        s2_lines = [
-            f'    {sync_cmd.replace("--quiet", "--offline --quiet")} 2>/dev/null && _installed=1 || true',
-        ]
-        s3_lines = [
-            f'    {sync_cmd} 2>/dev/null && _installed=1 || true',
-        ]
+        lines.append("# ── Layer 2: uv sync from cache (offline) ──")
+        lines.append(f'{sync_cmd.replace("--quiet", "--offline --quiet")} 2>/dev/null || true')
+        lines.append("")
+        lines.append("# ── Layer 3: uv sync with network (catches new deps) ──")
+        lines.append(f'{sync_cmd} 2>/dev/null || true')
+
     elif root_python.name == "python-poetry":
-        s2_lines = [
-            '    export POETRY_VIRTUALENVS_IN_PROJECT=true',
-            '    poetry install --no-interaction --quiet 2>/dev/null && _installed=1 || true',
-        ]
-        s3_lines = [
-            '    export POETRY_VIRTUALENVS_IN_PROJECT=true',
-            '    poetry install --no-interaction --quiet 2>/dev/null && _installed=1 || true',
-        ]
+        lines.append("# ── Layer 2+3: poetry install (manages cache & network internally) ──")
+        lines.append("export POETRY_VIRTUALENVS_IN_PROJECT=true")
+        lines.append("poetry install --no-interaction --quiet 2>/dev/null || true")
+
     else:
         # Generic python — uv pip install / pip install
         install_src = root_python.install_src or '"."'
-        s2_lines = [
-            '    _SYS_UV_CACHE="${HOME}/.cache/uv"',
-            '    _SYS_PIP_CACHE="${HOME}/.cache/pip"',
-            '    if command -v uv >/dev/null 2>&1 && [ -d "$_SYS_UV_CACHE" ]; then',
-            f'      uv pip install --python "$VENV_DIR/bin/python" {install_src} --cache-dir "$_SYS_UV_CACHE" --offline --quiet 2>/dev/null && _installed=1 || true',
-            '    fi',
-            '    if [ "$_installed" -eq 0 ] && [ -d "$_SYS_PIP_CACHE" ]; then',
-            f'      "$VENV_DIR/bin/pip" install {install_src} --cache-dir "$_SYS_PIP_CACHE" --no-index --quiet 2>/dev/null && _installed=1 || true',
-            '    fi',
-        ]
-        s3_lines = [
-            '    if command -v uv >/dev/null 2>&1; then',
-            f'      uv pip install --python "$VENV_DIR/bin/python" {install_src} --quiet 2>/dev/null && _installed=1 || true',
-            '    fi',
-            '    if [ "$_installed" -eq 0 ]; then',
-            f'      "$VENV_DIR/bin/pip" install {install_src} --quiet 2>/dev/null && _installed=1 || true',
-            '    fi',
-        ]
+        lines.append("# ── Layer 2: install from system cache (offline, no network) ──")
+        lines.append('_SYS_UV_CACHE="${HOME}/.cache/uv"')
+        lines.append('_SYS_PIP_CACHE="${HOME}/.cache/pip"')
+        lines.append("if command -v uv >/dev/null 2>&1; then")
+        lines.append(f'  UV_CACHE_DIR="${{_SYS_UV_CACHE}}" uv pip install --python "$VENV_DIR/bin/python" {install_src} --offline --quiet 2>/dev/null || true')
+        lines.append("else")
+        lines.append(f'  PIP_CACHE_DIR="${{_SYS_PIP_CACHE}}" "$VENV_DIR/bin/pip" install {install_src} --no-index --quiet 2>/dev/null || true')
+        lines.append("fi")
+        lines.append("")
+        lines.append("# ── Layer 3: install with network (catches any remaining gaps) ──")
+        lines.append("if command -v uv >/dev/null 2>&1; then")
+        lines.append(f'  uv pip install --python "$VENV_DIR/bin/python" {install_src} --quiet 2>/dev/null || true')
+        lines.append("else")
+        lines.append(f'  "$VENV_DIR/bin/pip" install {install_src} --quiet 2>/dev/null || true')
+        lines.append("fi")
 
-    lines.append("  # ── Strategy 2: install from system cache (no network) ──")
-    lines.append('  if [ "$_installed" -eq 0 ]; then')
-    lines.extend(s2_lines)
-    lines.append("  fi")
-    lines.append("")
-    lines.append("  # ── Strategy 3: full install (needs network — CI, first checkout) ──")
-    lines.append('  if [ "$_installed" -eq 0 ]; then')
-    lines.extend(s3_lines)
-    lines.append("  fi")
-    lines.append("fi")
     lines.append("")
     lines.append('source "$VENV_DIR/bin/activate"')
     lines.append('export PYTHONPATH="$WORKTREE_ROOT${PYTHONPATH:+:$PYTHONPATH}"')
@@ -848,29 +825,13 @@ def _generate_python_root_setup(components: list[_Component], root_python: _Comp
 
 
 def _generate_generic_setup(components: list[_Component]) -> str:
-    """Generate setup.sh for repos without root Python or Nix."""
-    root_comp = next((c for c in components if c.is_root), None)
+    """Generate setup.sh for repos without root Python or Nix.
 
-    # Build the re-entrance guard based on the root stack
-    if root_comp and root_comp.name == "ruby":
-        guard = (
-            '[[ -n "$_DELEGATE_SETUP_DONE" ]] && '
-            '{ export BUNDLE_PATH="$WORKTREE_ROOT/vendor/bundle"; return 0 2>/dev/null || true; }'
-        )
-    elif root_comp and root_comp.name == "node":
-        guard = (
-            '[[ -n "$_DELEGATE_SETUP_DONE" ]] && '
-            '{ export PATH="$WORKTREE_ROOT/node_modules/.bin:$PATH"; return 0 2>/dev/null || true; }'
-        )
-    else:
-        guard = '[[ -n "$_DELEGATE_SETUP_DONE" ]] && return 0 2>/dev/null || true'
-
+    Each component's snippet is idempotent — safe to re-source.
+    """
     lines = [_HEADER.rstrip(), _CP_TREE_FN.rstrip(), ""]
-    lines.append('WORKTREE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"')
-    lines.append("")
-    lines.append("# Re-entrance guard")
-    lines.append(guard)
-    lines.append("_DELEGATE_SETUP_DONE=1")
+    lines.append(_SELF_REF)
+    lines.append('WORKTREE_ROOT="$(cd "$(dirname "$_SELF")/.." && pwd)"')
 
     for c in components:
         lines.append("")
@@ -895,7 +856,8 @@ def _generate_premerge(
         test_lines = ['echo "No test command configured — edit .delegate/premerge.sh"']
 
     lines = [_HEADER.rstrip(), ""]
-    lines.append('SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"')
+    lines.append(_SELF_REF)
+    lines.append('SCRIPT_DIR="$(cd "$(dirname "$_SELF")" && pwd)"')
     lines.append('WORKTREE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"')
     lines.append('source "$SCRIPT_DIR/setup.sh"')
     lines.append('cd "$WORKTREE_ROOT"')
@@ -929,10 +891,11 @@ def _generate_nix_premerge(components: list[_Component], nix_file: str) -> str:
     chain = " && ".join(chain_parts) if chain_parts else "true"
 
     lines = [_HEADER.rstrip(), ""]
-    lines.append('SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"')
+    lines.append(_SELF_REF)
+    lines.append('SCRIPT_DIR="$(cd "$(dirname "$_SELF")" && pwd)"')
     lines.append('WORKTREE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"')
-    lines.append('GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir)"')
-    lines.append('REPO_ROOT="$(cd "$GIT_COMMON/.." && pwd)"')
+    lines.append('GIT_COMMON="$(git -C "$WORKTREE_ROOT" rev-parse --git-common-dir 2>&1)" || true')
+    lines.append('REPO_ROOT="$(cd "$GIT_COMMON/.." 2>/dev/null && pwd)"')
     lines.append("")
     lines.append(f'{nix_run} \\')
     lines.append(f'  "bash -c \'cd $WORKTREE_ROOT && {chain}\'"')

@@ -21,7 +21,18 @@ Delegate is the layer above. It's an **engineering manager** that runs persisten
 
 Spin up a team per project — a backend API, a mobile app, a data pipeline — each with its own agents, repos, and context. Within each project, agents work on multiple tasks in parallel: one builds a feature while another fixes a bug and a third refactors a module. Across projects, teams run independently and simultaneously. You manage a portfolio of work, not a single cursor.
 
-A copilot makes **you** a faster developer. Delegate gives you **teams** that ship while you focus on what matters.
+## Quickstart
+
+> **Requires Python 3.12+.** Check with `python3 --version`.
+> On macOS: `brew install python@3.13` · On Ubuntu: `sudo apt install python3.12` · Or download from [python.org](https://www.python.org/downloads/).
+
+```bash
+pip install delegate-ai
+delegate start # needs claude code login or ANTHROPIC_API_KEY in ENV
+```
+
+That's it. Delegate spins up a team with a manager + 5 engineer agents
+and opens the console in your browser. Tell Delegate what to build — it plans the work, assigns agents, and manages delivery. You review the results. Add more projects anytime with `delegate team add`.
 
 > **Note:** Delegate currently works with **local git repositories** — agents commit directly to branches on your machine. Support for remote repositories (GitHub, GitLab), external tools (Slack, Linear), and CI/CD integrations is coming soon.
 
@@ -43,20 +54,6 @@ A copilot makes **you** a faster developer. Delegate gives you **teams** that sh
 | **Workflow** | You drive every step | You set direction, check in when you want |
 
 This isn't a replacement for copilots — it's a different level of abstraction. Use Cursor to pair-program on a tricky function. Use Delegate to hand off "build the auth system" and come back to a reviewed PR.
-
-## Quickstart
-
-> **Requires Python 3.12+.** Check with `python3 --version`.
-> On macOS: `brew install python@3.13` · On Ubuntu: `sudo apt install python3.12` · Or download from [python.org](https://www.python.org/downloads/).
-
-```bash
-pip install delegate-ai
-cd to/directory/having/git/repo # optional, just makes config easier
-delegate start # needs claude code login or ANTHROPIC_API_KEY in ENV
-```
-
-That's it. Delegate spins up a team with a manager + 5 engineer agents
-and opens the console in your browser. Tell Delegate what to build — it plans the work, assigns agents, and manages delivery. You review the results. Add more projects anytime with `delegate team add`.
 
 ## What happens when you send a task
 
@@ -88,7 +85,7 @@ Meanwhile, you can send more tasks — Delegate will prioritize, assign, and mul
 
 **Real git, real branches.** Each agent works in isolated [git worktrees](https://git-scm.com/docs/git-worktree). Branches are named `delegate/<team>/T0001`. No magic file systems — you can `git log` any branch anytime.
 
-**Isolated environments per task.** Every worktree gets its own environment — Python venvs, Node modules, Rust targets — so agents never step on each other. Delegate auto-detects your project's tooling (pyproject.toml, package.json, Cargo.toml, shell.nix, etc.) and generates `.delegate/setup.sh` and `.delegate/premerge.sh` scripts that reproduce the environment and run tests before merge. Generated scripts use a 3-tier install strategy — copy from the main repo, install from system cache, then fall back to network — so setup is fast even when network access is restricted. These are committed to the repo — edit them if the defaults don't fit.
+**Isolated environments per task.** Every worktree gets its own environment — Python venvs, Node modules, Rust targets — so agents never step on each other. Delegate auto-detects your project's tooling (pyproject.toml, package.json, Cargo.toml, shell.nix, etc.) and generates `.delegate/setup.sh` and `.delegate/premerge.sh` scripts that reproduce the environment and run tests before merge. Generated scripts use a 3-layer additive install strategy — copy from the main repo, install from system cache, then install with network — all three always run but each is idempotent, so setup is fast and dependency changes are picked up automatically. These are committed to the repo — edit them if the defaults don't fit.
 
 **Customizable workflows.** Define your own task lifecycle in Python:
 

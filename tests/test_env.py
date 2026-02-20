@@ -239,10 +239,12 @@ class TestGenerateScripts:
         assert "set -e" in setup
         assert "set -e" in premerge
 
-    def test_reentrance_guard(self, tmp_path):
+    def test_idempotent_layers(self, tmp_path):
+        """Each component's install snippet is idempotent — no re-entrance guard needed."""
         repo = _make_repo(tmp_path, {"Cargo.toml": ""})
         setup, _ = generate_env_scripts(repo)
-        assert "_DELEGATE_SETUP_DONE" in setup
+        # No re-entrance guard; layers are safe to re-source
+        assert "_DELEGATE_SETUP_DONE" not in setup
 
     def test_python_venv_isolation(self, tmp_path):
         repo = _make_repo(tmp_path, {"pyproject.toml": "[project]\n"})
@@ -258,14 +260,17 @@ class TestGenerateScripts:
         assert "uv sync --group dev" in setup
         assert "uv venv" not in setup
 
-    def test_python_no_lock_has_uv_and_pip_fallback(self, tmp_path):
+    def test_python_no_lock_has_layered_install(self, tmp_path):
         repo = _make_repo(tmp_path, {"pyproject.toml": "[project]\n"})
         setup, _ = generate_env_scripts(repo)
-        # Always creates venv with python3, then tries uv/pip
+        # Ensures venv exists, then all three layers run unconditionally
         assert "python3 -m venv" in setup
         assert "uv pip install" in setup
         assert '"$VENV_DIR/bin/pip" install' in setup
-        assert "_installed=0" in setup
+        # Layer 2 uses system cache with --offline
+        assert "--offline" in setup
+        # No exclusive strategy flags
+        assert "_installed=0" not in setup
 
     def test_premerge_sources_setup(self, tmp_path):
         repo = _make_repo(tmp_path, {"pyproject.toml": "[project]\n"})
