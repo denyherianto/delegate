@@ -385,9 +385,11 @@ def _backfill_branch_metadata(hc_home: Path, team: str, task: dict, updates: dic
         for repo_name in repos:
             try:
                 from delegate.paths import repo_path as _repo_path
+                from delegate.repo import get_default_branch
                 git_cwd = str(_repo_path(hc_home, team, repo_name))
+                db = get_default_branch(git_cwd)
                 result = subprocess.run(
-                    ["git", "merge-base", "main", branch],
+                    ["git", "merge-base", db, branch],
                     cwd=git_cwd,
                     capture_output=True,
                     text=True,
@@ -875,7 +877,11 @@ def _diff_for_one_repo(git_cwd: str, branch: str, task: dict, repo_key: str) -> 
     # Fall back to base_sha...branch (pre-merge or older tasks)
     base_sha_dict: dict = task.get("base_sha", {})
     base_sha = base_sha_dict.get(repo_key, "")
-    diff_base = base_sha if base_sha else "main"
+    if base_sha:
+        diff_base = base_sha
+    else:
+        from delegate.repo import get_default_branch
+        diff_base = get_default_branch(git_cwd)
 
     try:
         result = subprocess.run(

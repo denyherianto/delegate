@@ -1096,3 +1096,199 @@ class TestSharedBranchCleanup:
             cwd=str(repo), capture_output=True, text=True,
         )
         assert branch not in branch_check.stdout
+
+
+# ---------------------------------------------------------------------------
+# Master-branch tests — verify everything works for repos using "master"
+# instead of "main" as the default branch.
+# ---------------------------------------------------------------------------
+
+def _setup_git_repo_master(tmp_path: Path) -> Path:
+    """Set up a local git repo with **master** as the default branch."""
+    repo = tmp_path / "source_repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-b", "master"], cwd=str(repo), capture_output=True, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(repo), capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(repo), capture_output=True)
+    (repo / "README.md").write_text("# Test repo\n")
+    subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=str(repo), capture_output=True)
+    return repo
+
+
+def _make_feature_branch_master(repo: Path, branch: str, filename: str = "feature.py", content: str = "# New\n"):
+    """Create a feature branch and return to master."""
+    subprocess.run(["git", "checkout", "-b", branch], cwd=str(repo), capture_output=True, check=True)
+    (repo / filename).write_text(content)
+    subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
+    subprocess.run(["git", "commit", "-m", f"Add {filename}"], cwd=str(repo), capture_output=True, check=True)
+    subprocess.run(["git", "checkout", "master"], cwd=str(repo), capture_output=True, check=True)
+
+
+class TestMasterBranch:
+    """Verify that repos using 'master' as the default branch work correctly."""
+
+    def test_get_default_branch_detects_master(self, tmp_path):
+        """get_default_branch should return 'master' for repos without a 'main' branch."""
+        from delegate.repo import get_default_branch, _default_branch_cache
+        _default_branch_cache.clear()
+
+        repo = _setup_git_repo_master(tmp_path)
+        assert get_default_branch(repo) == "master"
+
+    def test_get_default_branch_prefers_main(self, tmp_path):
+        """If both 'main' and 'master' exist, prefer 'main'."""
+        from delegate.repo import get_default_branch, _default_branch_cache
+        _default_branch_cache.clear()
+
+        repo = _setup_git_repo(tmp_path)
+        # Create a master branch too
+        subprocess.run(["git", "branch", "master"], cwd=str(repo), capture_output=True, check=True)
+        assert get_default_branch(repo) == "main"
+
+    def test_get_default_branch_caches(self, tmp_path):
+        """Results should be cached — second call shouldn't need git."""
+        from delegate.repo import get_default_branch, _default_branch_cache
+        _default_branch_cache.clear()
+
+        repo = _setup_git_repo_master(tmp_path)
+        result1 = get_default_branch(repo)
+        assert result1 == "master"
+
+        # Verify it's cached
+        key = str(Path(repo).resolve())
+        assert key in _default_branch_cache
+        assert _default_branch_cache[key] == "master"
+
+    def test_successful_merge_master(self, hc_home, tmp_path):
+        """Full merge flow works with a master-based repo."""
+        from delegate.repo import _default_branch_cache
+        _default_branch_cache.clear()
+
+        repo = _setup_git_repo_master(tmp_path)
+        _make_feature_branch_master(repo, "alice/T0001")
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch="alice/T0001", merging=True)
+        update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
+
+        result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
+        assert result.success is True
+        assert "success" in result.message.lower()
+
+        updated = get_task(hc_home, SAMPLE_TEAM, task["id"])
+        assert updated["status"] == "done"
+
+        # Feature should be on master
+        log = subprocess.run(
+            ["git", "log", "--oneline", "master"],
+            cwd=str(repo), capture_output=True, text=True,
+        )
+        assert "Add feature.py" in log.stdout
+
+    def test_conflict_detection_master(self, hc_home, tmp_path):
+        """Conflict detection works with master-based repos."""
+        from delegate.repo import _default_branch_cache
+        _default_branch_cache.clear()
+
+        repo = _setup_git_repo_master(tmp_path)
+
+        # Create feature branch modifying file.txt
+        _make_feature_branch_master(repo, "alice/T0001", filename="file.txt", content="feature version\n")
+
+        # Create conflicting commit on master
+        (repo / "file.txt").write_text("master version\n")
+        subprocess.run(["git", "add", "."], cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Conflict on master"], cwd=str(repo), capture_output=True)
+
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch="alice/T0001", merging=True)
+        update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
+
+        result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
+        assert result.success is False
+
+    def test_ff_merge_user_on_master(self, hc_home, tmp_path):
+        """When user has master checked out cleanly, ff-only updates working tree."""
+        from delegate.repo import _default_branch_cache
+        _default_branch_cache.clear()
+
+        repo = _setup_git_repo_master(tmp_path)
+        branch = "alice/T0001"
+        _make_feature_branch_master(repo, branch, filename="new_feature.py", content="# feature\n")
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        # Ensure user is on master (should already be)
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(repo), capture_output=True, text=True,
+        )
+        assert head.stdout.strip() == "master"
+
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
+        update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
+
+        result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
+        assert result.success is True
+
+        # Working tree should have the new file
+        assert (repo / "new_feature.py").exists()
+
+    def test_ff_merge_user_on_other_branch(self, hc_home, tmp_path):
+        """When user is on another branch, master ref is updated without touching working tree."""
+        from delegate.repo import _default_branch_cache
+        _default_branch_cache.clear()
+
+        repo = _setup_git_repo_master(tmp_path)
+        branch = "alice/T0001"
+        _make_feature_branch_master(repo, branch, filename="new_feature.py", content="# feature\n")
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        # Switch user to a different branch
+        subprocess.run(["git", "checkout", "-b", "user/work"], cwd=str(repo), capture_output=True, check=True)
+
+        task = _make_in_approval_task(hc_home, repo="myrepo", branch=branch, merging=True)
+        update_task(hc_home, SAMPLE_TEAM, task["id"], approval_status="approved")
+
+        result = merge_task(hc_home, SAMPLE_TEAM, task["id"], skip_tests=True)
+        assert result.success is True
+
+        # User should still be on their branch
+        head = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(repo), capture_output=True, text=True,
+        )
+        assert head.stdout.strip() == "user/work"
+
+        # But master ref should include the feature commit
+        log = subprocess.run(
+            ["git", "log", "--oneline", "master"],
+            cwd=str(repo), capture_output=True, text=True,
+        )
+        assert "Add new_feature.py" in log.stdout
+
+    def test_worktree_creation_off_master(self, hc_home, tmp_path):
+        """create_task_worktree should branch off master when that's the default."""
+        from delegate.repo import create_task_worktree, _default_branch_cache
+        _default_branch_cache.clear()
+
+        repo = _setup_git_repo_master(tmp_path)
+        _register_repo_with_symlink(hc_home, "myrepo", repo)
+
+        task = create_task(hc_home, SAMPLE_TEAM, title="Master task", assignee="alice")
+
+        wt_path = create_task_worktree(hc_home, SAMPLE_TEAM, "myrepo", task["id"])
+        assert wt_path.exists()
+
+        # Worktree should be based off master
+        log = subprocess.run(
+            ["git", "log", "--oneline", "-1", "master"],
+            cwd=str(repo), capture_output=True, text=True,
+        )
+        master_sha = log.stdout.split()[0]
+
+        wt_log = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=str(wt_path), capture_output=True, text=True,
+        )
+        assert master_sha in wt_log.stdout

@@ -451,17 +451,22 @@ class TestBranchAndDiff:
         task = create_task(tmp_team, TEAM, title="Feature X", assignee="alice")
         set_task_branch(tmp_team, TEAM, task["id"], "alice/backend/0001-feature-x")
 
-        # Mock the three-dot diff succeeding
+        # Mock the three-dot diff succeeding (also handles get_default_branch's rev-parse)
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = "diff --git a/file.py b/file.py\n+new line\n"
         mock_run.return_value = mock_result
 
+        # Clear the default-branch cache so get_default_branch calls subprocess
+        from delegate.repo import _default_branch_cache
+        _default_branch_cache.clear()
+
         diff = get_task_diff(tmp_team, TEAM, task["id"])
         assert "diff --git" in diff["_default"]
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args
-        assert call_args[0][0] == ["git", "diff", "main...alice/backend/0001-feature-x"]
+        # get_default_branch calls rev-parse --verify main first, then the diff call
+        assert mock_run.call_count == 2
+        diff_call = mock_run.call_args_list[-1]
+        assert diff_call[0][0] == ["git", "diff", "main...alice/backend/0001-feature-x"]
 
     @patch("delegate.task.subprocess.run")
     def test_get_task_diff_no_diff_available(self, mock_run, tmp_team):

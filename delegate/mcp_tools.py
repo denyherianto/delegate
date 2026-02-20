@@ -421,9 +421,11 @@ def build_agent_tools(hc_home: Path, team: str, agent: str) -> list:
                         f"Commit or unstage changes before rebasing."
                     )
 
-                # Get current main HEAD
+                # Get current default branch HEAD
+                from delegate.repo import get_default_branch
+                db = get_default_branch(wt_str)
                 main_sha_result = subprocess.run(
-                    ["git", "rev-parse", "main"],
+                    ["git", "rev-parse", db],
                     cwd=wt_str,
                     capture_output=True,
                     text=True,
@@ -431,15 +433,15 @@ def build_agent_tools(hc_home: Path, team: str, agent: str) -> list:
                 )
                 if main_sha_result.returncode != 0:
                     return _error_result(
-                        f"Failed to get main HEAD in {repo_name}: "
+                        f"Failed to get {db} HEAD in {repo_name}: "
                         f"{main_sha_result.stderr}"
                     )
 
                 new_main_sha = main_sha_result.stdout.strip()
 
-                # Perform git reset --soft main
+                # Perform git reset --soft to default branch
                 reset_result = subprocess.run(
-                    ["git", "reset", "--soft", "main"],
+                    ["git", "reset", "--soft", db],
                     cwd=wt_str,
                     capture_output=True,
                     text=True,
@@ -447,7 +449,7 @@ def build_agent_tools(hc_home: Path, team: str, agent: str) -> list:
                 )
                 if reset_result.returncode != 0:
                     return _error_result(
-                        f"git reset --soft main failed in {repo_name}: "
+                        f"git reset --soft {db} failed in {repo_name}: "
                         f"{reset_result.stderr}"
                     )
 

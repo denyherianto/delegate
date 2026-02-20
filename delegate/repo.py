@@ -33,6 +33,39 @@ from delegate.config import (
 
 logger = logging.getLogger(__name__)
 
+# Cache: resolved repo path → default branch name ("main" or "master")
+_default_branch_cache: dict[str, str] = {}
+
+
+def get_default_branch(repo_dir: str | Path) -> str:
+    """Detect the default branch for a repository (``main`` or ``master``).
+
+    Tries ``git rev-parse --verify main`` first, then ``master``.
+    Falls back to ``"main"`` if neither exists (preserving current behaviour
+    so downstream commands get the same git error they always did).
+
+    Results are cached per resolved repo path for the lifetime of the process.
+    """
+    key = str(Path(repo_dir).resolve())
+    if key in _default_branch_cache:
+        return _default_branch_cache[key]
+
+    for candidate in ("main", "master"):
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", candidate],
+            cwd=key,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            _default_branch_cache[key] = candidate
+            logger.debug("Default branch for %s: %s", key, candidate)
+            return candidate
+
+    # Neither exists — fall back to "main" (will error downstream, same as before)
+    _default_branch_cache[key] = "main"
+    return "main"
+
 
 def _derive_name(source: str) -> str:
     """Derive a repo name from a local path.
@@ -192,9 +225,10 @@ get_repo_clone_path = get_repo_path
 
 
 def _get_main_head(repo_dir: Path) -> str:
-    """Get the current HEAD SHA of the main branch in a repo."""
+    """Get the current HEAD SHA of the default branch in a repo."""
+    branch = get_default_branch(repo_dir)
     result = subprocess.run(
-        ["git", "rev-parse", "main"],
+        ["git", "rev-parse", branch],
         cwd=str(repo_dir),
         capture_output=True,
         text=True,
@@ -291,9 +325,10 @@ def create_task_worktree(
         check=False,
     )
 
-    # Create worktree with a new branch off main
+    # Create worktree with a new branch off the default branch (main or master)
+    default_branch = get_default_branch(real_repo)
     subprocess.run(
-        ["git", "worktree", "add", str(wt_path), "-b", branch, "main"],
+        ["git", "worktree", "add", str(wt_path), "-b", branch, default_branch],
         cwd=str(real_repo),
         capture_output=True,
         check=True,
