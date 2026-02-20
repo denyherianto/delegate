@@ -2,6 +2,52 @@
 
 All notable changes to Delegate are documented here.
 
+## 0.2.7 — 2026-02-19
+
+### Added
+- **Auto-generated environment scripts** — deterministic `setup.sh` and `premerge.sh` generation for agent worktrees. Detects Python (uv/pip/poetry), Node (npm/pnpm/yarn), Rust, Go, Ruby, and Nix stacks with multi-language and workspace-aware composition. Parses `.envrc` for direnv-based projects.
+- **3-tier install strategy** — Python and Node setup scripts prioritize copying from the main repo's environment, then installing from the shared cache (offline), and finally falling back to a full network install. Uses `_cp_tree` with copy-on-write (APFS clones / reflinks) for near-instant, zero-overhead copies.
+- **Network domain allowlist** — curated default list of ~30 package-manager and git-forge domains (PyPI, npm, crates.io, proxy.golang.org, rubygems, Maven Central, NuGet, Hackage, Hex, etc.) replaces the previous unrestricted wildcard. Managed via `delegate network show/allow/disallow/reset`.
+- **Team-shared package-manager cache** — `.pkg-cache/` directory at the team level with per-language subdirectories, injected via `settings.env` into every agent sandbox session. Covers pip, uv, npm, yarn, pnpm, Cargo, Go modules, Bundler, Gradle, Maven, NuGet, Pub, Composer, Hex, and Mix.
+- **Rate-limit toast** — monkey-patch for Claude SDK's unhandled `rate_limit_event` message type surfaces a yellow warning toast in the UI instead of crashing the agent turn.
+- **Delete project** — button with confirmation modal in project settings.
+- **`FileAutocomplete` component** — server-side file/directory path completion with git-repo badge, wired into the New Project modal's repo path field.
+- **Clickable file paths** — file paths in chat messages open in the built-in file viewer instead of the browser.
+- **Sidebar footer** — Give Feedback link, version display, and update-available modal.
+- **Active Tasks widget redesign** — new layout in the Mission Control right sidebar with live timers and streaming thinking text.
+- **Nudge turns** — runtime detects when an agent ends a turn without sending any messages and automatically nudges it to continue.
+- **`GET /api/version`** endpoint for programmatic version checks.
+- **File completion API** — `GET /api/files/complete` and `GET /api/files/list` endpoints for path autocompletion.
+- **Marketing website** and branding assets.
+
+### Changed
+- **Teams → Projects** — storage layer rename (directories, DB tables, config keys) with automatic migration of existing installations.
+- **Merge worker simplified** — runs entirely in the merge worktree; removed the read-write lock and separate worktree lifecycle.
+- **Pre-merge script system replaced** — removed the per-repo configurable premerge registration system in favor of auto-generated scripts.
+- **Rebase commit messages** now include the task title.
+- **Default agent count** changed to 5 with explanatory help text in the New Project modal.
+- **Human name auto-detected** from `git config user.name` at `delegate start`; removed the heal-after-the-fact fallback.
+- **Agent names** auto-generated from the name pool in the Create Project modal.
+- **Charter hardened** — environment isolation, setup script creation guidance, Python anti-patterns, explicit network-availability nudges, and per-language setup templates.
+- **Manager ack behavior** — charter instructs manager to send an acknowledgment and then continue working in the same turn.
+- **`/shell -d` renamed to `--cwd`**.
+- **Reflection frequency** lowered.
+- **Auto-setup team creation** removed from `delegate start`.
+
+### Fixed
+- **Playwright E2E tests** — fixed greeting tests (localStorage prefix derivation, API mocking), keyboard shortcuts (Cmd+K / Cmd+1-9 now work when chat input is focused), reviewer edit modal selectors (`.file-ac-input`), and sidebar toggle stability.
+- **Welcome message for new projects** — now sent synchronously during project creation instead of relying on a racy frontend call.
+- **`last-greeted` tracking** scoped per team to fix missing greetings on team switch.
+- **SSE connection** for zero-teams installs and new project creation.
+- **`FileAutocomplete`** dropdown reopening after selection and appearing when unfocused.
+- **Version detection** — fallback chain through `importlib.metadata` → `pyproject.toml` → `None`, with guarded `update_available` check.
+- **File completion API** — default to home dir when path is empty, expand `~` in paths.
+- **Pre-merge test crash** — added `stdin=DEVNULL` to subprocess calls.
+- **Tab key** skipping Merge Preview in task panel.
+- **Teams→Projects rename** — fixed Python variable / SQL column name collisions, hardened migration script.
+- **DRI merge state gate** removed from turn dispatcher.
+- Various styling fixes: sidebar footer alignment, iframe height, chat message padding, thinking box, shell output toolbar, agent hint text class.
+
 ## 0.2.6 — 2026-02-18
 
 ### Added
