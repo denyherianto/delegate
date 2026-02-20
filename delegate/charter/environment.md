@@ -151,6 +151,12 @@ Key rules:
 - **Detect dependency format**: `grep -q '^\[dependency-groups\]' pyproject.toml` for PEP 735; `grep -q '^\[tool.poetry\]' pyproject.toml` for Poetry.
 - **Use the global uv cache** — never pass `--no-cache` routinely. uv's shared cache (`~/.cache/uv`) is a major speed advantage over pip; reusing compiled wheels across worktrees makes installs fast. Only pass `--no-cache` if you have diagnosed a specific cache corruption (e.g. `uv cache clean` after an interrupted download). Same principle for Node: prefer `pnpm` (shared content-addressable store) or `npm ci` with its local cache over `--prefer-offline` flags that skip caching entirely.
 
+**Anti-patterns — never write these in setup.sh:**
+- `uv pip install -r requirements.txt` — wrong for lockfile projects; use `uv sync` instead
+- `uv pip install --no-cache ...` — disables the shared cache; installs become slow and fragile
+- `pip install -r requirements.txt` when uv is available — always prefer uv
+- `uv sync --no-cache` — same problem as above
+
 ### Poetry setup.sh template
 
 ```bash
