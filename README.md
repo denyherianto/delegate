@@ -283,6 +283,8 @@ npx playwright test
 Delegate is under active development. Here's what's coming:
 
 - ~~**Sandboxing & permissions**~~ — ✅ shipped in v0.2.5 (OS-level sandbox + write-path isolation + git command restrictions).
+- ~~**Isolated environments**~~ — ✅ shipped in v0.2.7 (a script generates sensible default
+for .delegate/setup.sh and .delegate/premerge.sh), agents can edit as needed.
 - **More powerful workflows** — conditional transitions, parallel stages, human-in-the-loop checkpoints, and webhook triggers.
 - **External tool integrations** — GitHub (PRs, issues), Slack (notifications, commands), Linear (task sync), and CI/CD pipelines (GitHub Actions, etc.).
 - **Remote repositories** — push to and pull from remote Git hosts, not just local repos.

@@ -2,6 +2,27 @@
 
 All notable changes to Delegate are documented here.
 
+## 0.2.8 — 2026-02-20
+
+### Added
+- **Copy button on chat messages** — hover over any message to reveal a copy-to-clipboard icon in the bottom-right footer.
+- **Live message status updates** — `seen_at` and `processed_at` timestamps are now broadcast over SSE (`msg_status` event) and patched in-place in the chat panel, so read-receipt checkmarks update in real time without polling.
+- **Project creation rollback** — if any step after `bootstrap()` fails (repo registration, workflow setup, greeting), the partially created project is cleaned up automatically (directories, DB rows, `project_map` entry).
+- **Git repo validation on project creation** — the API now checks that the given path contains a `.git` directory before attempting to create a project, returning a clear 400 error instead of failing mid-setup.
+- **Demo video on website** — embedded demo video on the marketing site.
+
+### Changed
+- **Environment setup: layered install strategy** — Node dependency setup now always runs all three layers sequentially (copy from main repo → offline install → network install) instead of short-circuiting on the first success. This ensures delta dependencies added after the initial copy are always picked up.
+- **Environment setup: zsh compatibility** — `setup.sh` scripts now resolve their own path portably across bash, zsh, and other shells using a `_SELF` preamble (`BASH_SOURCE`, `%x` for zsh, `$0` fallback), replacing the bash-only `${BASH_SOURCE[0]}`.
+- **Environment setup: quieter stderr** — `git rev-parse --git-common-dir` and `cd` commands in generated scripts now redirect stderr, preventing noisy warnings when run outside a git worktree.
+- **Shell output copy button** — moved from the top toolbar to a footer row inside the output body, matching the new chat message copy placement.
+- **Mission Control task rows** — status badge and timer are now grouped and right-aligned for a cleaner layout.
+- **MCP tool name normalization** — tool calls with MCP namespace prefixes (`mcp__delegate__mailbox_send`) are now stripped to their base name (`mailbox_send`) for activity logging and guardrail checks.
+
+### Fixed
+- **Agent task ID not cleared after turn ends** — `turnState` now resets `taskId` to `null` when a turn completes, preventing stale task associations in the Mission Control sidebar.
+- **Nudge turns overfiring** — removed the "ack-only manager turn" guardrail that was triggering false-positive nudges, causing duplicate work.
+
 ## 0.2.7 — 2026-02-19
 
 ### Added

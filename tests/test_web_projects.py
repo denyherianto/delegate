@@ -199,6 +199,9 @@ class TestCreateProjectValidation:
         from delegate.db import get_connection
         from tests.conftest import SAMPLE_TEAM_NAME
 
+        # Needs a .git dir so the git-repo validation passes before the duplicate check
+        (tmp_path / ".git").mkdir(exist_ok=True)
+
         resp = client.post("/projects", json={
             "name": SAMPLE_TEAM_NAME,
             "repo_path": str(tmp_path),
