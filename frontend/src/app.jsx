@@ -639,7 +639,7 @@ function App() {
         if (_pt.turnState[team] && _pt.turnState[team][entry.agent]) {
           _pt.turnState[team][entry.agent] = {
             inTurn: false,
-            taskId: _pt.turnState[team][entry.agent].taskId
+            taskId: null
           };
         }
 
