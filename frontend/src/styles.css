@@ -3379,6 +3379,7 @@ select option:hover {
 .toast-error { border: 1px solid var(--border-default); }
 .toast-success { border: 1px solid var(--border-default); }
 .toast-info { border: 1px solid var(--border-default); }
+.toast-warning { border: 1px solid var(--border-default); }
 .toast-icon {
   flex-shrink: 0;
   width: 18px;
@@ -3393,6 +3394,7 @@ select option:hover {
 .toast-success .toast-icon { color: var(--semantic-green); }
 .toast-info .toast-icon { color: var(--semantic-blue); }
 .toast-error .toast-icon { color: var(--semantic-red); }
+.toast-warning .toast-icon { color: var(--semantic-yellow); }
 .toast-message { flex: 1; word-break: break-word; }
 .toast-close {
   flex-shrink: 0;

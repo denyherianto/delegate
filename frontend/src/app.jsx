@@ -667,6 +667,14 @@ function App() {
         return;
       }
 
+      // ── rate_limit (Claude API throttling) ──
+      if (entry.type === "rate_limit") {
+        if (isCurrent) {
+          showToast(`${entry.agent} is being rate-limited by Claude — retrying automatically`, "warning");
+        }
+        return;
+      }
+
       // ── teams_refresh (new project created) ──
       if (entry.type === "teams_refresh") {
         api.fetchTeams().then(t => { teams.value = t; }).catch(() => {});

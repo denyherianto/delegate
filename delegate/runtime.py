@@ -60,7 +60,7 @@ from delegate.mailbox import (
 from delegate.prompt import Prompt
 from delegate.telephone import Telephone, TelephoneUsage
 from delegate.task import format_task_id
-from delegate.activity import broadcast as broadcast_activity, broadcast_thinking, mark_thinking_tool_break, clear_thinking_buffer, broadcast_turn_event
+from delegate.activity import broadcast as broadcast_activity, broadcast_thinking, mark_thinking_tool_break, clear_thinking_buffer, broadcast_turn_event, broadcast_rate_limit
 from delegate.paths import team_dir
 
 logger = logging.getLogger(__name__)
@@ -669,6 +669,13 @@ async def _stream_telephone(
     starting_usage = tel.total_usage()
     dummy = TelephoneUsage()  # throwaway so _process_turn_messages can do worklog/tools
     async for msg in tel.send(prompt):
+        # Detect rate-limit events surfaced by the SDK monkey-patch
+        # (SystemMessage with subtype="rate_limit_event").  Notify the
+        # frontend but otherwise let the CLI handle the retry internally.
+        if hasattr(msg, "subtype") and msg.subtype == "rate_limit_event":
+            broadcast_rate_limit(agent, team)
+            continue
+
         _process_turn_messages(
             msg, alog, dummy, turn_tools, worklog_lines,
             agent=agent, task_label=task_label,

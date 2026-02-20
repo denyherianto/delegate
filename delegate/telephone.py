@@ -80,6 +80,47 @@ _UNSET = object()
 
 
 # ---------------------------------------------------------------------------
+# SDK monkey-patch: handle unknown message types gracefully
+# ---------------------------------------------------------------------------
+# The claude_agent_sdk (≤ 0.1.39) raises ``MessageParseError`` on any
+# message type it doesn't recognise, including ``rate_limit_event`` which
+# the Claude Code CLI started emitting.  Rather than crashing the entire
+# turn, we patch the SDK parser to wrap unrecognised types as
+# ``SystemMessage(subtype=<original_type>, data=<raw_dict>)`` so the
+# rest of Delegate can handle them (e.g. surface a rate-limit toast).
+#
+# The patch is applied once at import time.  It is safe for tests that
+# mock the SDK because ``_install_sdk_parse_patch`` is a no-op when the
+# SDK is not installed.
+
+def _install_sdk_parse_patch() -> None:
+    """Monkey-patch ``claude_agent_sdk`` to survive unknown message types."""
+    try:
+        import claude_agent_sdk._internal.message_parser as _mp
+        from claude_agent_sdk.types import SystemMessage
+    except ImportError:
+        return  # SDK not installed — nothing to patch
+
+    _original_parse = _mp.parse_message
+
+    def _patched_parse_message(data: dict) -> Any:  # type: ignore[type-arg]
+        try:
+            return _original_parse(data)
+        except Exception:
+            msg_type = data.get("type", "unknown")
+            logger.info(
+                "SDK parse_message: unrecognised type %r — wrapping as SystemMessage",
+                msg_type,
+            )
+            return SystemMessage(subtype=msg_type, data=data)
+
+    _mp.parse_message = _patched_parse_message  # type: ignore[assignment]
+    logger.debug("Installed SDK parse_message monkey-patch")
+
+_install_sdk_parse_patch()
+
+
+# ---------------------------------------------------------------------------
 # Token / cost accounting
 # ---------------------------------------------------------------------------
 

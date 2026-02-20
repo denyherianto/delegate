@@ -167,6 +167,23 @@ def broadcast(
     _push_to_subscribers(entry.to_dict())
 
 
+def broadcast_rate_limit(agent: str, team: str) -> None:
+    """Broadcast a rate-limit notification to all SSE clients.
+
+    Called when the SDK monkey-patch intercepts a ``rate_limit_event``
+    message from the Claude Code CLI.  The frontend shows a transient
+    toast so the user knows Claude is being throttled (the CLI retries
+    automatically, so no action is needed).
+    """
+    payload = {
+        "type": "rate_limit",
+        "agent": agent,
+        "team": team,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    _push_to_subscribers(payload)
+
+
 def broadcast_task_update(task_id: int, team: str, changes: dict[str, Any]) -> None:
     """Broadcast a task mutation to all SSE clients.
 

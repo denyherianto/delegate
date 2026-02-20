@@ -25,7 +25,7 @@ function Toast({ toast }) {
 
   // Action toast layout (with title + body)
   if (title || body) {
-    const iconMap = { success: '\u2713', info: 'i', error: '!' };
+    const iconMap = { success: '\u2713', info: 'i', error: '!', warning: '\u26A0' };
     const icon = iconMap[type] || '';
 
     return (
@@ -50,7 +50,7 @@ function Toast({ toast }) {
   }
 
   // Simple toast layout (original)
-  const iconMap = { success: '\u2713', info: 'i', error: '!' };
+  const iconMap = { success: '\u2713', info: 'i', error: '!', warning: '\u26A0' };
   const icon = iconMap[type] || '';
 
   return (
