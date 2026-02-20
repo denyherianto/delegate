@@ -295,7 +295,8 @@ class TestRunTurn:
 
     @patch("delegate.runtime.random.random", return_value=1.0)
     @patch("delegate.runtime._create_telephone", side_effect=_make_mock_tel)
-    def test_telephone_reused_across_turns(self, _mock_create, _mock_rng, tmp_team):
+    @patch("delegate.network.get_allowed_domains", return_value=["*"])
+    def test_telephone_reused_across_turns(self, _mock_domains, _mock_create, _mock_rng, tmp_team):
         """The same Telephone should be reused for consecutive turns."""
         exchange = TelephoneExchange()
 
