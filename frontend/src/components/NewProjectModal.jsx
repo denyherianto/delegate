@@ -163,7 +163,7 @@ export function NewProjectModal() {
                 disabled={submitting}
                 autocomplete="off"
               />
-              <span class="npm-field-hint">You can always add more agents later.</span>
+              <span class="npm-hint">You can always add more agents later.</span>
             </div>
 
             <div class="npm-field npm-field-half">
