@@ -2,6 +2,11 @@
 
 All notable changes to Delegate are documented here.
 
+## 0.2.9 - 2020-02-20
+- **Skip Auth Check** - some enterprise users authenticate in custom ways, so added
+ check for delegate to skip auth check. For such cases, authentication will be
+ managed outside of Delegate now
+
 ## 0.2.8 — 2026-02-20
 
 ### Added

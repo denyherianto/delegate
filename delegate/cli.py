@@ -110,6 +110,7 @@ def _open_ui(url: str, port: int) -> None:
     help="Path to .env file to load (e.g. for ANTHROPIC_API_KEY).",
 )
 @click.option("--dev", is_flag=True, help="Enable dev mode (esbuild watcher for live frontend rebuilds).")
+@click.option("--skip-auth-check", is_flag=True, help="Skip Claude CLI/API key checks (useful for enterprise auth setups).")
 @click.pass_context
 def start(
     ctx: click.Context,
@@ -120,6 +121,7 @@ def start(
     foreground: bool,
     env_file: Path | None,
     dev: bool,
+    skip_auth_check: bool,
 ) -> None:
     """Start delegate (web UI + agent orchestration)."""
     import time
@@ -148,7 +150,7 @@ def start(
         success(f"Migrated {wf_migrated} team(s) from 'standard' to 'default' workflow")
 
     # Run doctor check first — suppress output if all checks pass
-    checks = run_doctor()
+    checks = run_doctor(skip_auth=skip_auth_check)
     all_ok = all(c.passed for c in checks)
     if not all_ok:
         print_doctor_report(checks)

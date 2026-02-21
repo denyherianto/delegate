@@ -102,15 +102,26 @@ def check_api_key() -> CheckResult:
     )
 
 
-def run_all_checks() -> list[CheckResult]:
-    """Run all dependency checks."""
-    return [
+def run_all_checks(*, skip_auth: bool = False) -> list[CheckResult]:
+    """Run all dependency checks.
+
+    Args:
+        skip_auth: Skip Claude CLI and API key checks. Useful for
+            enterprise auth setups where credentials are managed
+            externally (e.g. SSO, keychain).
+    """
+    checks = [
         check_git(),
         check_python_version(),
         check_uv(),
-        check_claude_cli(),
-        check_api_key(),
     ]
+    if skip_auth:
+        checks.append(CheckResult("Claude CLI", True, "Skipped (--skip-auth-check)"))
+        checks.append(CheckResult("API Key", True, "Skipped (--skip-auth-check)"))
+    else:
+        checks.append(check_claude_cli())
+        checks.append(check_api_key())
+    return checks
 
 
 # Aliases used by the CLI
